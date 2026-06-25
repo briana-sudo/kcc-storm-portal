@@ -758,7 +758,8 @@ function addLiveLayers(){
   // (re-render from in-memory data on zoom/pan; no re-fetch). Coarse out, full in.
   TMAP.on("zoomend moveend",()=>{ if(trackOn) renderTracks(); });
   // timezone-pick: when armed (TZ button), the next map click sets the display timezone
-  // from that location + shows the confirmation toast. Normal map clicks are untouched.  TMAP.on("click",e=>{ if(tzArmed){ tzArmed=false;
+  // from that location + shows the confirmation toast. Normal map clicks are untouched.
+  TMAP.on("click",e=>{ if(tzArmed){ tzArmed=false;
     const b=document.getElementById("lvTz"); if(b) b.classList.remove("armed");
     document.body.classList.remove("tz-arming"); applyTz(e.latlng.lat,e.latlng.lng); } });
 }
