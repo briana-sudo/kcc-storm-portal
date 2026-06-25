@@ -102,14 +102,35 @@ html,body{height:100%}
   background:rgba(22,34,60,.95);color:#e9eef7;border:1px solid #2c3c5e;border-radius:9px;
   padding:9px 18px;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.4);max-width:90%;text-align:center}
 #banner.hidden{display:none}
-/* mobile: stack the side panel under the map */
-@media (max-width:760px){
-  #wrap{flex-direction:column}
-  #map{flex:none;height:58vh}
-  #side{width:auto;max-height:42vh;border-left:none;border-top:1px solid #ddd}
-  #tbar{gap:8px}
-  #tbar .brand .sub{display:none}
-}
+/* ── MOBILE LANE (device-detected via body.mobile, NOT viewport width) ──
+   Full-screen interactive map; Layers / Legend / Details become slide-up bottom
+   sheets opened from a bottom toolbar, all closed by default. PC lane untouched. */
+#mtoolbar{display:none}
+.msheet,#mbackdrop{display:none}
+body.mobile #tbar{gap:8px}
+body.mobile #tbar .brand .sub{display:none}
+body.mobile #wrap{height:100%}
+body.mobile #map{width:100% !important;height:100% !important;flex:1 1 auto}
+body.mobile #mtoolbar{display:flex;flex:none;height:52px;background:#0b1220;border-top:1px solid #2c3c5e;z-index:1460}
+body.mobile #mtoolbar button{flex:1;background:transparent;color:#cdd8ee;border:none;border-right:1px solid #1d2b46;
+  font-size:13px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center}
+body.mobile #mtoolbar button:last-child{border-right:none}
+body.mobile #mtoolbar button.active{background:#1e2b46;color:#fff}
+body.mobile #mbackdrop{display:block;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:1420}
+body.mobile #mbackdrop.hidden{display:none}
+body.mobile .msheet{display:block;position:fixed;left:0;right:0;bottom:52px;max-height:72vh;overflow:auto;
+  background:#fff;border-radius:14px 14px 0 0;z-index:1450;box-shadow:0 -8px 28px rgba(0,0,0,.4)}
+body.mobile .msheet.hidden{display:none}
+body.mobile .msheet-head{position:sticky;top:0;background:#16223c;color:#fff;display:flex;align-items:center;
+  justify-content:space-between;padding:11px 16px;font-weight:700;font-size:14px}
+body.mobile .msheet-x{background:transparent;border:none;color:#fff;font-size:18px;cursor:pointer;line-height:1}
+body.mobile .msheet-body{padding:10px 12px}
+/* the moved panels render full-width inside their sheet (drop their floating chrome) */
+body.mobile .msheet-body .ctlpanel,body.mobile .msheet-body .legend{position:static !important;width:auto !important;
+  max-width:none !important;max-height:none !important;box-shadow:none !important}
+body.mobile .msheet-body #side{width:auto;border:none;overflow:visible}
+/* the moved Leaflet controls leave empty corner wrappers — hide them */
+body.mobile .leaflet-top.leaflet-right,body.mobile .leaflet-bottom.leaflet-left{display:none}
 
 </style>
 </head>
@@ -698,7 +719,39 @@ function renderCal(){
 }
 function toggleCal(){ const c=document.getElementById("cal"); c.classList.toggle("hidden"); if(!c.classList.contains("hidden")) renderCal(); }
 
+// ── MOBILE LANE: relocate Layers / Legend / Details into slide-up bottom sheets
+//    opened from a bottom toolbar (all closed by default). Device-detected. ──
+function setupMobile(){
+  if(!document.body.classList.contains("mobile") || document.getElementById("mtoolbar")) return;
+  const app=document.getElementById("app");
+  const tb=document.createElement("div"); tb.id="mtoolbar";
+  const bd=document.createElement("div"); bd.id="mbackdrop"; bd.className="hidden";
+  const sheets={};
+  function closeAll(){ for(const k in sheets) sheets[k].classList.add("hidden"); bd.classList.add("hidden");
+    tb.querySelectorAll("button").forEach(b=>b.classList.remove("active")); }
+  function openSheet(id){ const wasOpen=!sheets[id].classList.contains("hidden"); closeAll();
+    if(!wasOpen){ sheets[id].classList.remove("hidden"); bd.classList.remove("hidden");
+      tb.querySelector('[data-sheet="'+id+'"]').classList.add("active"); } }
+  [["layers","Layers",".ctlpanel"],["legend","Legend",".legend"],["details","Details","#side"]].forEach(function(def){
+    const id=def[0], label=def[1], sel=def[2];
+    const btn=document.createElement("button"); btn.dataset.sheet=id; btn.textContent=label; tb.appendChild(btn);
+    const sh=document.createElement("div"); sh.id="sheet-"+id; sh.className="msheet hidden";
+    const head=document.createElement("div"); head.className="msheet-head"; head.innerHTML='<span>'+label+'</span>';
+    const x=document.createElement("button"); x.className="msheet-x"; x.innerHTML="&#10005;"; x.onclick=closeAll;
+    head.appendChild(x);
+    const body=document.createElement("div"); body.className="msheet-body";
+    const node=document.querySelector(sel); if(node) body.appendChild(node);   // move the panel DOM in (keeps its wiring)
+    sh.appendChild(head); sh.appendChild(body); document.body.appendChild(sh); sheets[id]=sh;
+  });
+  document.body.appendChild(bd); app.appendChild(tb);
+  tb.addEventListener("click",function(e){ const b=e.target.closest("button[data-sheet]"); if(b) openSheet(b.dataset.sheet); });
+  bd.addEventListener("click",closeAll);
+  window.dispatchEvent(new Event("resize"));   // map recomputes to full size (side panel moved out)
+}
+
 async function boot(){
+  if(matchMedia("(pointer:coarse)").matches || /Android|iPhone|iPad|iPod|Mobile|Silk/i.test(navigator.userAgent))
+    document.body.classList.add("mobile");
   const date = getDate();
   document.getElementById("navDateBtn").textContent = fmtDate(date)+" \u25be";
   document.getElementById("navDateBtn").onclick = e => { e.stopPropagation(); toggleCal(); };
@@ -731,6 +784,7 @@ async function boot(){
   // ALWAYS render the interactive map (basemap + service-area reference), storm or not.
   renderMap(assemble(date, rows||[], geo));
   setBaseStreet();
+  setupMobile();
   if(banner) showBanner(banner); else hideBanner();
 }
 boot();
