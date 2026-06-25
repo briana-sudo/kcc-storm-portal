@@ -88,10 +88,44 @@ html,body{height:100%}
 #side .op-row{font-size:12px;padding:7px 0;border-top:1px solid #eee;color:#445}
 #side .op-adspend .muted{font-style:italic}
 #side .op-forecast{font-size:12px;padding:8px 10px;background:#eef3ff;border-radius:6px;margin:9px 0;border-left:4px solid #5b8cff;color:#234}
-/* expandable map (desktop): hide the side panel so the map fills the area */
+/* ── FULL-SCREEN RADAR (item 2): the map content fills the whole viewport so the
+   operator can study the swath/circles up close. Pure flex reflow — header + side
+   panel collapse, #main(flex:1) fills; on mobile the bottom control toolbar stays so
+   Layers/Legend/Details remain reachable. Leaflet controls (bands/opacity/basemap,
+   legend, readout, zoom) live INSIDE #map so they ride along in the corners. ── */
 #tbar #expandBtn{background:#1e2b46;color:#e9eef7;border:1px solid #2c3c5e;border-radius:6px;padding:5px 10px;font-size:13px;cursor:pointer}
 #tbar #expandBtn:hover{background:#274069}
+body.fullmap #tbar{display:none}
 body.fullmap #side{display:none}
+#fmExit{display:none}
+body.fullmap #fmExit{display:inline-flex;align-items:center;gap:6px;position:fixed;top:10px;left:50%;
+  transform:translateX(-50%);z-index:2600;background:rgba(11,18,32,.92);color:#e9eef7;border:1px solid #2c3c5e;
+  border-radius:8px;padding:7px 14px;font-size:13px;font-weight:700;cursor:pointer;box-shadow:0 4px 16px rgba(0,0,0,.45)}
+body.fullmap #fmExit:hover{background:#1e2b46}
+/* ── STATUS DASHBOARD (item 3): "is Tempest alive" surface — both heartbeats ── */
+#tbar #statusBtn{display:flex;align-items:center;gap:7px;background:#1e2b46;color:#e9eef7;border:1px solid #2c3c5e;
+  border-radius:6px;padding:5px 10px;font-size:13px;cursor:pointer}
+#tbar #statusBtn:hover{background:#274069}
+#statusBtn .hbdot{width:9px;height:9px;border-radius:50%;background:#6b7280;box-shadow:0 0 0 2px rgba(255,255,255,.08)}
+#statusBackdrop{position:fixed;inset:0;z-index:2390;background:transparent}
+#statusBackdrop.hidden,#statusPanel.hidden{display:none}
+#statusPanel{position:fixed;top:54px;right:12px;z-index:2400;width:374px;max-width:94vw;background:#0f1830;color:#e9eef7;
+  border:1px solid #2c3c5e;border-radius:12px;box-shadow:0 18px 44px rgba(0,0,0,.6);padding:13px 14px 12px;font-size:13px;box-sizing:border-box}
+#statusPanel h2{margin:0;font-size:14px;letter-spacing:.3px;display:flex;align-items:center;gap:8px}
+#statusPanel h2 .x{margin-left:auto;background:transparent;border:none;color:#9fb3d9;font-size:18px;cursor:pointer;line-height:1}
+#statusPanel .sp-sub{color:#8298c0;font-size:11px;margin:2px 0 8px}
+.svc{border:1px solid #24324e;border-radius:10px;padding:10px 11px;margin:8px 0;background:#13203c}
+.svc-h{display:flex;align-items:center;gap:8px;font-weight:800;font-size:13px;margin-bottom:6px}
+.svc-h .dot{width:11px;height:11px;border-radius:50%;flex:none}
+.svc-h .st{margin-left:auto;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.5px;padding:2px 7px;border-radius:20px}
+.dot.green{background:#16a34a}.dot.stale{background:#d9a600}.dot.red{background:#dc2626}.dot.unknown{background:#6b7280}
+.st.green{background:rgba(22,163,74,.18);color:#5fe39a}.st.stale{background:rgba(217,166,0,.18);color:#ffd86b}
+.st.red{background:rgba(220,38,38,.2);color:#ff8d8d}.st.unknown{background:rgba(107,114,128,.25);color:#c2c9d6}
+.svc-row{display:flex;justify-content:space-between;gap:10px;padding:2px 0;font-size:12px}
+.svc-row span:first-child{color:#8298c0}
+.svc-row .ago{color:#6f86ad;font-size:11px}
+.svc-risk{margin-top:7px;padding:6px 9px;border-radius:7px;background:#16223c;font-size:12px;color:#cfe}
+.svc-why{margin-top:5px;font-size:11px;color:#ffb27a}
 /* storm-aware calendar popup */
 .cal{position:absolute;top:calc(100% + 6px);left:0;z-index:1300;background:#16223c;
   border:1px solid #2c3c5e;border-radius:10px;padding:11px;width:300px;max-width:94vw;color:#e9eef7;
@@ -111,11 +145,18 @@ body.fullmap #side{display:none}
 .cal-day.selected{background:#3056a8;color:#fff;font-weight:700}
 .cal-day.storm{font-weight:700;color:#fff}
 .cal-day.dim{opacity:.38}
-.cal-dots{display:flex;gap:3px;justify-content:center;min-height:6px}
-.cal-dots i{width:6px;height:6px;border-radius:50%}
-.dot.hail,.cal-dots i.hail{background:#e8430a}
-.dot.wind,.cal-dots i.wind{background:#2171b5}
-.dot.torn,.cal-dots i.torn{background:#6a3fa0}
+.cal-dots{display:flex;gap:3px;justify-content:center;min-height:7px}
+.cal-dots i{width:7px;height:7px;border-radius:50%;border:1px solid transparent;box-sizing:border-box}
+/* §3 peril colors: hail warm [247,182,0] / wind blue [107,175,215] / tornado violet [158,155,200] */
+.dot.hail,.cal-dots i.hail{background:#f7b600}
+.dot.wind,.cal-dots i.wind{background:#6bafd7}
+.dot.torn,.cal-dots i.torn{background:#9e9bc8}
+/* tier treatment (item 4): P1 core = bright + halo ring, P2 = solid, P3 margin = hollow/faint */
+.cal-dots i.t1{width:8px;height:8px;box-shadow:0 0 0 2px rgba(255,255,255,.9),0 0 4px rgba(0,0,0,.5)}
+.cal-dots i.t3{background:transparent;opacity:.7}
+.cal-dots i.t3.hail{border-color:#f7b600}
+.cal-dots i.t3.wind{border-color:#6bafd7}
+.cal-dots i.t3.torn{border-color:#9e9bc8}
 .cal-legend{display:flex;gap:12px;margin-top:7px;color:#9fb3d9;font-size:10px}
 .cal-legend span{display:flex;align-items:center;gap:4px}
 .cal-legend .dot{width:7px;height:7px;border-radius:50%}
@@ -171,10 +212,11 @@ body.mobile .leaflet-top.leaflet-right,body.mobile .leaflet-bottom.leaflet-left{
         <div class="cal-head"><button id="calPrev">&#8249;</button><span id="calTitle"></span><button id="calNext">&#8250;</button></div>
         <div class="cal-grid cal-dow"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div>
         <div class="cal-grid" id="calDays"></div>
-        <div class="cal-legend"><span><i class="dot hail"></i>hail</span><span><i class="dot wind"></i>wind</span><span><i class="dot torn"></i>tornado</span></div>
+        <div class="cal-legend"><span><i class="dot hail"></i>hail</span><span><i class="dot wind"></i>wind</span><span><i class="dot torn"></i>tornado</span><span style="margin-left:auto;color:#7e90b3">&#9679;core &#9675;margin</span></div>
       </div>
     </div>
-    <button id="expandBtn" title="Expand the map">&#9974; Expand</button>
+    <button id="expandBtn" title="Full-screen radar">&#9974; Full-screen radar</button>
+    <button id="statusBtn" title="Service health (is Tempest alive)"><span class="hbdot"></span>Status</button>
     <div class="status" id="connStatus"></div>
   </div>
   <div id="main">
@@ -252,7 +294,7 @@ document.getElementById('sd').textContent=D.storm_date;
 const s=D.summary;
 const tc={P1:0,P2:0,P3:0}; (D.circles||[]).forEach(c=>{if(tc[c.tier]!=null)tc[c.tier]++;});
 document.getElementById('summary').innerHTML=
-  `<span class="pill">events <b>${s.events}</b></span>`+
+  
   `<span class="pill">MESH cells <b>${s.swath_cells}</b></span>`+
   `<span class="pill">circles <b>${(D.circles||[]).length}</b></span>`+
   `<span class="pill">P1 <b>${tc.P1}</b> · P2 <b>${tc.P2}</b> · P3 <b>${tc.P3}</b></span>`;
@@ -648,6 +690,13 @@ const MONTHS = ["January","February","March","April","May","June","July","August
 let AVAIL = {};        // {date: [perils]} for the storm-aware calendar
 let calView = null;    // {y,m} currently-viewed calendar month
 
+// Capture the Leaflet map instance WITHOUT touching renderMap(D): wrap the L.map
+// factory before renderMap() runs (it calls L.map('map')). Gives full-screen a crisp
+// invalidateSize() and a handle for future display-only layers. §3 core untouched.
+let TMAP = null;
+const _origLmap = L.map;
+L.map = function(){ const m = _origLmap.apply(this, arguments); TMAP = m; return m; };
+
 function todayUTC(){ return new Date().toISOString().slice(0,10); }
 function getDate(){ return new URLSearchParams(location.search).get("date") || todayUTC(); }
 function goDate(d){ location.search = "?date=" + d; }
@@ -776,12 +825,16 @@ function renderCal(){
     if(per && per.length){
       btn.classList.add("storm");
       const dots=document.createElement("div"); dots.className="cal-dots";
-      per.forEach(p=>{ const i=document.createElement("i"); i.className=(p==="hail"?"hail":p==="wind"?"wind":"torn"); dots.appendChild(i); });
+      const tt = TIERS[ds] || {};
+      per.forEach(p=>{ const i=document.createElement("i"); const cls=(p==="hail"?"hail":p==="wind"?"wind":"torn");
+        const tier=tt[p]; const tcl=(tier==="P1"?" t1":tier==="P3"?" t3":"");   // P2 = base solid dot
+        i.className=cls+tcl; dots.appendChild(i); });
       btn.appendChild(dots);
     }
     btn.onclick = ()=>goDate(ds);
     grid.appendChild(btn);
   }
+  enrichVisibleTiers();   // refine dots to P1/P2/P3 for storm dates in view (cached, read-only)
 }
 function toggleCal(){ const c=document.getElementById("cal"); c.classList.toggle("hidden"); if(!c.classList.contains("hidden")) renderCal(); }
 
@@ -809,10 +862,117 @@ function setupMobile(){
     const node=document.querySelector(sel); if(node) body.appendChild(node);   // move the panel DOM in (keeps its wiring)
     sh.appendChild(head); sh.appendChild(body); document.body.appendChild(sh); sheets[id]=sh;
   });
+  const fbtn=document.createElement("button"); fbtn.id="mFull"; fbtn.textContent="\u26f6";
+  fbtn.title="Full-screen radar"; fbtn.onclick=()=>setFullmap(!document.body.classList.contains("fullmap")); tb.appendChild(fbtn);
   document.body.appendChild(bd); app.appendChild(tb);
   tb.addEventListener("click",function(e){ const b=e.target.closest("button[data-sheet]"); if(b) openSheet(b.dataset.sheet); });
   bd.addEventListener("click",closeAll);
   window.dispatchEvent(new Event("resize"));   // map recomputes to full size (side panel moved out)
+}
+
+// ── FULL-SCREEN RADAR (item 2): flex reflow (header+side collapse) so the map fills
+//    the viewport; controls ride along (Leaflet controls live inside #map; on mobile
+//    they stay in the bottom-sheet toolbar). invalidateSize keeps tiles crisp. ──
+function setFullmap(on){
+  document.body.classList.toggle("fullmap", !!on);
+  const eb=document.getElementById("expandBtn");
+  if(eb) eb.innerHTML = on ? "\u26f6 Exit full-screen" : "\u26f6 Full-screen radar";
+  const fix=()=>{ if(TMAP) TMAP.invalidateSize(); window.dispatchEvent(new Event("resize")); };
+  fix(); setTimeout(fix,60); setTimeout(fix,220);   // after CSS reflow settles
+}
+
+// ── STATUS DASHBOARD (item 3): read BOTH heartbeats via the existing whitelist
+//    queries; render green / stale / red per service. Read-only. ──
+let STATUS_CACHE={mon:null, fc:null, err:null};
+function _ts(s){ const t=Date.parse(s); return isNaN(t)?0:t; }
+function fmtTs(s){ if(!s) return "\u2014"; const t=_ts(s); if(!t) return s;
+  return new Date(t).toISOString().slice(0,16).replace("T"," ")+"Z"; }
+function agoStr(s){ const t=_ts(s); if(!t) return ""; const m=Math.round((Date.now()-t)/60000);
+  if(m<0) return "in "+(-m)+"m"; if(m<60) return m+"m ago"; const h=Math.floor(m/60);
+  if(h<48) return h+"h ago"; return Math.floor(h/24)+"d ago"; }
+const _OKSET=["ok","no_risk","no_data","waiting",""];
+function _okStatus(hb){ return _OKSET.indexOf((hb.last_status||"").toLowerCase())>=0; }
+// storm_forecast_status omits last_success_at; derive it from a healthy last run.
+function _lastSuccess(hb){ return hb.last_success_at || (_okStatus(hb) ? hb.last_run_at : ""); }
+function svcHealth(hb, isForecast){
+  const now=Date.now(), lr=_ts(hb.last_run_at), ls=_ts(_lastSuccess(hb)), ns=_ts(hb.next_scheduled_at);
+  if(!lr) return {state:"red", why:"never run"};
+  if(!_okStatus(hb)) return {state:"red", why:"last status: "+hb.last_status};
+  const interval = (ns>lr) ? (ns-lr) : (isForecast? 14400000 : 86400000);   // cadence from heartbeat
+  if(ns && now>ns){ const late=now-ns;
+    return (late>interval) ? {state:"red", why:"silent \u2014 overdue since "+fmtTs(hb.next_scheduled_at)}
+                           : {state:"stale", why:"running late (within one cycle)"}; }
+  if(ls && (now-ls) > interval*3) return {state:"stale", why:"no recent success"};
+  return {state:"green", why:""};
+}
+function _svcCard(title, hb, isForecast){
+  if(!hb) return '<div class="svc"><div class="svc-h"><span class="dot unknown"></span>'+title+
+    '<span class="st unknown">no data</span></div><div class="svc-row"><span>heartbeat</span><span>unreachable</span></div></div>';
+  const h=svcHealth(hb, isForecast);
+  const row=(k,v,a)=>'<div class="svc-row"><span>'+k+'</span><span>'+v+(a?' <span class="ago">'+a+'</span>':'')+'</span></div>';
+  let s='<div class="svc"><div class="svc-h"><span class="dot '+h.state+'"></span>'+title+
+        '<span class="st '+h.state+'">'+h.state+'</span></div>';
+  s+=row("Last run", fmtTs(hb.last_run_at), agoStr(hb.last_run_at));
+  const lsv=_lastSuccess(hb);
+  s+=row("Last success", lsv?fmtTs(lsv):"\u2014", lsv?agoStr(lsv):"");
+  s+=row("Next scheduled", fmtTs(hb.next_scheduled_at), "");
+  s+=row("Last alert sent", hb.last_alert_at?fmtTs(hb.last_alert_at):"never", hb.last_alert_at?agoStr(hb.last_alert_at):"");
+  s+=row("Status \u00b7 runs \u00b7 alerts", (hb.last_status||"\u2014")+" \u00b7 "+(hb.runs_total!=null?hb.runs_total:"\u2014")+" \u00b7 "+(hb.alerts_total!=null?hb.alerts_total:"\u2014"), "");
+  if(isForecast){ const r=hb.current_active_risk; s+='<div class="svc-risk">Current active risk: <b>'+((r&&r!=="none")?r:"none")+'</b></div>'; }
+  if(h.why) s+='<div class="svc-why">'+h.why+'</div>';
+  return s+'</div>';
+}
+function renderStatusPanel(){
+  const p=document.getElementById("statusPanel"); if(!p) return;
+  const c=STATUS_CACHE;
+  let h='<h2>Tempest service health <button class="x" id="spX" title="Close">&times;</button></h2>'+
+        '<div class="sp-sub">Live read of both heartbeats \u00b7 times UTC</div>';
+  h+=_svcCard("Monitor (hail)", c.mon, false);
+  h+=_svcCard("Forecast (SPC)", c.fc, true);
+  if(c.err && !c.mon && !c.fc) h+='<div class="svc-why">proxy: '+c.err+'</div>';
+  p.innerHTML=h;
+  const x=document.getElementById("spX"); if(x) x.onclick=closeStatus;
+}
+function _worstState(){ const rank={green:0,stale:1,red:2}; let w=null;
+  [[STATUS_CACHE.mon,false],[STATUS_CACHE.fc,true]].forEach(a=>{ if(a[0]){ const s=svcHealth(a[0],a[1]).state;
+    if(w===null || rank[s]>rank[w]) w=s; } }); return w; }
+async function refreshStatus(renderPanel){
+  let mon=null, fc=null, err=null;
+  try{ const m=await pquery("storm_engine_status",{}); mon=(m&&m[0])||null; }catch(e){ err=e.message; }
+  try{ const f=await pquery("storm_forecast_status",{}); fc=(f&&f[0])||null; }catch(e){ err=err||e.message; }
+  STATUS_CACHE={mon,fc,err};
+  const dot=document.querySelector("#statusBtn .hbdot"), w=_worstState();
+  if(dot) dot.style.background = (w===null)?"#6b7280":(w==="red"?"#dc2626":w==="stale"?"#d9a600":"#16a34a");
+  if(renderPanel) renderStatusPanel();
+}
+function closeStatus(){ const p=document.getElementById("statusPanel"), b=document.getElementById("statusBackdrop");
+  if(p)p.classList.add("hidden"); if(b)b.classList.add("hidden"); }
+function openStatus(){ const p=document.getElementById("statusPanel"), b=document.getElementById("statusBackdrop");
+  renderStatusPanel(); if(p)p.classList.remove("hidden"); if(b)b.classList.remove("hidden"); refreshStatus(true); }
+function toggleStatus(){ const p=document.getElementById("statusPanel");
+  if(p && p.classList.contains("hidden")) openStatus(); else closeStatus(); }
+
+// ── CALENDAR TIER ENRICHMENT (item 4): peril dots render immediately from
+//    storm_available_dates; tier (P1 core / P2 / P3 margin) is refined per visible
+//    storm date via the existing storm_date_layers read, cached. Read-only. ──
+let TIERS = {};
+try { TIERS = JSON.parse(sessionStorage.getItem("tempest_tiers")||"{}"); } catch(e){ TIERS={}; }
+function topTier(circles){ let p1=0,p2=0,p3=0; (circles||[]).forEach(c=>{ if(c.tier==="P1")p1++; else if(c.tier==="P2")p2++; else if(c.tier==="P3")p3++; });
+  return p1?"P1":p2?"P2":p3?"P3":null; }
+async function enrichVisibleTiers(){
+  if(!calView) return;
+  const y=calView.y, m=calView.m;
+  const targets=Object.keys(AVAIL).filter(ds=>{ const t=new Date(ds+"T00:00:00Z");
+    return t.getUTCFullYear()===y && t.getUTCMonth()===m && !TIERS[ds]; });
+  if(!targets.length) return;
+  for(const ds of targets){
+    try{ const rows=await pquery("storm_date_layers",{date:ds}); const tt={};
+      rows.forEach(r=>{ try{ tt[r.peril]=topTier(JSON.parse(r.circles_json||"[]")); }catch(e){} });
+      TIERS[ds]=tt;
+    }catch(e){ TIERS[ds]=TIERS[ds]||{}; }
+  }
+  try{ sessionStorage.setItem("tempest_tiers", JSON.stringify(TIERS)); }catch(e){}
+  renderCal();   // repaint with tier treatment (targets now cached -> no re-loop)
 }
 
 async function boot(){
@@ -829,8 +989,19 @@ async function boot(){
   document.addEventListener("click", e => { const c=document.getElementById("cal");
     if(!c.classList.contains("hidden") && !c.contains(e.target) && e.target.id!=="navDateBtn") c.classList.add("hidden"); });
   const eb=document.getElementById("expandBtn");
-  if(eb) eb.onclick=()=>{ const f=document.body.classList.toggle("fullmap");
-    eb.innerHTML=f?"\u26f6 Collapse":"\u26f6 Expand"; window.dispatchEvent(new Event("resize")); };
+  if(eb) eb.onclick=()=>setFullmap(!document.body.classList.contains("fullmap"));
+  // floating Exit (header is hidden in full-screen) + status panel/backdrop, appended
+  // to <body> so their fixed positioning is never clipped by the app layout.
+  if(!document.getElementById("fmExit")){ const fx=document.createElement("button"); fx.id="fmExit";
+    fx.innerHTML="\u26f6 Exit full-screen"; fx.onclick=()=>setFullmap(false); document.body.appendChild(fx); }
+  if(!document.getElementById("statusPanel")){
+    const bp=document.createElement("div"); bp.id="statusBackdrop"; bp.className="hidden"; bp.onclick=closeStatus;
+    const sp=document.createElement("div"); sp.id="statusPanel"; sp.className="hidden";
+    document.body.appendChild(bp); document.body.appendChild(sp); }
+  const sb=document.getElementById("statusBtn"); if(sb) sb.onclick=toggleStatus;
+  document.addEventListener("keydown", e=>{ if(e.key==="Escape"){
+    if(document.body.classList.contains("fullmap")) setFullmap(false); closeStatus(); } });
+  refreshStatus(false);   // color the header heartbeat dot on load (silent-death at a glance)
 
   loadAvailable();   // calendar dots + perils chip (cached in sessionStorage; non-blocking)
 
