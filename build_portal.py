@@ -28,10 +28,15 @@ html,body{height:100%}
 #app{display:flex;flex-direction:column;height:100%}
 #tbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
   background:linear-gradient(90deg,#0b1220,#16223c);color:#e9eef7;
-  padding:8px 14px;box-shadow:0 2px 10px rgba(0,0,0,.3);z-index:1200}
-#tbar .brand{display:flex;align-items:center;gap:8px;font-weight:800;letter-spacing:.5px;font-size:16px}
-#tbar .brand .logo{font-size:18px;filter:drop-shadow(0 0 6px #5b8cff)}
-#tbar .brand .sub{font-weight:500;color:#9fb3d9;font-size:12px;letter-spacing:.3px}
+  padding:13px 16px;box-shadow:0 2px 10px rgba(0,0,0,.3);z-index:1200}
+#tbar .brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.5px;font-size:21px}
+#tbar .brand .logo{display:inline-flex;align-items:center}
+#tbar .brand .tlogo{width:27px;height:27px;display:block;filter:drop-shadow(0 0 5px rgba(247,182,0,.5))}
+#tbar .brand .sub{font-weight:500;color:#9fb3d9;font-size:13px;letter-spacing:.3px}
+/* mobile: keep the bigger logo but tighten the bar a touch so it doesn't dominate */
+body.mobile #tbar{padding:11px 13px}
+body.mobile #tbar .brand{font-size:19px}
+body.mobile #tbar .brand .tlogo{width:25px;height:25px}
 #tbar .datenav{display:flex;align-items:center;gap:6px;position:relative}
 #tbar .datenav button{background:#1e2b46;color:#e9eef7;border:1px solid #2c3c5e;border-radius:6px;
   padding:5px 10px;font-size:13px;cursor:pointer;line-height:1}
@@ -347,7 +352,7 @@ body.mobile #banner{bottom:102px}
 """
 
 SHELL_HEAD = """  <div id="tbar">
-    <div class="brand"><span class="logo">&#9731;</span> TEMPEST <span class="sub">KCC Storm Review</span></div>
+    <div class="brand"><span class="logo"><svg class="tlogo" viewBox="0 0 24 24" aria-label="TEMPEST storm mark"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" fill="#f7b600"/></svg></span> TEMPEST <span class="sub">KCC Storm Review</span></div>
     <div class="datenav">
       <button id="navPrev" title="Previous day">&#9664;</button>
       <button id="navDateBtn" class="datebtn">&mdash;</button>
@@ -1322,6 +1327,8 @@ def main():
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
 <title>TEMPEST — KCC Storm Review</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230b1220'/><polygon points='17 5 7 18 14.5 18 13 27 24 13 16 13 17 5' fill='%23f7b600'/></svg>"/>
+<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230b1220'/><polygon points='17 5 7 18 14.5 18 13 27 24 13 16 13 17 5' fill='%23f7b600'/></svg>"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@{LEAFLET}/dist/leaflet.css"/>
 <style>
 {portal_css}
