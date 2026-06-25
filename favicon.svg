@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
+<defs><clipPath id="fxFV"><polygon points="106.00,60.00 83.00,99.84 37.00,99.84 14.00,60.00 37.00,20.16 83.00,20.16"/></clipPath></defs>
+<g clip-path="url(#fxFV)"><line x1="60" y1="60" x2="98.85" y2="39.34" stroke="#9BD8FF" stroke-width="4"/><circle cx="76.92" cy="30.51" r="3" fill="#9BD8FF"/><circle cx="31.27" cy="51.38" r="2.6" fill="#9BD8FF"/></g>
+<polygon points="106.00,60.00 83.00,99.84 37.00,99.84 14.00,60.00 37.00,20.16 83.00,20.16" fill="none" stroke="#F5B100" stroke-width="3" stroke-linejoin="round"/>
+<polygon points="88.00,60.00 74.00,84.25 46.00,84.25 32.00,60.00 46.00,35.75 74.00,35.75" fill="none" stroke="#F5B100" stroke-width="2.2" stroke-linejoin="round" opacity="0.9"/>
+<circle cx="60" cy="60" r="5" fill="#F5B100"/></svg>

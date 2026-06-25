@@ -31,12 +31,12 @@ html,body{height:100%}
   padding:13px 16px;box-shadow:0 2px 10px rgba(0,0,0,.3);z-index:1200}
 #tbar .brand{display:flex;align-items:center;gap:10px;font-weight:800;letter-spacing:.5px;font-size:21px}
 #tbar .brand .logo{display:inline-flex;align-items:center}
-#tbar .brand .tlogo{width:27px;height:27px;display:block;filter:drop-shadow(0 0 5px rgba(247,182,0,.5))}
+#tbar .brand .tlogo{width:36px;height:36px;display:block}
 #tbar .brand .sub{font-weight:500;color:#9fb3d9;font-size:13px;letter-spacing:.3px}
 /* mobile: keep the bigger logo but tighten the bar a touch so it doesn't dominate */
-body.mobile #tbar{padding:11px 13px}
+body.mobile #tbar{padding:10px 13px}
 body.mobile #tbar .brand{font-size:19px}
-body.mobile #tbar .brand .tlogo{width:25px;height:25px}
+body.mobile #tbar .brand .tlogo{width:32px;height:32px}
 #tbar .datenav{display:flex;align-items:center;gap:6px;position:relative}
 #tbar .datenav button{background:#1e2b46;color:#e9eef7;border:1px solid #2c3c5e;border-radius:6px;
   padding:5px 10px;font-size:13px;cursor:pointer;line-height:1}
@@ -352,7 +352,7 @@ body.mobile #banner{bottom:102px}
 """
 
 SHELL_HEAD = """  <div id="tbar">
-    <div class="brand"><span class="logo"><svg class="tlogo" viewBox="0 0 24 24" aria-label="TEMPEST storm mark"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" fill="#f7b600"/></svg></span> TEMPEST <span class="sub">KCC Storm Review</span></div>
+    <div class="brand"><span class="logo"><svg class="tlogo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" aria-label="TEMPEST"><defs><linearGradient id="swTT" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#F5B100" stop-opacity="0.55"/><stop offset="1" stop-color="#F5B100" stop-opacity="0.02"/></linearGradient><clipPath id="hxTT"><polygon points="106.00,60.00 83.00,99.84 37.00,99.84 14.00,60.00 37.00,20.16 83.00,20.16"/></clipPath></defs><g clip-path="url(#hxTT)"><path d="M60 60 L60 16 A44 44 0 0 1 98.85 39.34 Z" fill="url(#swTT)"/><line x1="60" y1="60" x2="106" y2="60" stroke="#F5B100" stroke-width="0.7" opacity="0.30"/><line x1="60" y1="60" x2="83" y2="99.84" stroke="#F5B100" stroke-width="0.7" opacity="0.30"/><line x1="60" y1="60" x2="37" y2="99.84" stroke="#F5B100" stroke-width="0.7" opacity="0.30"/><line x1="60" y1="60" x2="14" y2="60" stroke="#F5B100" stroke-width="0.7" opacity="0.30"/><line x1="60" y1="60" x2="37" y2="20.16" stroke="#F5B100" stroke-width="0.7" opacity="0.30"/><line x1="60" y1="60" x2="83" y2="20.16" stroke="#F5B100" stroke-width="0.7" opacity="0.30"/><line x1="60" y1="60" x2="98.85" y2="39.34" stroke="#9BD8FF" stroke-width="2.2"/><circle cx="76.92" cy="30.51" r="3" fill="#9BD8FF"/><circle cx="45.34" cy="43.59" r="2.2" fill="#F5B100"/><circle cx="97.24" cy="67.55" r="2.4" fill="#F5B100"/><circle cx="74.74" cy="53.77" r="2.0" fill="#F5B100"/><circle cx="54.85" cy="20.33" r="2.2" fill="#F5B100"/><circle cx="31.27" cy="51.38" r="2.6" fill="#9BD8FF"/></g><polygon points="106.00,60.00 83.00,99.84 37.00,99.84 14.00,60.00 37.00,20.16 83.00,20.16" fill="none" stroke="#F5B100" stroke-width="2.4" stroke-linejoin="round"/><polygon points="88.00,60.00 74.00,84.25 46.00,84.25 32.00,60.00 46.00,35.75 74.00,35.75" fill="none" stroke="#F5B100" stroke-width="1.6" stroke-linejoin="round" opacity="0.85"/><circle cx="60" cy="60" r="4" fill="#F5B100"/></svg></span> TEMPEST <span class="sub">KCC Storm Review</span></div>
     <div class="datenav">
       <button id="navPrev" title="Previous day">&#9664;</button>
       <button id="navDateBtn" class="datebtn">&mdash;</button>
@@ -1329,8 +1329,15 @@ def main():
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
 <title>TEMPEST — KCC Storm Review</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230b1220'/><polygon points='17 5 7 18 14.5 18 13 27 24 13 16 13 17 5' fill='%23f7b600'/></svg>"/>
-<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%230b1220'/><polygon points='17 5 7 18 14.5 18 13 27 24 13 16 13 17 5' fill='%23f7b600'/></svg>"/>
+<link rel="icon" type="image/svg+xml" href="favicon.svg"/>
+<link rel="icon" href="favicon.ico" sizes="any"/>
+<link rel="apple-touch-icon" href="apple-touch-icon.png"/>
+<link rel="manifest" href="site.webmanifest"/>
+<meta name="theme-color" content="#0B1A2F"/>
+<meta property="og:title" content="TEMPEST — Hail Intelligence"/>
+<meta property="og:description" content="Storm-triggered hail intelligence and lead targeting."/>
+<meta property="og:image" content="og-image.png"/>
+<meta property="og:type" content="website"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@{LEAFLET}/dist/leaflet.css"/>
 <style>
 {portal_css}
