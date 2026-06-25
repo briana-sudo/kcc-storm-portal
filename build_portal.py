@@ -122,6 +122,23 @@ body.fullmap #fmExit:hover{background:#1e2b46}
 .livectl .live-sub.off,.livectl .live-op.off{opacity:.4;pointer-events:none}
 .livectl .live-sub button{background:#1e2b46;border:none;color:#fff;border-radius:5px;width:27px;height:22px;cursor:pointer;font-size:11px}
 .livectl .live-sub #lvNow{width:auto;padding:0 7px;font-size:9px;font-weight:800;letter-spacing:.5px;background:#0a8a2e}
+.livectl .live-sub{flex-wrap:wrap}
+.livectl .live-sub #lvTz{width:auto;padding:0 7px;font-size:9px;font-weight:800;letter-spacing:.5px;background:#3056a8}
+.livectl .live-sub #lvTz.armed{background:#e8430a}
+.livectl .live-sub .ts{min-width:88px}
+/* timezone-change confirmation toast: notes area + tz, X to close, auto-closes 5s */
+.tz-toast{position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:3000;background:#0f1830;color:#e9eef7;
+  border:1px solid #2c3c5e;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.5);padding:11px 14px;
+  display:flex;align-items:flex-start;gap:12px;max-width:92vw;font-size:13px;animation:tzin .18s ease-out}
+@keyframes tzin{from{opacity:0;transform:translate(-50%,-6px)}to{opacity:1;transform:translate(-50%,0)}}
+.tz-toast .tz-msg b{color:#7fd1ff}
+.tz-toast .tz-ab{background:#1e2b46;color:#cfe3ff;font-size:10px;font-weight:800;padding:1px 6px;border-radius:9px;margin-left:4px}
+.tz-toast .tz-area{color:#9fb3d9;font-size:11px;margin-top:3px}
+.tz-toast .tz-x{background:transparent;border:none;color:#9fb3d9;font-size:20px;line-height:1;cursor:pointer;padding:0 2px;margin-top:-2px}
+.tz-toast .tz-x:hover{color:#fff}
+body.tz-arming .leaflet-container{cursor:crosshair}
+body.tz-arming::after{content:"Click the map to set the timezone";position:fixed;top:64px;left:50%;transform:translateX(-50%);
+  z-index:3000;background:#e8430a;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.4)}
 .livectl input[type=range]{flex:1;min-width:60px}
 .livectl .ts{font-variant-numeric:tabular-nums;color:#0a8a2e;font-weight:700;font-size:10px;min-width:104px;text-align:right}
 .livectl .opv{min-width:32px;text-align:right;color:#555}
@@ -563,7 +580,35 @@ function addLiveLayers(){
     const out=[]; for(let i=NFR-1;i>=0;i--){ const d=new Date(now.getTime()-i*STEP*60000);
       out.push(""+d.getUTCFullYear()+pad(d.getUTCMonth()+1)+pad(d.getUTCDate())+pad(d.getUTCHours())+pad(d.getUTCMinutes())); }
     return out; }
-  const fmtTs=ts=>ts.slice(0,4)+"-"+ts.slice(4,6)+"-"+ts.slice(6,8)+" "+ts.slice(8,10)+":"+ts.slice(10,12)+"Z";
+  // ── frame time shown in a selectable timezone (default St. Louis / Central), 12-hour AM/PM ──
+  let TZ="America/Chicago", TZLABEL="Central", tzArmed=false;
+  const tzAbbr=z=>{ try{ return new Intl.DateTimeFormat("en-US",{timeZone:z,timeZoneName:"short"}).formatToParts(new Date()).find(p=>p.type==="timeZoneName").value; }catch(e){ return ""; } };
+  const fmtTs=ts=>{ const d=new Date(Date.UTC(+ts.slice(0,4),+ts.slice(4,6)-1,+ts.slice(6,8),+ts.slice(8,10),+ts.slice(10,12)));
+    try{ return new Intl.DateTimeFormat("en-US",{timeZone:TZ,hour:"numeric",minute:"2-digit",hour12:true,timeZoneName:"short"}).format(d); }
+    catch(e){ return ts.slice(8,10)+":"+ts.slice(10,12)+"Z"; } };
+  function tzFromLatLng(lat,lng){   // CONUS longitude bands -> IANA zone (DST handled by Intl)
+    if(lat>=51 && lng<=-129) return ["America/Anchorage","Alaska"];
+    if(lng<-150) return ["Pacific/Honolulu","Hawaii"];
+    if(lng>=-87.5) return ["America/New_York","Eastern"];
+    if(lng>=-101.0) return ["America/Chicago","Central"];
+    if(lng>=-114.0) return ["America/Denver","Mountain"];
+    return ["America/Los_Angeles","Pacific"]; }
+  async function areaName(lat,lng){ try{   // reverse-geocode the clicked point (free, no key)
+    const r=await fetch("https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=8&lat="+lat+"&lon="+lng,{headers:{"Accept":"application/json"}});
+    const j=await r.json(), a=j.address||{};
+    return [a.city||a.town||a.village||a.hamlet||a.county, a.state].filter(Boolean).join(", ")||(lat.toFixed(2)+", "+lng.toFixed(2));
+  }catch(e){ return lat.toFixed(2)+", "+lng.toFixed(2); } }
+  function tzToast(label,abbr,area){   // confirmation box: notes area + tz, X to close, auto-close 5s
+    const ex=document.getElementById("tzToast"); if(ex) ex.remove();
+    const t=document.createElement("div"); t.id="tzToast"; t.className="tz-toast";
+    t.innerHTML='<div class="tz-msg">Timezone set to <b>'+label+' Time</b> <span class="tz-ab">'+abbr+'</span><div class="tz-area" id="tzArea">'+area+'</div></div><button class="tz-x" title="Close">\\u00d7</button>';
+    document.body.appendChild(t);
+    const close=()=>{ const e=document.getElementById("tzToast"); if(e) e.remove(); };
+    t.querySelector(".tz-x").addEventListener("click",close); setTimeout(close,5000); }
+  function applyTz(lat,lng){ const r=tzFromLatLng(lat,lng); TZ=r[0]; TZLABEL=r[1];
+    const t=document.getElementById("lvTime"); if(t&&frames[fIdx]) t.textContent=fmtTs(frames[fIdx].ts);
+    tzToast(TZLABEL,tzAbbr(TZ),"\\u2026 ("+lat.toFixed(2)+", "+lng.toFixed(2)+")");
+    areaName(lat,lng).then(a=>{ const el=document.getElementById("tzArea"); if(el) el.textContent=a; }); }
   function buildFrames(){
     frames.forEach(f=>{ if(TMAP.hasLayer(f.layer)) TMAP.removeLayer(f.layer); });
     frames=stamps().map(ts=>({ts,layer:L.tileLayer(N0Q(ts),{pane:"nexradPane",opacity:0,maxZoom:19,attribution:"NEXRAD N0Q &copy; IEM/NOAA"})}));
@@ -654,7 +699,7 @@ function addLiveLayers(){
     d.innerHTML=
       '<div class="live-hd"><label class="lv-master"><input type="checkbox" id="lvMaster" checked> <b>\\u26a1 LIVE <span class="tag">current</span></b></label><small>live awareness \\u2014 not the scored storm</small></div>'+
       '<div class="live-row"><label><input type="checkbox" id="lvRadar"> \\u2622 NEXRAD loop <span class="muted">(60 min)</span></label>'+
-        '<div class="live-sub off" id="lvRadarSub"><button id="lvPlay">\\u25b6</button><button id="lvNow" title="Stop on the current (live) frame">NOW</button><input type="range" id="lvFrame" min="0" max="'+(NFR-1)+'" value="'+(NFR-1)+'"><span class="ts" id="lvTime">\\u2014</span></div>'+
+        '<div class="live-sub off" id="lvRadarSub"><button id="lvPlay">\\u25b6</button><button id="lvNow" title="Stop on the current (live) frame">NOW</button><input type="range" id="lvFrame" min="0" max="'+(NFR-1)+'" value="'+(NFR-1)+'"><span class="ts" id="lvTime">\\u2014</span><button id="lvTz" title="Set timezone by clicking the map">TZ</button></div>'+
         '<div class="live-op off" id="lvRadarOp"><input type="range" id="lvRadarV" min="0" max="100" value="70"><span class="opv" id="lvRadarVv">70%</span></div></div>'+
       '<div class="live-row"><label><input type="checkbox" id="lvWarn"> \\u25a2 NWS warnings <span class="muted">TOR/SVR<span id="lvWarnN"></span></span></label>'+
         '<div class="live-op off" id="lvWarnOp"><input type="range" id="lvWarnV" min="0" max="100" value="85"><span class="opv" id="lvWarnVv">85%</span></div></div>'+
@@ -674,6 +719,9 @@ function addLiveLayers(){
   if(pl) pl.addEventListener("click",()=>{ if(playT) stopPlay(); else play(); });
   const nw=document.getElementById("lvNow");   // snap to the current (live) frame + stop
   if(nw) nw.addEventListener("click",()=>{ stopPlay(); if(frames.length){ fIdx=frames.length-1; showFrame(); } });
+  const tzb=document.getElementById("lvTz");    // arm: next map click sets the timezone
+  if(tzb) tzb.addEventListener("click",()=>{ tzArmed=!tzArmed; tzb.classList.toggle("armed",tzArmed);
+    document.body.classList.toggle("tz-arming",tzArmed); });
   const fr=document.getElementById("lvFrame");
   if(fr) fr.addEventListener("input",()=>{ stopPlay(); fIdx=+fr.value; showFrame(); });
   const rv=document.getElementById("lvRadarV");
@@ -709,6 +757,10 @@ function addLiveLayers(){
   // ADD 4: zoom drives level-of-detail + viewport cull for the storm-track layer
   // (re-render from in-memory data on zoom/pan; no re-fetch). Coarse out, full in.
   TMAP.on("zoomend moveend",()=>{ if(trackOn) renderTracks(); });
+  // timezone-pick: when armed (TZ button), the next map click sets the display timezone
+  // from that location + shows the confirmation toast. Normal map clicks are untouched.  TMAP.on("click",e=>{ if(tzArmed){ tzArmed=false;
+    const b=document.getElementById("lvTz"); if(b) b.classList.remove("armed");
+    document.body.classList.remove("tz-arming"); applyTz(e.latlng.lat,e.latlng.lng); } });
 }
 
 async function boot(){
