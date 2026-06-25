@@ -1,9 +1,8 @@
 name: Deploy TEMPEST portal
 
-# Same deploy shape as the SignalDelta portal: GitHub Actions -> GitHub Pages,
-# with the proxy URL + bearer token injected at deploy time from repo SECRETS
-# (never committed). The portal is static (no build step) — Actions writes
-# config.js from the secrets, then publishes the folder to Pages.
+# GitHub Actions -> GitHub Pages, static (no build step). TOKEN-FREE: config.js is
+# committed and holds only the public Netlify forwarder URL (/api/storm); the proxy
+# bearer token lives server-side in the Netlify function env var. No repo secrets.
 
 on:
   push:

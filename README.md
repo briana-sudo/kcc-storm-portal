@@ -30,20 +30,33 @@ Whitelisted queries used: `storm_available_dates`, `storm_date_layers`,
 circles + evidence) is cached on the `AdCluster` nodes so the proxy serves it with
 no compute. `public/geo_ref.json` ships the constant service-area reference.
 
-## Deploy (one-time)
-1. **Secrets** (repo → Settings → Secrets and variables → Actions) — same values
-   the SignalDelta portal uses:
-   - `VITE_PROXY_URL` — the named Cloudflare tunnel URL fronting the proxy.
-   - `VITE_PROXY_API_TOKEN` — the proxy `PROXY_API_TOKEN` bearer.
-2. **Pages**: Settings → Pages → Source = GitHub Actions.
-3. Push to `main` (or run the workflow) → Actions writes `config.js` from the
-   secrets and publishes to Pages.
-4. On the host: `nssm restart SignalDeltaProxy` once, so the proxy loads the
-   `storm_*` queries.
+## Token-free architecture (the bearer never touches the public site)
+```
+GitHub Pages portal  ──POST {name,params}──▶  Netlify function /api/storm
+   (no credential)                              (holds STORM_PROXY_TOKEN, server-side)
+                                                       │ injects Bearer
+                                                       ▼
+                                          proxy.signaldeltas.com /query (READ)  ──▶ Neo4j
+```
+The public bundle (`config.js`) holds only the **public** forwarder URL
+(`https://kcc-proxy.netlify.app/api/storm`). The proxy bearer token lives **only**
+in the Netlify function's `STORM_PROXY_TOKEN` environment variable — never in this
+repo, never in any client bundle (same pattern `kcc-netlify-proxy` uses for the
+Anthropic key). So GitHub Pages deploys with **no secrets at all**.
 
-`config.js` is **gitignored** — the token only ever exists as a CI-injected build
-artifact (same trade-off as the SignalDelta portal: a shared read-only token that
-gates a read-only, tenant-guarded proxy).
+## Deploy (one-time)
+1. **Netlify** (`kcc-proxy` site → env vars): `STORM_PROXY_TOKEN` = the SignalDelta
+   proxy `PROXY_API_TOKEN`. The `/api/storm` forwarder (in the `kcc-netlify-proxy`
+   repo) is already wired via a `netlify.toml` redirect.
+2. **Pages**: repo → Settings → Pages → Source = GitHub Actions. Push to `main` →
+   Actions publishes the static folder (no secret injection).
+3. On the host: `nssm restart SignalDeltaProxy` once, so the proxy loads the
+   `storm_*` whitelisted queries.
+
+## Local dev / demo
+`py -m http.server 8902` in this folder, open `index.html?date=2024-05-26`. It calls
+the live `/api/storm` forwarder; if that's unreachable it falls back to a local
+`public/sample/<date>.json` (gitignored) and shows a "DEMO DATA" badge.
 
 ## Local dev / demo
 `py -m http.server 8902` in this folder, open `index.html?date=2024-05-26`. With a
