@@ -178,6 +178,22 @@ body.fullmap #fmExit:hover{background:#1e2b46}
 .ldrawer .lbody-inner{margin-left:6px}
 /* the relocated controls drop their floating leaflet chrome (they're in a drawer now) */
 .ldrawer .lbody-inner .livectl,.ldrawer .lbody-inner .legend{position:static !important;margin:0 !important;max-width:340px}
+/* ── MAP LOCATION SEARCH (city/state + address typeahead) — navigation only.
+   Reuses the weather tab's Photon (OSM) geocoder/autocomplete; no key, no proxy. ── */
+.mapsearch{background:#fff;padding:6px;border-radius:7px;box-shadow:0 1px 6px rgba(0,0,0,.35);width:236px;font-size:12px}
+.mapsearch .ms-row{display:flex;gap:4px;margin-bottom:4px}
+.mapsearch .ms-row:last-child{margin-bottom:0}
+.mapsearch input{flex:1;min-width:0;padding:4px 7px;border:1px solid #c9d2dd;border-radius:5px;font-size:12px}
+.mapsearch button.ms-go{flex:none;background:#16223c;color:#fff;border:none;border-radius:5px;padding:0 9px;font-size:12px;cursor:pointer}
+.mapsearch button.ms-go:hover{background:#22324f}
+.mapsearch .ms-addrwrap{position:relative;display:block}
+.mapsearch .ms-sugg{position:absolute;left:0;right:0;top:calc(100% + 2px);z-index:1200;background:#fff;border:1px solid #c9d2dd;
+  border-radius:6px;box-shadow:0 8px 22px rgba(0,0,0,.25);max-height:230px;overflow:auto}
+.mapsearch .ms-sugg:empty{display:none}
+.mapsearch .ms-sg{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid #eef1f5;
+  padding:6px 8px;font-size:12px;cursor:pointer;color:#223}
+.mapsearch .ms-sg:hover{background:#eef3ff}
+.mapsearch .ms-status{color:#b00;font-size:11px;min-height:0}
 /* ── LIVE (current) awareness group (item 7 ext): NEXRAD loop + NWS warnings +
    storm-track cones. Three independent toggles + opacity dials, visually separated
    from the engine's date-driven scored layers. All display-only, in-memory only. ── */
@@ -1730,6 +1746,60 @@ function initWeather(){
   renderSaved();
 }
 
+// ── MAP LOCATION SEARCH (navigation only): two controls on the main map —
+//    (1) City/State -> forward geocode -> setView; (2) Address with PREDICTIVE
+//    AUTOCOMPLETE -> exact point. REUSES the weather tab's Photon (OSM) geocoder/
+//    autocomplete (free, no key, CORS-ok, already reachable from the deployed
+//    portal) — no new dependency, no proxy. Read-only: only moves the map view +
+//    a temporary marker. renderMap's §3 core is untouched. ──
+const _PHOTON = "https://photon.komoot.io/api/";
+function _photonLabel(p){ return [p.name, (p.city||p.county||p.town), p.state, p.postcode].filter(Boolean).join(", "); }
+async function photonSuggest(q, limit){
+  const r = await fetch(_PHOTON+"?limit="+(limit||6)+"&lang=en&q="+encodeURIComponent(q));
+  const j = await r.json();
+  return (j.features||[]).map(f=>{ const c=f.geometry&&f.geometry.coordinates; if(!c) return null;
+    return { label:_photonLabel(f.properties||{}), lat:c[1], lng:c[0] }; }).filter(Boolean);
+}
+let SEARCH_MARKER = null;
+function flyToSearch(loc, zoom){
+  if(!TMAP) return;
+  TMAP.setView([loc.lat, loc.lng], zoom);
+  if(SEARCH_MARKER) TMAP.removeLayer(SEARCH_MARKER);
+  SEARCH_MARKER = L.marker([loc.lat, loc.lng]).addTo(TMAP).bindPopup(loc.label||"searched location").openPopup();
+}
+function addMapSearch(){
+  if(!TMAP || document.querySelector(".mapsearch")) return;
+  const ctl = L.control({position:"topleft"});
+  ctl.onAdd = function(){
+    const d = L.DomUtil.create("div","mapsearch");
+    d.innerHTML =
+      '<div class="ms-row"><input class="ms-city" type="text" placeholder="City, ST (e.g. Springfield, IL)"><button class="ms-go ms-citygo" type="button">Go</button></div>'+
+      '<div class="ms-row ms-addrwrap"><input class="ms-addr" type="text" placeholder="Address\u2026" autocomplete="off"><div class="ms-sugg"></div></div>'+
+      '<div class="ms-status"></div>';
+    L.DomEvent.disableClickPropagation(d); L.DomEvent.disableScrollPropagation(d);
+    return d;
+  };
+  ctl.addTo(TMAP);
+  const cityEl=document.querySelector(".ms-city"), goEl=document.querySelector(".ms-citygo"),
+        addrEl=document.querySelector(".ms-addr"), suggEl=document.querySelector(".ms-sugg"),
+        stEl=document.querySelector(".ms-status");
+  // (1) CITY/STATE: forward geocode the first match, pan/zoom to it
+  async function cityGo(){ const q=cityEl.value.trim(); if(!q) return; stEl.textContent="Searching\u2026";
+    try{ const hits=await photonSuggest(q,1); if(!hits.length){ stEl.textContent="\u26a0 not found"; return; }
+      stEl.textContent=""; flyToSearch(hits[0], 11); }catch(e){ stEl.textContent="\u26a0 search unreachable"; } }
+  goEl.addEventListener("click", cityGo);
+  cityEl.addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); cityGo(); } });
+  // (2) ADDRESS: predictive autocomplete (debounced) -> exact point (reuses Photon)
+  let acT=null;
+  addrEl.addEventListener("input", ()=>{ const q=addrEl.value.trim(); clearTimeout(acT);
+    if(q.length<3){ suggEl.innerHTML=""; return; }
+    acT=setTimeout(async()=>{ try{ const hits=await photonSuggest(q,6); suggEl.innerHTML="";
+      hits.forEach(h=>{ const b=document.createElement("button"); b.type="button"; b.className="ms-sg"; b.textContent=h.label;
+        b.onclick=()=>{ suggEl.innerHTML=""; addrEl.value=h.label; flyToSearch(h, 16); }; suggEl.appendChild(b); });
+    }catch(e){ suggEl.innerHTML=""; } }, 350); });
+  document.addEventListener("click", e=>{ const w=document.querySelector(".ms-addrwrap"); if(w && !w.contains(e.target)) suggEl.innerHTML=""; });
+}
+
 async function boot(){
   if(matchMedia("(pointer:coarse)").matches || /Android|iPhone|iPad|iPod|Mobile|Silk/i.test(navigator.userAgent))
     document.body.classList.add("mobile");
@@ -1794,6 +1864,7 @@ async function boot(){
   addLiveLayers();      // item 7 ext: live NEXRAD loop + NWS warnings + storm-track cones (display-only, all off by default)
   initWeather();        // weather tab: rain forecast for job scheduling (isolated tool view; NWS + Census, no graph/engine)
   addChaseLayer(D.chase);   // item 8 Step 3 v2: chase TARGETING block at the bottom of the Layers panel (master OFF)
+  addMapSearch();           // map location search: City/State + address typeahead (reuses Photon; navigation only)
   setupLeftDrawers();       // item 8 Step 3 v2 Part 6: LIVE + Active perils -> left-edge slide-out drawers (desktop)
   buildOperatorPanel(D, forecast);
   setupMobile();
