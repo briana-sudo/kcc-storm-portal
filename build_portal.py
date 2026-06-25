@@ -274,8 +274,13 @@ body.mobile .leaflet-top.leaflet-right,body.mobile .leaflet-bottom.leaflet-left{
 .wx-place{font-weight:800;font-size:14px;margin-bottom:7px;color:#cdeafe}
 .wx-form{display:flex;gap:6px}
 .wx-addr{flex:1;background:#16223c;border:1px solid #2c3c5e;border-radius:7px;color:#e9eef7;padding:7px 9px;font-size:12px}
-.wx-form button,.wx-pick{background:#2f6fe0;border:none;color:#fff;border-radius:7px;padding:7px 11px;font-size:12px;font-weight:700;cursor:pointer}
-.wx-pick{background:#1e8a4a;margin-top:6px;width:100%}
+.wx-form button,.wx-pick,.wx-here{background:#2f6fe0;border:none;color:#fff;border-radius:7px;padding:7px 11px;font-size:12px;font-weight:700;cursor:pointer}
+.wx-loc-btns{display:flex;gap:6px;margin-top:6px}
+.wx-here{flex:1;background:#1e8a4a}.wx-pick{flex:1;background:#3a4a66}
+.wx-sugg{display:flex;flex-direction:column;margin-top:5px;background:#0c1426;border-radius:8px;overflow:hidden}
+.wx-sugg:empty{display:none}
+.wx-sg{text-align:left;background:transparent;border:none;border-bottom:1px solid #1a2740;color:#dbe7fb;padding:8px 10px;font-size:12px;cursor:pointer}
+.wx-sg:last-child{border-bottom:none}.wx-sg:hover{background:#16223c}
 .wx-gc-status{font-size:11px;color:#ffb27a;min-height:14px;margin-top:4px}
 .wx-body{flex:1;overflow:auto;padding:13px 15px}
 .wx-load,.wx-err{color:#9fb3d9;font-size:13px;padding:18px 4px;text-align:center}
@@ -284,13 +289,18 @@ body.mobile .leaflet-top.leaflet-right,body.mobile .leaflet-bottom.leaflet-left{
 .wx-now.wx-wet{background:#3a1b1b;border:1px solid #7a2b2b}.wx-now.wx-risk{background:#3a3320;border:1px solid #7a6a2b}.wx-now.wx-dry{background:#15301f;border:1px solid #2b6a45}
 .wx-now-h{font-weight:800;font-size:15px}.wx-now-s{font-size:12px;color:#cfe;margin-top:3px}.wx-now-note{font-size:10px;color:#8aa0c6;margin-top:6px;font-style:italic}
 .wx-sec-t{font-weight:800;font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:#8aa0c6;margin:6px 0 7px}
+.wx-sunline{display:flex;gap:18px;font-size:12px;color:#d7e6ff;margin:0 0 12px;padding:8px 11px;background:#13203c;border-radius:9px}
 .wx-hours{display:flex;gap:5px;overflow-x:auto;padding-bottom:8px;margin-bottom:14px}
-.wx-h{flex:0 0 auto;width:40px;display:flex;flex-direction:column;align-items:center;gap:3px;background:#13203c;border-radius:8px;padding:6px 2px}
+.wx-h{flex:0 0 auto;width:42px;display:flex;flex-direction:column;align-items:center;gap:3px;background:#13203c;border-radius:8px;padding:6px 2px}
+.wx-h.wx-sunrise,.wx-h.wx-sunset{background:#1b2a17;box-shadow:inset 0 0 0 1px #3c5a2c}
 .wx-ht{font-size:9px;color:#8aa0c6;white-space:nowrap}.wx-hv{font-size:10px;font-weight:800;color:#7fd1ff}.wx-htemp{font-size:9px;color:#9fb3d9}
-.wx-bar{height:46px;width:14px;display:flex;align-items:flex-end;background:#0c1426;border-radius:3px;overflow:hidden}
+.wx-ic{font-size:15px;line-height:1}
+.wx-bar{height:42px;width:14px;display:flex;align-items:flex-end;background:#0c1426;border-radius:3px;overflow:hidden}
 .wx-bar i{display:block;width:100%;background:linear-gradient(#7fd1ff,#2f6fe0);border-radius:3px}
+.wx-note{color:#5a667a;font-weight:500;font-size:9px;text-transform:none;letter-spacing:0}
 .wx-days{display:flex;flex-direction:column;gap:5px}
-.wx-d{display:grid;grid-template-columns:84px 46px 1fr auto;gap:8px;align-items:center;background:#13203c;border-radius:8px;padding:7px 10px;font-size:12px}
+.wx-d{display:grid;grid-template-columns:74px 20px 40px 1fr auto;gap:8px;align-items:center;background:#13203c;border-radius:8px;padding:7px 10px;font-size:12px}
+.wx-di{font-size:14px;line-height:1;text-align:center}
 .wx-d.night{background:#0e1830;opacity:.92}
 .wx-dn{font-weight:700;color:#cdeafe;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .wx-dv{font-weight:800;color:#6f87a8}.wx-dv.mid{color:#7fd1ff}.wx-dv.hi{color:#ff8aa0}
@@ -308,6 +318,20 @@ body.wx-arming .leaflet-container{cursor:crosshair}
 body.wx-arming::after{content:"Click the map to set the weather location";position:fixed;top:64px;left:50%;transform:translateX(-50%);
   z-index:3000;background:#2f6fe0;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.4)}
 @media(max-width:520px){.wx-panel{width:100%}}
+
+/* map locate / re-centre control (matches the Leaflet zoom bar) */
+.locate-ctl a{display:flex;align-items:center;justify-content:center;width:30px;height:30px;font-size:18px;color:#0b1220;text-decoration:none;background:#fff}
+.locate-ctl a:hover{background:#eef3ff}
+
+/* MOBILE: collapsible LIVE box — sits on the map above the bottom toolbar; collapsed to
+   just its header, taps slide it up/down. #banner (no-storm) parks just above it. */
+body.mobile .livectl.mobile-live{position:fixed;left:8px;right:8px;bottom:60px;width:auto;max-width:none;
+  max-height:34px;overflow:hidden;transition:max-height .26s ease;z-index:1455}
+body.mobile .livectl.mobile-live .live-hd{cursor:pointer;margin-bottom:0}
+body.mobile .livectl.mobile-live .live-hd::after{content:"\\25b4";margin-left:auto;color:#8a93a6;font-size:12px}
+body.mobile .livectl.mobile-live.lv-expanded{max-height:78vh !important;overflow:auto}
+body.mobile .livectl.mobile-live.lv-expanded .live-hd::after{content:"\\25be"}
+body.mobile #banner{bottom:102px}
 """
 
 SHELL_HEAD = """  <div id="tbar">
@@ -386,6 +410,17 @@ function assemble(date, rows, geo){
   const inmkt = {}, chase = {};
   rows.forEach(r => { (isChase(r) ? chase : inmkt)[r.peril] = r; });
   const h = inmkt.hail, ch = chase.hail;
+  // EVIDENCE-LEAK FIX (Step 3): the cached in-market evidence_json is only bbox-clipped
+  // (engine uses full_poly.bounds, a rectangle), so points in the bbox-but-outside-
+  // polygon rendered as in-market OUT in the ring. Clip in-market evidence to the
+  // geofence POLYGON here (point-in-polygon vs the geo_ref outer boundary). Chase
+  // evidence is NOT clipped — it is ring data, gated by the chase Evidence sub-toggle.
+  const _gfRings = ((geo && geo.boundaries) || []).flatMap(g => !g ? [] :
+    g.type === "Polygon" ? [g.coordinates[0]] : g.type === "MultiPolygon" ? g.coordinates.map(p => p[0]) : []);
+  const _inGF = (lng, lat) => _gfRings.some(ring => { let inside = false;
+    for(let i=0,j=ring.length-1;i<ring.length;j=i++){ const xi=ring[i][0],yi=ring[i][1],xj=ring[j][0],yj=ring[j][1];
+      if(((yi>lat)!==(yj>lat)) && (lng < (xj-xi)*(lat-yi)/(yj-yi)+xi)) inside=!inside; } return inside; });
+  const evIn = (h ? parseJSON(h.evidence_json) : []).filter(p => !_gfRings.length || _inGF(p.lng, p.lat));
   const layer = r => r ? { swath_cells: parseJSON(r.swath_json), circles: parseJSON(r.circles_json),
                            evidence: parseJSON(r.evidence_json),
                            summary: { cells: parseJSON(r.swath_json).length, circles: r.circle_count } } : null;
@@ -398,10 +433,10 @@ function assemble(date, rows, geo){
   const D = {
     storm_date: date,
     summary: { events: 0, swath_cells: unifiedSwath.length,
-               swath_mode: hasSwath ? "per_cell" : "none", evidence_points: h ? parseJSON(h.evidence_json).length : 0,
+               swath_mode: hasSwath ? "per_cell" : "none", evidence_points: evIn.length,
                circles: h ? h.circle_count : 0, qualifying: 0, priority: 0, in_area: 0, buffer: 0 },
     center: [38.63, -90.2], events: [], zips: [],
-    evidence_points: h ? parseJSON(h.evidence_json) : [],
+    evidence_points: evIn,
     swath_cells: unifiedSwath,
     swath_mode: hasSwath ? "per_cell" : "none",
     geo_ref: geo || { boundaries: [], cities: [] },
@@ -811,7 +846,7 @@ function addLiveLayers(){
   const ctl=L.control({position:"bottomright"});
   ctl.onAdd=function(){ const d=L.DomUtil.create("div","livectl");
     d.innerHTML=
-      '<div class="live-hd"><label class="lv-master"><input type="checkbox" id="lvMaster" checked> <b>\\u26a1 LIVE <span class="tag">current</span></b></label><small>live awareness \\u2014 not the scored storm</small></div>'+
+      '<div class="live-hd"><label class="lv-master"><input type="checkbox" id="lvMaster"> <b>\\u26a1 LIVE <span class="tag">current</span></b></label><small>live awareness \\u2014 not the scored storm</small></div>'+
       '<div class="live-row"><label><input type="checkbox" id="lvRadar"> \\u2622 NEXRAD loop <span class="muted">(60 min)</span></label>'+
         '<div class="live-sub off" id="lvRadarSub"><button id="lvPlay">\\u25b6</button><button id="lvNow" title="Stop on the current (live) frame">NOW</button><input type="range" id="lvFrame" min="0" max="'+(NFR-1)+'" value="'+(NFR-1)+'"><span class="ts" id="lvTime">\\u2014</span><button id="lvTz" title="Set timezone by clicking the map">TZ</button></div>'+
         '<div class="live-op off" id="lvRadarOp"><input type="range" id="lvRadarV" min="0" max="100" value="70"><span class="opv" id="lvRadarVv">70%</span></div></div>'+
@@ -859,14 +894,13 @@ function addLiveLayers(){
   const tv=document.getElementById("lvTrackV");
   if(tv) tv.addEventListener("input",()=>{ trackOp=tv.value/100; document.getElementById("lvTrackVv").textContent=tv.value+"%"; trackOpacity(); });
 
-  // FIX 3: master LIVE toggle — turning it OFF cascades OFF all three sub-layers.
+  // master LIVE toggle (default OFF): checking it turns ON all three sub-layers
+  // (NEXRAD loop + warnings + storm tracks); unchecking turns all three OFF.
   const M=document.getElementById("lvMaster");
-  if(M) M.addEventListener("change",()=>{ const card=document.querySelector(".livectl");
-    if(!M.checked){
-      ["lvRadar","lvWarn","lvTrack"].forEach(id=>{ const cb=document.getElementById(id);
-        if(cb&&cb.checked){ cb.checked=false; cb.dispatchEvent(new Event("change")); } });
-      if(card) card.classList.add("lv-off");
-    } else if(card) card.classList.remove("lv-off"); });
+  if(M) M.addEventListener("change",()=>{ const card=document.querySelector(".livectl"), want=M.checked;
+    ["lvRadar","lvWarn","lvTrack"].forEach(id=>{ const cb=document.getElementById(id);
+      if(cb && cb.checked!==want){ cb.checked=want; cb.dispatchEvent(new Event("change")); } });
+    if(card){ card.classList.toggle("lv-off", !want); if(card.classList.contains("mobile-live")&&want) card.classList.add("lv-expanded"); } });
 
   // ADD 4: zoom drives level-of-detail + viewport cull for the storm-track layer
   // (re-render from in-memory data on zoom/pan; no re-fetch). Coarse out, full in.
@@ -876,6 +910,31 @@ function addLiveLayers(){
   TMAP.on("click",e=>{ if(tzArmed){ tzArmed=false;
     const b=document.getElementById("lvTz"); if(b) b.classList.remove("armed");
     document.body.classList.remove("tz-arming"); applyTz(e.latlng.lat,e.latlng.lng); } });
+
+  // MOBILE: the LIVE box collapses to just its header (LIVE + checkbox); tap the header
+  // to slide it up/down. Tapping the master checkbox also expands + turns the layers on.
+  const card=document.querySelector(".livectl"), hd=card&&card.querySelector(".live-hd");
+  if(card&&hd&&document.body.classList.contains("mobile")){
+    card.classList.add("mobile-live");           // collapsed by default (CSS)
+    hd.addEventListener("click",e=>{
+      if(e.target.closest(".lv-master")){ card.classList.add("lv-expanded"); return; }  // checkbox handles on/off
+      card.classList.toggle("lv-expanded"); });
+  }
+
+  // LOCATE button on the map: mobile -> centre on the device location; otherwise (or if
+  // denied/unavailable) -> recentre on St. Louis. Standalone Leaflet control near the zoom.
+  const ST_LOUIS=[38.63,-90.23];
+  const lc=L.control({position:"topleft"});
+  lc.onAdd=function(){ const d=L.DomUtil.create("div","leaflet-bar locate-ctl");
+    d.innerHTML='<a href="#" title="My location / re-centre on St. Louis">\\u25ce</a>';
+    L.DomEvent.disableClickPropagation(d);
+    d.querySelector("a").addEventListener("click",ev=>{ ev.preventDefault();
+      if(navigator.geolocation){ navigator.geolocation.getCurrentPosition(
+        p=>TMAP.setView([p.coords.latitude,p.coords.longitude],11),
+        ()=>TMAP.setView(ST_LOUIS,9), {timeout:8000,maximumAge:60000}); }
+      else TMAP.setView(ST_LOUIS,9); });
+    return d; };
+  lc.addTo(TMAP);
 }
 
 // ── CHASE TARGETING LAYER (item 8 Step 3 v2): chase-ZONE TARGETING only — ad-target
@@ -986,7 +1045,8 @@ function initWeather(){
     '<div class="wx-hd"><b>\\ud83c\\udf27 Weather</b><span class="wx-sub">rain timing \\u00b7 job scheduling</span><button class="wx-x" title="Close">\\u00d7</button></div>'+
     '<div class="wx-loc"><div class="wx-place">\\u2014</div>'+
       '<form class="wx-form"><input class="wx-addr" type="text" placeholder="Type an address\\u2026" autocomplete="off"><button type="submit">Go</button></form>'+
-      '<button class="wx-pick" type="button">\\ud83d\\udccd Pick location on the map</button>'+
+      '<div class="wx-sugg"></div>'+
+      '<div class="wx-loc-btns"><button class="wx-here" type="button">\\ud83d\\udccd Use my location</button><button class="wx-pick" type="button">\\ud83d\\uddfa\\ufe0f Pick on map</button></div>'+
       '<div class="wx-gc-status"></div></div>'+
     '<div class="wx-body"></div>'+
     '<div class="wx-saved"><div class="wx-saved-h"><b>Saved locations</b><button class="wx-save-cur" type="button">+ Save current</button></div><div class="wx-saved-list"></div></div>';
@@ -1001,6 +1061,35 @@ function initWeather(){
 
   const pop=p=>(p&&p.probabilityOfPrecipitation&&p.probabilityOfPrecipitation.value!=null)?p.probabilityOfPrecipitation.value:0;
   const fmtHour=iso=>{ try{ return new Intl.DateTimeFormat("en-US",{hour:"numeric",hour12:true,timeZone:"America/Chicago"}).format(new Date(iso)); }catch(e){ return String(iso).slice(11,16); } };
+  const fmtHM=d=>{ try{ return new Intl.DateTimeFormat("en-US",{hour:"numeric",minute:"2-digit",hour12:true,timeZone:"America/Chicago"}).format(d); }catch(e){ return ""; } };
+  // sky icon from NWS shortForecast + day/night (sun, moon, sun+cloud, rain, storm, snow, fog)
+  const wxIcon=(s,day)=>{ s=(s||"").toLowerCase();
+    if(/thunder|lightning|t-?storm/.test(s)) return "\\u26c8\\ufe0f";
+    if(/snow|sleet|ice|flurr|wintry|blizzard/.test(s)) return "\\ud83c\\udf28\\ufe0f";
+    if(/rain|shower|drizzle/.test(s)) return "\\ud83c\\udf27\\ufe0f";
+    if(/fog|haze|mist|smoke/.test(s)) return "\\ud83c\\udf2b\\ufe0f";
+    if(/sunny|clear|fair/.test(s)) return day?"\\u2600\\ufe0f":"\\ud83c\\udf19";
+    if(/partly|mostly cloudy|few clouds|scattered|partly sunny/.test(s)) return day?"\\u26c5":"\\u2601\\ufe0f";
+    if(/cloud|overcast/.test(s)) return "\\u2601\\ufe0f";
+    return day?"\\u2600\\ufe0f":"\\ud83c\\udf19"; };
+  // sunrise/sunset (SunCalc algorithm; no API, commercial-safe). Returns {rise,set} UTC Dates.
+  function sunTimes(lat,lng,base){ const rad=Math.PI/180, dayMs=86400000, J1970=2440588, J2000=2451545, e=rad*23.4397, J0=0.0009;
+    const fromJ=j=>new Date((j+0.5-J1970)*dayMs);
+    const lw=rad*-lng, phi=rad*lat, d=base.valueOf()/dayMs-0.5+J1970-J2000;
+    const n=Math.round(d-J0-lw/(2*Math.PI)), ds=J0+(lw)/(2*Math.PI)+n;
+    const M=rad*(357.5291+0.98560028*ds);
+    const L=M+rad*(1.9148*Math.sin(M)+0.02*Math.sin(2*M)+0.0003*Math.sin(3*M))+rad*102.9372+Math.PI;
+    const dec=Math.asin(Math.sin(e)*Math.sin(L));
+    const Jnoon=J2000+ds+0.0053*Math.sin(M)-0.0069*Math.sin(2*L);
+    const cosw=(Math.sin(-0.833*rad)-Math.sin(phi)*Math.sin(dec))/(Math.cos(phi)*Math.cos(dec));
+    if(cosw>1||cosw<-1) return null;
+    const w0=Math.acos(cosw), Jset=J2000+(J0+(w0+lw)/(2*Math.PI)+n)+0.0053*Math.sin(M)-0.0069*Math.sin(2*L);
+    return { rise: fromJ(Jnoon-(Jset-Jnoon)), set: fromJ(Jset) }; }
+  const dayLabel=p=>{ if(/^(Today|Tonight|This |Overnight)/.test(p.name)) return p.name.replace(/^This /,"");
+    const d=new Date(p.startTime);
+    const wd=new Intl.DateTimeFormat("en-US",{weekday:"short",timeZone:"America/Chicago"}).format(d);
+    const dn=new Intl.DateTimeFormat("en-US",{day:"numeric",timeZone:"America/Chicago"}).format(d);
+    return wd+" "+dn+(p.isDaytime?"":" night"); };
 
   function geocode(addr){ return new Promise((res,rej)=>{ const cb="__wxgc"+(++wxGcN);
     window[cb]=d=>{ cleanup(); const m=d&&d.result&&d.result.addressMatches&&d.result.addressMatches[0];
@@ -1020,11 +1109,11 @@ function initWeather(){
       ov.querySelector(".wx-place").textContent = label || (rl? rl.city+", "+rl.state : (+lat).toFixed(3)+", "+(+lng).toFixed(3));
       const hr=await (await fetch(pp.forecastHourly,{headers:{Accept:"application/geo+json"}})).json();
       const dy=await (await fetch(pp.forecast,{headers:{Accept:"application/geo+json"}})).json();
-      renderForecast(body, hr.properties.periods, dy.properties.periods);
+      renderForecast(body, hr.properties.periods, dy.properties.periods, +lat, +lng);
     }catch(e){ body.innerHTML='<div class="wx-err">Couldn\\'t load the forecast here.<br>'+((e&&e.message)||e)+'</div>'; }
   }
 
-  function renderForecast(body, hourly, daily){
+  function renderForecast(body, hourly, daily, lat, lng){
     const near=Math.max(0, ...hourly.slice(0,2).map(pop));
     const nextRain=hourly.find(h=>pop(h)>=30);
     const cls= near>=50?"wet":near>=20?"risk":"dry";
@@ -1032,11 +1121,19 @@ function initWeather(){
     const sub = nextRain? "Next \\u226530% rain chance at "+fmtHour(nextRain.startTime)+" ("+pop(nextRain)+"%)" : "No \\u226530% rain chance in the hourly window";
     let h='<div class="wx-now wx-'+cls+'"><div class="wx-now-h">'+head+'</div><div class="wx-now-s">'+sub+'</div>'+
           '<div class="wx-now-note">Minute-by-minute nowcast: pending \\u2014 no free commercial source (NWS resolution is hourly)</div></div>';
-    h+='<div class="wx-sec-t">Hourly rain chance (Central)</div><div class="wx-hours">';
-    hourly.slice(0,24).forEach(p=>{ const v=pop(p); h+='<div class="wx-h"><span class="wx-ht">'+fmtHour(p.startTime)+'</span><div class="wx-bar"><i style="height:'+Math.max(3,v)+'%"></i></div><span class="wx-hv">'+v+'%</span><span class="wx-htemp">'+p.temperature+'\\u00b0</span></div>'; });
+    // today's sunrise/sunset for this location
+    const sun = sunTimes(lat,lng,new Date());
+    if(sun) h+='<div class="wx-sunline"><span>\\ud83c\\udf05 Sunrise '+fmtHM(sun.rise)+'</span><span>\\ud83c\\udf07 Sunset '+fmtHM(sun.set)+'</span></div>';
+    h+='<div class="wx-sec-t">Hourly (Central)</div><div class="wx-hours">';
+    hourly.slice(0,24).forEach(p=>{ const v=pop(p);
+      // sky icon (sunrise/sunset glyph overrides on the hour the sun crosses)
+      let ic=wxIcon(p.shortForecast,p.isDaytime), sb="";
+      const st=new Date(p.startTime), en=new Date(st.getTime()+3600000), s2=sunTimes(lat,lng,st);
+      if(s2){ if(s2.rise>=st&&s2.rise<en){ ic="\\ud83c\\udf05"; sb="sunrise"; } else if(s2.set>=st&&s2.set<en){ ic="\\ud83c\\udf07"; sb="sunset"; } }
+      h+='<div class="wx-h'+(sb?" wx-"+sb:"")+'"><span class="wx-ht">'+fmtHour(p.startTime)+'</span><span class="wx-ic">'+ic+'</span><div class="wx-bar"><i style="height:'+Math.max(3,v)+'%"></i></div><span class="wx-hv">'+v+'%</span><span class="wx-htemp">'+p.temperature+'\\u00b0</span></div>'; });
     h+='</div>';
-    h+='<div class="wx-sec-t">7-day outlook</div><div class="wx-days">';
-    daily.slice(0,14).forEach(p=>{ const v=pop(p); h+='<div class="wx-d'+(p.isDaytime?"":" night")+'"><span class="wx-dn">'+p.name+'</span><span class="wx-dv '+(v>=50?"hi":v>=20?"mid":"")+'">'+v+'%</span><span class="wx-ds">'+p.shortForecast+'</span><span class="wx-dt">'+p.temperature+'\\u00b0</span></div>'; });
+    h+='<div class="wx-sec-t">7-day outlook <span class="wx-note">(NWS max)</span></div><div class="wx-days">';
+    daily.slice(0,14).forEach(p=>{ const v=pop(p); h+='<div class="wx-d'+(p.isDaytime?"":" night")+'"><span class="wx-dn">'+dayLabel(p)+'</span><span class="wx-di">'+wxIcon(p.shortForecast,p.isDaytime)+'</span><span class="wx-dv '+(v>=50?"hi":v>=20?"mid":"")+'">'+v+'%</span><span class="wx-ds">'+p.shortForecast+'</span><span class="wx-dt">'+p.temperature+'\\u00b0</span></div>'; });
     h+='</div>';
     body.innerHTML=h;
   }
@@ -1058,8 +1155,35 @@ function initWeather(){
     if(!a.some(x=>Math.abs(x.lat-curLoc.lat)<1e-4 && Math.abs(x.lng-curLoc.lng)<1e-4)){ a.push({label:curLoc.label, lat:curLoc.lat, lng:curLoc.lng}); putSaved(a); renderSaved(); } };
 
   ov.querySelector(".wx-form").onsubmit=async e=>{ e.preventDefault(); const v=ov.querySelector(".wx-addr").value.trim(); if(!v) return;
+    ov.querySelector(".wx-sugg").innerHTML="";
     const st=ov.querySelector(".wx-gc-status"); st.textContent="Looking up address\\u2026";
     try{ const loc=await geocode(v); st.textContent=""; setLoc(loc); }catch(err){ st.textContent="\\u26a0 "+err; } };
+
+  // address autocomplete (suggestions as you type) via Photon (free OSM autocomplete, CORS-ok)
+  let acT=null; const addrEl=ov.querySelector(".wx-addr"), suggEl=ov.querySelector(".wx-sugg");
+  addrEl.addEventListener("input",()=>{ const q=addrEl.value.trim(); clearTimeout(acT);
+    if(q.length<3){ suggEl.innerHTML=""; return; }
+    acT=setTimeout(async()=>{ try{
+      const r=await fetch("https://photon.komoot.io/api/?limit=6&lang=en&q="+encodeURIComponent(q));
+      const j=await r.json(); suggEl.innerHTML="";
+      (j.features||[]).forEach(f=>{ const p=f.properties, c=f.geometry&&f.geometry.coordinates; if(!c) return;
+        const lbl=[p.name,(p.city||p.county||p.town),p.state,p.postcode].filter(Boolean).join(", ");
+        const b=document.createElement("button"); b.type="button"; b.className="wx-sg"; b.textContent=lbl;
+        b.onclick=()=>{ suggEl.innerHTML=""; addrEl.value=""; setLoc({label:lbl, lat:c[1], lng:c[0]}); };
+        suggEl.appendChild(b); });
+    }catch(e){ suggEl.innerHTML=""; } }, 350); });
+  document.addEventListener("click",e=>{ if(!ov.querySelector(".wx-loc").contains(e.target)) suggEl.innerHTML=""; });
+
+  // "Use my location" (browser Geolocation -> reverse-geocode the label, then NWS)
+  ov.querySelector(".wx-here").onclick=()=>{ const st=ov.querySelector(".wx-gc-status");
+    if(!navigator.geolocation){ st.textContent="Geolocation not available on this device"; return; }
+    st.textContent="Locating\\u2026";
+    navigator.geolocation.getCurrentPosition(async p=>{ st.textContent="";
+      const lat=p.coords.latitude, lng=p.coords.longitude; let label="My location";
+      try{ const r=await fetch("https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=12&lat="+lat+"&lon="+lng,{headers:{Accept:"application/json"}});
+        const j=await r.json(), a=j.address||{}; const nm=[a.city||a.town||a.village||a.county, a.state].filter(Boolean).join(", "); if(nm) label=nm; }catch(e){}
+      setLoc({label:label, lat:lat, lng:lng});
+    }, err=>{ st.textContent="\\u26a0 Couldn\\'t get your location"; }, {timeout:9000,maximumAge:60000}); };
 
   ov.querySelector(".wx-pick").onclick=()=>{ wxArmed=true; document.body.classList.add("wx-arming"); closeWx(); };
   if(TMAP) TMAP.on("click",e=>{ if(wxArmed){ wxArmed=false; document.body.classList.remove("wx-arming"); openWx();
