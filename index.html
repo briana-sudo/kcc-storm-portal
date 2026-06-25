@@ -71,6 +71,27 @@ html,body{height:100%}
 #wrap{height:100%}
 #side h1{font-size:14px}
 .legend{font-size:11.5px}
+/* ── operator summary panel (replaces the engine debug readout) ── */
+#side .op-verdict{font-size:15px;font-weight:800;margin:8px 0 3px;padding:6px 11px;border-radius:7px;color:#fff;display:inline-block}
+.op-verdict.strong{background:#bd0026}.op-verdict.sig{background:#e8430a}.op-verdict.mod{background:#f97316}
+.op-verdict.weak{background:#8a7d00}.op-verdict.none{background:#6b7280}
+#side .op-sub{color:#667;font-size:12px;margin:0 0 10px}
+#side .op-maxhail{font-size:13px;margin:6px 0 10px;padding:8px 11px;background:#fff4e6;border-left:4px solid #e8430a;border-radius:5px}
+#side .op-maxhail b{font-size:21px;color:#bd0026;vertical-align:-2px}
+#side .op-peril{border-top:1px solid #eee;padding:9px 0 7px}
+#side .op-peril h3{margin:0 0 4px;font-size:13px;display:flex;align-items:center;gap:6px;letter-spacing:.3px}
+#side .op-peril .swatch{width:13px;height:13px;border-radius:3px;display:inline-block}
+#side .op-peril .metric{font-size:13px}
+#side .op-peril .metric b{font-size:16px}
+#side .op-peril .tiers{color:#566;font-size:12px;margin-top:3px}
+#side .op-peril .tiers b{color:#111}
+#side .op-row{font-size:12px;padding:7px 0;border-top:1px solid #eee;color:#445}
+#side .op-adspend .muted{font-style:italic}
+#side .op-forecast{font-size:12px;padding:8px 10px;background:#eef3ff;border-radius:6px;margin:9px 0;border-left:4px solid #5b8cff;color:#234}
+/* expandable map (desktop): hide the side panel so the map fills the area */
+#tbar #expandBtn{background:#1e2b46;color:#e9eef7;border:1px solid #2c3c5e;border-radius:6px;padding:5px 10px;font-size:13px;cursor:pointer}
+#tbar #expandBtn:hover{background:#274069}
+body.fullmap #side{display:none}
 /* storm-aware calendar popup */
 .cal{position:absolute;top:calc(100% + 6px);left:0;z-index:1300;background:#16223c;
   border:1px solid #2c3c5e;border-radius:10px;padding:11px;width:300px;max-width:94vw;color:#e9eef7;
@@ -110,6 +131,7 @@ html,body{height:100%}
 .msheet,#mbackdrop{display:none}
 body.mobile #tbar{gap:8px}
 body.mobile #tbar .brand .sub{display:none}
+body.mobile #expandBtn{display:none}   /* the mobile map is already full-screen */
 body.mobile #wrap{height:100%}
 body.mobile #map{width:100% !important;height:100% !important;flex:1 1 auto}
 body.mobile #mtoolbar{display:flex;flex:none;height:52px;background:#0b1220;border-top:1px solid #2c3c5e;z-index:1460}
@@ -152,6 +174,7 @@ body.mobile .leaflet-top.leaflet-right,body.mobile .leaflet-bottom.leaflet-left{
         <div class="cal-legend"><span><i class="dot hail"></i>hail</span><span><i class="dot wind"></i>wind</span><span><i class="dot torn"></i>tornado</span></div>
       </div>
     </div>
+    <button id="expandBtn" title="Expand the map">&#9974; Expand</button>
     <div class="status" id="connStatus"></div>
   </div>
   <div id="main">
@@ -676,6 +699,48 @@ function assemble(date, rows, geo){
   return D;
 }
 
+// ── operator summary panel: per-peril verdict + numbers (replaces debug pills) ──
+const CELL_AREA = 0.374;
+const PERIL_SWATCH = {hail:"#e8430a", wind:"#2171b5", tornado:"#6a3fa0"};
+function tierCounts(circles){ const t={P1:0,P2:0,P3:0}; (circles||[]).forEach(c=>{ if(t[c.tier]!=null)t[c.tier]++; }); return t; }
+function maxMetric(circles){ return (circles||[]).reduce((m,c)=>Math.max(m, c.max_hail_size_in||0), 0); }
+function buildOperatorPanel(D, forecast){
+  const side=document.getElementById("side"); if(!side) return;
+  const perils=[];
+  if(D.circles && D.circles.length) perils.push({k:"hail",label:"HAIL",circles:D.circles,swath:D.swath_cells,ev:D.evidence_points});
+  if(D.wind) perils.push({k:"wind",label:"WIND",circles:D.wind.circles,swath:D.wind.swath_cells,ev:D.wind.evidence});
+  if(D.tornado) perils.push({k:"tornado",label:"TORNADO",circles:D.tornado.circles,swath:D.tornado.swath_cells,ev:D.tornado.evidence});
+  let P1=0,P2=0,P3=0; perils.forEach(p=>{const t=tierCounts(p.circles);P1+=t.P1;P2+=t.P2;P3+=t.P3;});
+  let verdict,vc;
+  if(!perils.length){ verdict="No qualifying storm"; vc="none"; }
+  else if(P1>=10){ verdict="Strong, widespread event"; vc="strong"; }
+  else if(P1>=1){ verdict="Significant \u2014 strong localized core"; vc="sig"; }
+  else if(P2>=15){ verdict="Moderate event"; vc="mod"; }
+  else if(P2>=1){ verdict="Weak \u2014 mostly margin"; vc="weak"; }
+  else { verdict="Marginal \u2014 margin only"; vc="weak"; }
+  let h='<h1>Storm Review <span class="muted">'+D.storm_date+'</span></h1>';
+  h+='<div class="op-verdict '+vc+'">'+verdict+'</div>';
+  h+='<div class="op-sub">'+(perils.length ? ('P1 '+P1+' \u00b7 P2 '+P2+' \u00b7 P3 '+P3+' across '+perils.map(p=>p.k).join(", ")) : 'nothing processed for this date')+'</div>';
+  const hail=perils.find(p=>p.k==="hail");
+  if(hail) h+='<div class="op-maxhail">Max hail <b>'+maxMetric(hail.circles).toFixed(2)+'"</b></div>';
+  perils.forEach(p=>{
+    const t=tierCounts(p.circles), targets=t.P1+t.P2, ev=p.ev||[];
+    const dmg = p.k==="tornado" ? ev.length : ev.filter(e=>e.damage).length;
+    let metric;
+    if(p.k==="hail") metric='Max size <b>'+maxMetric(p.circles).toFixed(2)+'"</b>';
+    else if(p.k==="wind") metric='Peak gust <b>'+Math.round(maxMetric(p.circles))+' mph</b>';
+    else metric='Debris swath <b>'+Math.round((p.swath||[]).length*CELL_AREA)+' mi\u00b2</b> \u00b7 rotation peak '+Math.round(maxMetric(p.circles));
+    h+='<div class="op-peril"><h3><span class="swatch" style="background:'+PERIL_SWATCH[p.k]+'"></span>'+p.label+'</h3>'+
+       '<div class="metric">'+metric+'</div>'+
+       '<div class="tiers">Targets (P1/P2): <b>'+targets+'</b> &nbsp;\u00b7&nbsp; tiers P1 '+t.P1+' \u00b7 P2 '+t.P2+' \u00b7 P3 '+t.P3+'</div>'+
+       '<div class="tiers">Evidence: '+ev.length+' SPC/LSR \u00b7 <b>'+dmg+'</b> damage-confirmed</div></div>';
+  });
+  if(forecast) h+='<div class="op-forecast"><b>Forecast (today):</b> '+forecast+'</div>';
+  h+='<div class="op-row op-adspend"><b>Ad spend:</b> <span class="muted">pending parcel data + CPC</span></div>';
+  h+='<div id="detail" class="op-row"><span class="muted">Click a target circle for lead detail.</span></div>';
+  side.innerHTML=h;
+}
+
 // ── storm-aware calendar: dates with data get peril dots (one cached query) ──
 async function loadAvailable(){
   try {
@@ -763,6 +828,9 @@ async function boot(){
   document.getElementById("calNext").onclick = e => { e.stopPropagation(); if(!calView)renderCal(); calView.m++; if(calView.m>11){calView.m=0;calView.y++;} renderCal(); };
   document.addEventListener("click", e => { const c=document.getElementById("cal");
     if(!c.classList.contains("hidden") && !c.contains(e.target) && e.target.id!=="navDateBtn") c.classList.add("hidden"); });
+  const eb=document.getElementById("expandBtn");
+  if(eb) eb.onclick=()=>{ const f=document.body.classList.toggle("fullmap");
+    eb.innerHTML=f?"\u26f6 Collapse":"\u26f6 Expand"; window.dispatchEvent(new Event("resize")); };
 
   loadAvailable();   // calendar dots + perils chip (cached in sessionStorage; non-blocking)
 
@@ -782,9 +850,19 @@ async function boot(){
     if(!banner && (!rows || !rows.length))
       banner = "No storm on record for "+date+" — nothing processed for this date yet.";
   }
+  // forecast tie-in (today's view only): current SPC-outlook risk from the heartbeat
+  let forecast = null;
+  if(date === todayUTC()){
+    try { const fs = await pquery("storm_forecast_status", {});
+      if(fs && fs[0]){ const r=fs[0].current_active_risk;
+        forecast = (r && r!=="none") ? r : "No qualifying severe risk in the SPC outlook right now."; } }
+    catch(e){}
+  }
   // ALWAYS render the interactive map (basemap + service-area reference), storm or not.
-  renderMap(assemble(date, rows||[], geo));
+  const D = assemble(date, rows||[], geo);
+  renderMap(D);
   setBaseStreet();
+  buildOperatorPanel(D, forecast);
   setupMobile();
   if(banner) showBanner(banner); else hideBanner();
 }
