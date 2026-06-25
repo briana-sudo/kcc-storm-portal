@@ -183,11 +183,22 @@ body.tz-arming::after{content:"Click the map to set the timezone";position:fixed
 .livectl .opv{min-width:32px;text-align:right;color:#555}
 .livectl .lv-master{display:flex;align-items:center;gap:6px;cursor:pointer;margin:0}
 .livectl.lv-off .live-row{opacity:.35;pointer-events:none}
-/* on-map storm-cell tag (item 7 ext bug2): hail size + rotation glyph, white halo so it
-   reads over radar; severe (TVS / >=1in) in red. Sits in trackPane, non-interactive. */
-.trk-tag{font:800 10px/1 system-ui,sans-serif;color:#08306b;white-space:nowrap;
-  text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff,0 0 3px #fff}
-.trk-tag.sev{color:#c1121f}
+/* typed storm-cell icons (item 7 ext): tornado funnel / hailstone+size / rotation swirl /
+   dot. In trackPane (pointerEvents:none) so re-enable hit-testing on the icons themselves. */
+.trk-ic{background:none;border:none;pointer-events:auto}
+.trk-ic svg{display:block;filter:drop-shadow(0 0 1.5px rgba(0,0,0,.55))}
+.ic-hail{display:flex;align-items:center;gap:1px}
+.ic-hail b{font:800 11px/1 system-ui,sans-serif;text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 3px #fff,0 0 3px #fff}
+.ic-dot{display:block;width:7px;height:7px;border-radius:50%;background:#2f8fff;border:1px solid #fff;box-shadow:0 0 2px rgba(0,0,0,.5)}
+/* clear click popup: labeled rows (label left / value right) */
+.trk-pop .leaflet-popup-content{margin:9px 12px;font-size:12px;color:#13203c;min-width:184px}
+.trk-pop .pp-h{display:flex;justify-content:space-between;align-items:baseline;gap:10px;margin-bottom:4px}
+.trk-pop .pp-h b{font-size:13px;color:#0b1220}
+.trk-pop .pp-h span{color:#8a93a6;font-size:10px}
+.trk-pop .pp-row{display:flex;justify-content:space-between;gap:16px;padding:3px 0;border-top:1px solid #eef0f5}
+.trk-pop .pp-row>span{color:#5a667a}
+.trk-pop .pp-row>b{color:#13203c;font-weight:700}
+.trk-pop .pp-ago>b{color:#0a8a2e}
 /* storm-aware calendar popup */
 .cal{position:absolute;top:calc(100% + 6px);left:0;z-index:1300;background:#16223c;
   border:1px solid #2c3c5e;border-radius:10px;padding:13px;width:404px;max-width:96vw;color:#e9eef7;
@@ -1154,44 +1165,52 @@ function addLiveLayers(){
     const la2=Math.asin(Math.sin(la)*Math.cos(d)+Math.cos(la)*Math.sin(d)*Math.cos(b));
     const lo2=lo+Math.atan2(Math.sin(b)*Math.sin(d)*Math.cos(la),Math.cos(d)-Math.sin(la)*Math.sin(la2));
     return [la2*180/Math.PI,lo2*180/Math.PI]; }
-  const isSig=p=>{ const tor=(p.tvs&&p.tvs!=="NONE"), meso=(p.meso&&p.meso!=="NONE"&&p.meso!=="0"); return (+p.max_size>=1)||tor||meso; };
-  // BUG1: nexrad_attr `drct` is met convention = the direction the storm moves FROM.
-  // The forward (travel) bearing is drct+180; the cone must fan toward travel, not drct.
-  // LOD (zoom controls density): z<7 coarse (significant cells only, no cones),
-  // 7-8 medium (significant = marker+cone+tag, trivial = faint dot), z>=9 full (all cells).
+  const compass=t=>["N","NNE","NE","ENE","E","ESE","SE","SSE","S","SSW","SW","WSW","W","WNW","NW","NNW"][Math.round((((t%360)+360)%360)/22.5)%16];
+  // typed map icons (crisp SVG divIcons): tornado funnel / hailstone w/ size / rotation swirl / plain dot
+  const icTor =()=>L.divIcon({className:"trk-ic",iconSize:[20,24],iconAnchor:[10,12],html:'<svg viewBox="0 0 20 24" width="20" height="24"><path d="M2 3 H18 L12 11 L12.5 22 L8 16 L7.5 11 Z" fill="#ff2020" stroke="#fff" stroke-width="1.2" stroke-linejoin="round"/></svg>'});
+  const icMeso=()=>L.divIcon({className:"trk-ic",iconSize:[20,20],iconAnchor:[10,10],html:'<svg viewBox="0 0 20 20" width="20" height="20"><path d="M10 3 a7 7 0 1 1 -5 2" fill="none" stroke="#ff8a00" stroke-width="2.6" stroke-linecap="round"/><path d="M3 3 L6.5 5 L4 8 Z" fill="#ff8a00"/></svg>'});
+  const icHail=sz=>{ const col=sz>=2?"#d11722":sz>=1?"#ff7a00":"#2f8fff";
+    return L.divIcon({className:"trk-ic",iconSize:[42,18],iconAnchor:[8,9],html:'<span class="ic-hail"><svg viewBox="0 0 16 16" width="16" height="16"><circle cx="8" cy="8" r="6" fill="'+col+'" stroke="#fff" stroke-width="1.6"/><circle cx="6" cy="6" r="1.5" fill="#fff" opacity=".85"/></svg><b style="color:'+col+'">'+sz+'"</b></span>'}); };
+  const icDot =()=>L.divIcon({className:"trk-ic",iconSize:[8,8],iconAnchor:[4,4],html:'<span class="ic-dot"></span>'});
+  // GRADUATED DECLUTTER (like radar apps): zoom OUT shows only the worst threats, zoom IN
+  // progressively reveals smaller cells. Hail-size cutoff drops as you zoom in.
+  const minHail=z=>z<=4?2.0:z===5?1.5:z===6?1.25:z===7?1.0:z===8?0.75:z===9?0.5:0;
+  function popupHtml(p,sz,mph,travel,tor,meso,off){
+    const r=['<div class="pp-h"><b>Storm cell '+p.storm_id+'</b><span>radar '+(p.nexrad||"?")+'</span></div>'];
+    r.push('<div class="pp-row"><span>Max hail size</span><b>'+(sz>0?sz+'"':"\u2014")+'</b></div>');
+    r.push('<div class="pp-row"><span>Storm motion</span><b>'+(mph?mph+" mph "+compass(travel)+" ("+Math.round(travel)+"\u00b0)":"stationary")+'</b></div>');
+    r.push('<div class="pp-row"><span>Rotation</span><b>'+(tor?"Tornado signature (TVS)":meso?"Mesocyclone":"none")+'</b></div>');
+    if(+p.posh>0) r.push('<div class="pp-row"><span>Severe-hail chance</span><b>'+p.posh+'%</b></div>');
+    if(+p.top>0)  r.push('<div class="pp-row"><span>Storm top</span><b>'+Math.round(p.top*3.281)+',000 ft</b></div>');
+    if(off>0)     r.push('<div class="pp-row pp-ago"><span>Shown at</span><b>'+off+' min ago</b></div>');
+    return r.join(""); }
   function renderTracks(){
     if(trackLayer&&TMAP.hasLayer(trackLayer)) TMAP.removeLayer(trackLayer);
     trackLayer=L.layerGroup(); if(!trackData){ return; }
-    const z=TMAP.getZoom(), COARSE=(z<8), FULL=(z>=10), PROJ=45, SPR=16;
-    const view=TMAP.getBounds().pad(0.35), off=frameOffsetMin; let shown=0;
+    const z=TMAP.getZoom(), view=TMAP.getBounds().pad(0.3), off=frameOffsetMin;
+    const minH=minHail(z), drawCones=(z>=7), PROJ=45, SPR=16; let shown=0;
     (trackData.features||[]).forEach(f=>{ const p=f.properties, c=f.geometry&&f.geometry.coordinates; if(!c) return;
-      let lat=c[1], lng=c[0]; const sknt=+p.sknt||0, drct=+p.drct||0, sz=+p.max_size||0;
-      if(off>0 && sknt>0){ const d2=dest(lat,lng,drct,sknt*1.852*(off/60)); lat=d2[0]; lng=d2[1]; }  // loop time-sync: back-project to frame time
-      if(!view.contains([lat,lng])) return;                 // viewport cull (perf + relevance)
-      const tor=(p.tvs&&p.tvs!=="NONE"), meso=(p.meso&&p.meso!=="NONE"&&p.meso!=="0"), sig=isSig(p);
-      if(COARSE && !sig) return;                            // coarse: significant cells ONLY
-      if(!FULL && !COARSE && !sig){                         // medium: trivial cell -> faint dot, no cone/tag
-        trackLayer.addLayer(L.circleMarker([lat,lng],{pane:"trackPane",renderer:R_track,radius:2,
-          color:"#9fc6ff",weight:1,opacity:0.45*trackOp,fillOpacity:0.35*trackOp})); shown++; return; }
-      const sev=tor||sz>=1, col=sev?"#ff3b30":(sz>=0.75?"#ff9500":"#9fc6ff");
+      const sknt=+p.sknt||0, drct=+p.drct||0, sz=+p.max_size||0;
+      const tor=(p.tvs&&p.tvs!=="NONE"), meso=(p.meso&&p.meso!=="NONE"&&p.meso!=="0");
+      if(!((tor&&z>=4)||(meso&&z>=6)||(sz>=minH))) return;     // graduated LOD gate
+      let lat=c[1], lng=c[0];
+      if(off>0 && sknt>0){ const d2=dest(lat,lng,drct,sknt*1.852*(off/60)); lat=d2[0]; lng=d2[1]; }  // loop time-sync
+      if(!view.contains([lat,lng])) return;                    // viewport cull
       const travel=(drct+180)%360, mph=Math.round(sknt*1.151);
-      const haz=[]; if(sz>0) haz.push(sz+'" hail'); if(tor) haz.push("TVS"); if(meso) haz.push("meso");
-      const mkr=L.circleMarker([lat,lng],{pane:"trackPane",renderer:R_track,radius:sig?6:3,
-        color:col,weight:1.5,opacity:trackOp,fillColor:col,fillOpacity:0.55*trackOp});
-      mkr.bindTooltip("Cell "+p.storm_id+" ("+(p.nexrad||"")+") \u00b7 "+(sknt?mph+" mph toward "+Math.round(travel)+"\u00b0":"stationary")+(haz.length?" \u00b7 "+haz.join(" \u00b7 "):"")+(off>0?" \u00b7 "+off+" min ago":""),{sticky:true});
-      trackLayer.addLayer(mkr); shown++;
-      if(sknt>0 && !COARSE){ const km=sknt*1.852*(PROJ/60);   // forward cone toward TRAVEL bearing
+      const icon= tor?icTor() : (sz>=0.75?icHail(sz) : (meso?icMeso():icDot()));
+      const mk=L.marker([lat,lng],{pane:"trackPane",icon:icon,riseOnHover:true});
+      mk.bindTooltip((tor?"Tornado":meso?"Rotation":"Hail")+(sz>0?" "+sz+'"':"")+" \u00b7 cell "+p.storm_id+(off>0?" ("+off+"m ago)":""),{direction:"top",offset:[0,-9]});
+      mk.bindPopup(popupHtml(p,sz,mph,travel,tor,meso,off),{className:"trk-pop"});
+      trackLayer.addLayer(mk); shown++;
+      if(drawCones && sknt>0){ const km=sknt*1.852*(PROJ/60), col=tor?"#ff2020":(sz>=1?"#ff7a00":"#2f8fff");
         [travel-SPR,travel+SPR].forEach(b=>trackLayer.addLayer(L.polyline([[lat,lng],dest(lat,lng,b,km)],
-          {pane:"trackPane",renderer:R_track,color:col,weight:1.5,opacity:0.85*trackOp,dashArray:"5 4"}))); }
-      if(sig && !COARSE){                                    // BUG2: on-map tag for significant cells
-        const rot=tor?"\u21bb TVS":(meso?"\u21bb meso":""), lbl=((sz>0?sz+'"':"")+" "+rot).trim();
-        if(lbl) trackLayer.addLayer(L.marker([lat,lng],{pane:"trackPane",interactive:false,
-          icon:L.divIcon({className:"trk-tag"+(sev?" sev":""),html:lbl,iconSize:null,iconAnchor:[-8,7]})})); }
+          {pane:"trackPane",renderer:R_track,interactive:false,color:col,weight:1.6,opacity:.8,dashArray:"5 4"}))); }
     });
+    const pn=TMAP.getPane("trackPane"); if(pn) pn.style.opacity=trackOp;
     if(trackOn) trackLayer.addTo(TMAP);
-    const cnt=document.getElementById("lvTrackN"); if(cnt) cnt.textContent=" "+shown+(COARSE?" sig":(off>0?" @-"+off+"m":"")); }
+    const cnt=document.getElementById("lvTrackN"); if(cnt) cnt.textContent=" "+shown+(off>0?" @-"+off+"m":""); }
   async function loadTrack(){ try{ const r=await fetch(ATTR,{cache:"no-store"}); trackData=await r.json(); renderTracks(); }catch(e){} }
-  function trackOpacity(){ if(!trackLayer) return; trackLayer.eachLayer(l=>{ if(l.setStyle) l.setStyle({opacity:trackOp,fillOpacity:0.55*trackOp}); }); }
+  function trackOpacity(){ const pn=TMAP.getPane("trackPane"); if(pn) pn.style.opacity=trackOp; }
 
   // ===== shared 5-min refresh timer (only while a live layer is on) =====
   function tick(){ if(radarOn) radarRefresh(); if(warnOn) loadWarn(); if(trackOn) loadTrack(); }
