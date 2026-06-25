@@ -633,7 +633,7 @@ function setFullmap(on){
 
 // ── STATUS DASHBOARD (item 3): read BOTH heartbeats via the existing whitelist
 //    queries; render green / stale / red per service. Read-only. ──
-let STATUS_CACHE={mon:null, fc:null, fill:null, err:null};
+let STATUS_CACHE={mon:null, fc:null, fill:null, dmg:null, err:null};
 function _ts(s){ const t=Date.parse(s); return isNaN(t)?0:t; }
 function fmtTs(s){ if(!s) return "\\u2014"; const t=_ts(s); if(!t) return s;
   return new Date(t).toISOString().slice(0,16).replace("T"," ")+"Z"; }
@@ -680,19 +680,21 @@ function renderStatusPanel(){
   h+=_svcCard("Monitor (hail)", c.mon, false);
   h+=_svcCard("Forecast (SPC)", c.fc, true);
   h+=_svcCard("Chase-fill (150mi)", c.fill, false);
+  h+=_svcCard("Chase-damage (250mi)", c.dmg, false);
   if(c.err && !c.mon && !c.fc) h+='<div class="svc-why">proxy: '+c.err+'</div>';
   p.innerHTML=h;
   const x=document.getElementById("spX"); if(x) x.onclick=closeStatus;
 }
 function _worstState(){ const rank={green:0,stale:1,red:2}; let w=null;
-  [[STATUS_CACHE.mon,false],[STATUS_CACHE.fc,true],[STATUS_CACHE.fill,false]].forEach(a=>{ if(a[0]){ const s=svcHealth(a[0],a[1]).state;
+  [[STATUS_CACHE.mon,false],[STATUS_CACHE.fc,true],[STATUS_CACHE.fill,false],[STATUS_CACHE.dmg,false]].forEach(a=>{ if(a[0]){ const s=svcHealth(a[0],a[1]).state;
     if(w===null || rank[s]>rank[w]) w=s; } }); return w; }
 async function refreshStatus(renderPanel){
-  let mon=null, fc=null, fill=null, err=null;
+  let mon=null, fc=null, fill=null, dmg=null, err=null;
   try{ const m=await pquery("storm_engine_status",{}); mon=(m&&m[0])||null; }catch(e){ err=e.message; }
   try{ const f=await pquery("storm_forecast_status",{}); fc=(f&&f[0])||null; }catch(e){ err=err||e.message; }
   try{ const x=await pquery("storm_fill_status",{}); fill=(x&&x[0])||null; }catch(e){ /* chase opt-in; absent until started */ }
-  STATUS_CACHE={mon,fc,fill,err};
+  try{ const y=await pquery("storm_damage_status",{}); dmg=(y&&y[0])||null; }catch(e){ /* damage opt-in; absent until started */ }
+  STATUS_CACHE={mon,fc,fill,dmg,err};
   const dot=document.querySelector("#statusBtn .hbdot"), w=_worstState();
   if(dot) dot.style.background = (w===null)?"#6b7280":(w==="red"?"#dc2626":w==="stale"?"#d9a600":"#16a34a");
   if(renderPanel) renderStatusPanel();
