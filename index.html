@@ -135,6 +135,23 @@ body.fullmap #fmExit:hover{background:#1e2b46}
 .nexctl .nexsub.off{opacity:.45}
 .nexctl input[type=range]{flex:1}
 .nexctl #nexv{min-width:34px;text-align:right;color:#555}
+/* ── LIVE (current) awareness group (item 7 ext): NEXRAD loop + NWS warnings +
+   storm-track cones. Three independent toggles + opacity dials, visually separated
+   from the engine's date-driven scored layers. All display-only, in-memory only. ── */
+.livectl{background:#fff;padding:8px 10px;border-radius:7px;box-shadow:0 1px 6px rgba(0,0,0,.35);font-size:12px;max-width:244px}
+.livectl .live-hd{display:flex;flex-direction:column;border-bottom:1px solid #e3e8f0;padding-bottom:5px;margin-bottom:5px}
+.livectl .live-hd b{font-size:11px;letter-spacing:.5px;color:#0b1220;display:flex;align-items:center;gap:6px}
+.livectl .live-hd .tag{background:#0b3;color:#fff;font-size:8px;font-weight:800;letter-spacing:.5px;padding:1px 5px;border-radius:9px;text-transform:uppercase}
+.livectl .live-hd small{color:#8a93a6;font-size:9px;letter-spacing:.2px;margin-top:1px}
+.livectl .live-row{margin:7px 0 0}
+.livectl label{display:flex;align-items:center;gap:6px;font-weight:700;cursor:pointer;color:#222}
+.livectl label .muted{color:#9aa3b4;font-weight:500;font-size:10px}
+.livectl .live-sub,.livectl .live-op{display:flex;align-items:center;gap:6px;margin-top:4px;padding-left:21px}
+.livectl .live-sub.off,.livectl .live-op.off{opacity:.4;pointer-events:none}
+.livectl .live-sub button{background:#1e2b46;border:none;color:#fff;border-radius:5px;width:27px;height:22px;cursor:pointer;font-size:11px}
+.livectl input[type=range]{flex:1;min-width:60px}
+.livectl .ts{font-variant-numeric:tabular-nums;color:#0a8a2e;font-weight:700;font-size:10px;min-width:104px;text-align:right}
+.livectl .opv{min-width:32px;text-align:right;color:#555}
 /* storm-aware calendar popup */
 .cal{position:absolute;top:calc(100% + 6px);left:0;z-index:1300;background:#16223c;
   border:1px solid #2c3c5e;border-radius:10px;padding:13px;width:404px;max-width:96vw;color:#e9eef7;
@@ -997,26 +1014,142 @@ async function enrichVisibleTiers(){
 //    The tile goes in a dedicated pane (z230) ABOVE the basemap but BELOW the swath/
 //    geofence (z250+), so swath-above-all-tiles holds. Off by default; it is the LATEST
 //    national mosaic (current time), labelled as such, independent of the reviewed date. ──
-function addNexrad(){
-  if(!TMAP || document.querySelector(".nexctl")) return;
-  if(!TMAP.getPane("nexradPane")){ TMAP.createPane("nexradPane");
-    const pn=TMAP.getPane("nexradPane"); pn.style.zIndex=230; pn.style.pointerEvents="none"; }
-  const radar=L.tileLayer("https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png",
-    { pane:"nexradPane", opacity:0.7, maxZoom:19, attribution:"NEXRAD N0Q &copy; IEM / NOAA" });
+// ITEM 7 EXT — LIVE (current) awareness group. Three independent toggles + opacity
+// dials: (A) animated NEXRAD reflectivity loop, (B) NWS TOR/SVR warning polygons,
+// (C) storm-track cones. ALL display-only: fetched live from IEM browser-side, held
+// ONLY in JS memory, discarded on refresh. NO graph, NO disk, NO engine. Panes sit
+// UNDER the engine swath (z230-232 < swath z400) so scored data stays on top. While
+// any layer is on, a single 5-min timer refreshes the live sources (sliding window).
+function addLiveLayers(){
+  if(!TMAP || document.querySelector(".livectl")) return;
+  const mk=(name,z)=>{ if(!TMAP.getPane(name)){ TMAP.createPane(name);
+    const p=TMAP.getPane(name); p.style.zIndex=z; p.style.pointerEvents="none"; } };
+  mk("nexradPane",230); mk("warnPane",231); mk("trackPane",232);
+  const R_warn=L.svg({pane:"warnPane"}), R_track=L.svg({pane:"trackPane"});
+
+  // ===== LAYER A: NEXRAD reflectivity LOOP (national USCOMP-N0Q, 5-min frames) =====
+  const N0Q=ts=>"https://mesonet.agron.iastate.edu/c/tile.py/1.0.0/ridge::USCOMP-N0Q-"+ts+"/{z}/{x}/{y}.png";
+  const NFR=12, STEP=5;
+  let frames=[], fIdx=0, playT=null, refreshT=null, radarOn=false, radarOp=0.7;
+  const pad=x=>String(x).padStart(2,"0");
+  function stamps(){ const now=new Date(); now.setUTCSeconds(0,0);
+    now.setUTCMinutes(now.getUTCMinutes()-(now.getUTCMinutes()%STEP)-STEP);   // back off newest for availability
+    const out=[]; for(let i=NFR-1;i>=0;i--){ const d=new Date(now.getTime()-i*STEP*60000);
+      out.push(""+d.getUTCFullYear()+pad(d.getUTCMonth()+1)+pad(d.getUTCDate())+pad(d.getUTCHours())+pad(d.getUTCMinutes())); }
+    return out; }
+  const fmtTs=ts=>ts.slice(0,4)+"-"+ts.slice(4,6)+"-"+ts.slice(6,8)+" "+ts.slice(8,10)+":"+ts.slice(10,12)+"Z";
+  function buildFrames(){
+    frames.forEach(f=>{ if(TMAP.hasLayer(f.layer)) TMAP.removeLayer(f.layer); });
+    frames=stamps().map(ts=>({ts,layer:L.tileLayer(N0Q(ts),{pane:"nexradPane",opacity:0,maxZoom:19,attribution:"NEXRAD N0Q &copy; IEM/NOAA"})}));
+    frames.forEach(f=>f.layer.addTo(TMAP));   // preload all; only the visible one is shown
+    fIdx=frames.length-1; showFrame(); }
+  function showFrame(){ frames.forEach((f,i)=>f.layer.setOpacity(i===fIdx?radarOp:0));
+    const fr=document.getElementById("lvFrame"), t=document.getElementById("lvTime");
+    if(fr) fr.value=fIdx; if(t) t.textContent=frames[fIdx]?fmtTs(frames[fIdx].ts):"\u2014"; }
+  function play(){ stopPlay(); playT=setInterval(()=>{ fIdx=(fIdx+1)%frames.length; showFrame(); },560);
+    const b=document.getElementById("lvPlay"); if(b) b.textContent="\u23f8"; }
+  function stopPlay(){ if(playT){clearInterval(playT);playT=null;} const b=document.getElementById("lvPlay"); if(b) b.textContent="\u25b6"; }
+  function radarRefresh(){ const want=stamps(); if(frames.length && want[want.length-1]===frames[frames.length-1].ts) return;
+    const wasPlaying=!!playT; buildFrames(); if(wasPlaying) play(); }   // sliding 60-min window
+
+  // ===== LAYER B: NWS warning polygons (TOR/SVR only), live =====
+  const WARN="https://mesonet.agron.iastate.edu/geojson/sbw.geojson";
+  let warnLayer=null, warnOn=false, warnOp=0.85;
+  const warnCol=ph=>ph==="TO"?"#ff3b30":ph==="SV"?"#ffcc00":"#9aa";
+  const warnStyle=f=>{ const c=warnCol(f.properties.phenomena);
+    return {pane:"warnPane",color:c,weight:2.5,opacity:warnOp,fill:true,fillColor:c,fillOpacity:0.12*warnOp}; };
+  async function loadWarn(){ try{
+    const r=await fetch(WARN,{cache:"no-store"}); const gj=await r.json();
+    gj.features=(gj.features||[]).filter(f=>{const p=f.properties;return (p.phenomena==="TO"||p.phenomena==="SV")&&p.significance==="W";});
+    if(warnLayer&&TMAP.hasLayer(warnLayer)) TMAP.removeLayer(warnLayer);
+    warnLayer=L.geoJSON(gj,{pane:"warnPane",renderer:R_warn,style:warnStyle,onEachFeature:(f,l)=>{const p=f.properties;
+      l.bindTooltip((p.ps||p.phenomena)+" \u00b7 "+(p.wfo||"")+" \u00b7 until "+String(p.expire_utc||p.expire||"").slice(11,16)+"Z",{sticky:true});}});
+    const cnt=document.getElementById("lvWarnN"); if(cnt) cnt.textContent=gj.features.length?(" "+gj.features.length):" none";
+    if(warnOn) warnLayer.addTo(TMAP);
+  }catch(e){} }
+
+  // ===== LAYER C: storm-track cones (IEM nexrad_attr: centroid + motion + hazard) =====
+  const ATTR="https://mesonet.agron.iastate.edu/geojson/nexrad_attr.geojson";
+  let trackLayer=null, trackOn=false, trackOp=0.9;
+  function dest(lat,lng,brg,km){ const R=6371,b=brg*Math.PI/180,d=km/R,la=lat*Math.PI/180,lo=lng*Math.PI/180;
+    const la2=Math.asin(Math.sin(la)*Math.cos(d)+Math.cos(la)*Math.sin(d)*Math.cos(b));
+    const lo2=lo+Math.atan2(Math.sin(b)*Math.sin(d)*Math.cos(la),Math.cos(d)-Math.sin(la)*Math.sin(la2));
+    return [la2*180/Math.PI,lo2*180/Math.PI]; }
+  async function loadTrack(){ try{
+    const r=await fetch(ATTR,{cache:"no-store"}); const gj=await r.json();
+    if(trackLayer&&TMAP.hasLayer(trackLayer)) TMAP.removeLayer(trackLayer);
+    const grp=L.layerGroup(); const PROJ=45, SPR=18;
+    (gj.features||[]).forEach(f=>{ const p=f.properties, c=f.geometry&&f.geometry.coordinates; if(!c) return;
+      const lat=c[1], lng=c[0], sknt=+p.sknt||0, drct=+p.drct||0, sz=+p.max_size||0;
+      const tor=(p.tvs&&p.tvs!=="NONE"), meso=(p.meso&&p.meso!=="NONE"&&p.meso!=="0");
+      const sev=tor||sz>=1, col=sev?"#ff3b30":(sz>=0.75?"#ff9500":"#9fc6ff");
+      const haz=[]; if(sz>0) haz.push(sz+'" hail'); if(tor) haz.push("TVS"); if(meso) haz.push("meso");
+      const mph=Math.round(sknt*1.151);
+      const mkr=L.circleMarker([lat,lng],{pane:"trackPane",renderer:R_track,radius:sev?5:3,
+        color:col,weight:1.5,opacity:trackOp,fillColor:col,fillOpacity:0.55*trackOp});
+      mkr.bindTooltip("Cell "+p.storm_id+" ("+(p.nexrad||"")+") \u00b7 "+(sknt?mph+" mph @ "+Math.round(drct)+"\u00b0":"stationary")+(haz.length?" \u00b7 "+haz.join(" \u00b7 "):""),{sticky:true});
+      grp.addLayer(mkr);
+      if(sknt>0){ const km=sknt*1.852*(PROJ/60);   // knots -> km over PROJ minutes
+        [drct-SPR,drct+SPR].forEach(b=>grp.addLayer(L.polyline([[lat,lng],dest(lat,lng,b,km)],
+          {pane:"trackPane",renderer:R_track,color:col,weight:1.5,opacity:0.85*trackOp,dashArray:"5 4"}))); }
+    });
+    trackLayer=grp; const cnt=document.getElementById("lvTrackN"); if(cnt) cnt.textContent=" "+(gj.features?gj.features.length:0);
+    if(trackOn) trackLayer.addTo(TMAP);
+  }catch(e){} }
+  function trackOpacity(){ if(!trackLayer) return; trackLayer.eachLayer(l=>{ if(l.setStyle) l.setStyle({opacity:trackOp,fillOpacity:0.55*trackOp}); }); }
+
+  // ===== shared 5-min refresh timer (only while a live layer is on) =====
+  function tick(){ if(radarOn) radarRefresh(); if(warnOn) loadWarn(); if(trackOn) loadTrack(); }
+  function ensureTimer(){ const any=radarOn||warnOn||trackOn;
+    if(any&&!refreshT) refreshT=setInterval(tick,300000);
+    if(!any&&refreshT){ clearInterval(refreshT); refreshT=null; } }
+
+  // ===== control UI: grouped, all OFF by default, visually separated from scored layers =====
   const ctl=L.control({position:"bottomright"});
-  ctl.onAdd=function(){
-    const d=L.DomUtil.create("div","nexctl");
-    d.innerHTML='<label><input type="checkbox" id="nexOn"> \u2622 Live NEXRAD <span class="muted">(current)</span></label>'+
-                '<div class="nexsub off" id="nexSub"><input type="range" id="nexOp" min="0" max="100" value="70"><span id="nexv">70%</span></div>';
-    L.DomEvent.disableClickPropagation(d); L.DomEvent.disableScrollPropagation(d);
-    return d;
-  };
+  ctl.onAdd=function(){ const d=L.DomUtil.create("div","livectl");
+    d.innerHTML=
+      '<div class="live-hd"><b>\u26a1 LIVE <span class="tag">current</span></b><small>live awareness \u2014 not the scored storm</small></div>'+
+      '<div class="live-row"><label><input type="checkbox" id="lvRadar"> \u2622 NEXRAD loop <span class="muted">(60 min)</span></label>'+
+        '<div class="live-sub off" id="lvRadarSub"><button id="lvPlay">\u25b6</button><input type="range" id="lvFrame" min="0" max="'+(NFR-1)+'" value="'+(NFR-1)+'"><span class="ts" id="lvTime">\u2014</span></div>'+
+        '<div class="live-op off" id="lvRadarOp"><input type="range" id="lvRadarV" min="0" max="100" value="70"><span class="opv" id="lvRadarVv">70%</span></div></div>'+
+      '<div class="live-row"><label><input type="checkbox" id="lvWarn"> \u25a2 NWS warnings <span class="muted">TOR/SVR<span id="lvWarnN"></span></span></label>'+
+        '<div class="live-op off" id="lvWarnOp"><input type="range" id="lvWarnV" min="0" max="100" value="85"><span class="opv" id="lvWarnVv">85%</span></div></div>'+
+      '<div class="live-row"><label><input type="checkbox" id="lvTrack"> \u27a4 Storm tracks <span class="muted">cone+hail<span id="lvTrackN"></span></span></label>'+
+        '<div class="live-op off" id="lvTrackOp"><input type="range" id="lvTrackV" min="0" max="100" value="90"><span class="opv" id="lvTrackVv">90%</span></div></div>';
+    L.DomEvent.disableClickPropagation(d); L.DomEvent.disableScrollPropagation(d); return d; };
   ctl.addTo(TMAP);
-  const on=document.getElementById("nexOn"), op=document.getElementById("nexOp"),
-        v=document.getElementById("nexv"), sub=document.getElementById("nexSub");
-  if(on) on.addEventListener("change",()=>{ if(on.checked){ radar.addTo(TMAP); sub.classList.remove("off"); }
-    else { if(TMAP.hasLayer(radar)) TMAP.removeLayer(radar); sub.classList.add("off"); } });
-  if(op) op.addEventListener("input",()=>{ radar.setOpacity(op.value/100); if(v) v.textContent=op.value+"%"; });
+
+  // wire Layer A
+  const elA=document.getElementById("lvRadar");
+  if(elA) elA.addEventListener("change",()=>{ radarOn=elA.checked;
+    document.getElementById("lvRadarSub").classList.toggle("off",!radarOn);
+    document.getElementById("lvRadarOp").classList.toggle("off",!radarOn);
+    if(radarOn){ buildFrames(); play(); } else { stopPlay(); frames.forEach(f=>{ if(TMAP.hasLayer(f.layer)) TMAP.removeLayer(f.layer); }); frames=[]; }
+    ensureTimer(); });
+  const pl=document.getElementById("lvPlay");
+  if(pl) pl.addEventListener("click",()=>{ if(playT) stopPlay(); else play(); });
+  const fr=document.getElementById("lvFrame");
+  if(fr) fr.addEventListener("input",()=>{ stopPlay(); fIdx=+fr.value; showFrame(); });
+  const rv=document.getElementById("lvRadarV");
+  if(rv) rv.addEventListener("input",()=>{ radarOp=rv.value/100; document.getElementById("lvRadarVv").textContent=rv.value+"%"; showFrame(); });
+
+  // wire Layer B
+  const elB=document.getElementById("lvWarn");
+  if(elB) elB.addEventListener("change",()=>{ warnOn=elB.checked;
+    document.getElementById("lvWarnOp").classList.toggle("off",!warnOn);
+    if(warnOn){ loadWarn(); } else if(warnLayer&&TMAP.hasLayer(warnLayer)) TMAP.removeLayer(warnLayer);
+    ensureTimer(); });
+  const wv=document.getElementById("lvWarnV");
+  if(wv) wv.addEventListener("input",()=>{ warnOp=wv.value/100; document.getElementById("lvWarnVv").textContent=wv.value+"%"; if(warnLayer) warnLayer.setStyle(warnStyle); });
+
+  // wire Layer C
+  const elC=document.getElementById("lvTrack");
+  if(elC) elC.addEventListener("change",()=>{ trackOn=elC.checked;
+    document.getElementById("lvTrackOp").classList.toggle("off",!trackOn);
+    if(trackOn){ loadTrack(); } else if(trackLayer&&TMAP.hasLayer(trackLayer)) TMAP.removeLayer(trackLayer);
+    ensureTimer(); });
+  const tv=document.getElementById("lvTrackV");
+  if(tv) tv.addEventListener("input",()=>{ trackOp=tv.value/100; document.getElementById("lvTrackVv").textContent=tv.value+"%"; trackOpacity(); });
 }
 
 async function boot(){
@@ -1077,7 +1210,7 @@ async function boot(){
   const D = assemble(date, rows||[], geo);
   renderMap(D);
   setBaseStreet();
-  addNexrad();          // item 7: national NEXRAD overlay (display-only, off by default)
+  addLiveLayers();      // item 7 ext: live NEXRAD loop + NWS warnings + storm-track cones (display-only, all off by default)
   buildOperatorPanel(D, forecast);
   setupMobile();
   if(banner) showBanner(banner); else hideBanner();
