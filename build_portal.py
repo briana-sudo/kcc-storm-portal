@@ -5,10 +5,11 @@ storm-engine viewer template, preserving every §3 locked decision verbatim.
 It mechanically: (1) reuses the template's <style> + #wrap body + the entire map
 build script (the §3 render core) wrapped as renderMap(D); (2) swaps the vendored
 Leaflet for the CDN (the portal is online); (3) wraps it in the TEMPEST shell —
-brand header + date navigation (today / back / forward / calendar) + a proxy
-fetch layer that pulls each date's cached render payload from the read-only
-FastAPI proxy. No §3 color/layer/legend logic is touched — only the chrome
-around the map and the data source.
+brand header + a storm-aware date calendar + a proxy fetch layer that pulls each
+date's cached render payload from the read-only proxy via the Netlify forwarder.
+The map ALWAYS renders (interactive basemap + service-area reference) even when a
+date has no storm; the "no storm" notice is a non-blocking bottom banner. No §3
+color/layer/legend logic is touched — only the chrome around the map.
 
 Run:  py build_portal.py   (reads ../storm-engine/storm/review/template.html)
 """
@@ -23,7 +24,6 @@ LEAFLET = "1.9.4"
 
 POLISH_CSS = """
 /* ── TEMPEST presentation polish (chrome only; §3 map colors untouched) ── */
-:root{ --tmp-bg:#0b1220; --tmp-bg2:#131c2e; --tmp-line:#243456; --tmp-accent:#5b8cff; --tmp-text:#e9eef7; }
 html,body{height:100%}
 #app{display:flex;flex-direction:column;height:100%}
 #tbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
@@ -32,25 +32,48 @@ html,body{height:100%}
 #tbar .brand{display:flex;align-items:center;gap:8px;font-weight:800;letter-spacing:.5px;font-size:16px}
 #tbar .brand .logo{font-size:18px;filter:drop-shadow(0 0 6px #5b8cff)}
 #tbar .brand .sub{font-weight:500;color:#9fb3d9;font-size:12px;letter-spacing:.3px}
-#tbar .datenav{display:flex;align-items:center;gap:6px}
+#tbar .datenav{display:flex;align-items:center;gap:6px;position:relative}
 #tbar .datenav button{background:#1e2b46;color:#e9eef7;border:1px solid #2c3c5e;border-radius:6px;
   padding:5px 10px;font-size:13px;cursor:pointer;line-height:1}
 #tbar .datenav button:hover{background:#274069}
-#tbar .datenav input[type=date]{background:#1e2b46;color:#e9eef7;border:1px solid #2c3c5e;
-  border-radius:6px;padding:4px 8px;font-size:13px;color-scheme:dark}
+#tbar .datenav .datebtn{min-width:132px;font-weight:600}
 #tbar .perils{color:#9fb3d9;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
 #tbar .status{margin-left:auto;color:#ffd28a;font-size:12px}
 #main{flex:1;min-height:0;position:relative}
 #wrap{height:100%}
 #side h1{font-size:14px}
 .legend{font-size:11.5px}
-#nodata{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
-  background:rgba(13,20,34,.55);z-index:800}
-#nodata.hidden{display:none}
-#nodata .nd-card{background:#fff;border-radius:12px;padding:22px 26px;max-width:420px;
-  box-shadow:0 8px 30px rgba(0,0,0,.35);text-align:center}
-#nodata .nd-card h2{margin:0 0 8px;font-size:18px;color:#16223c}
-#nodata .nd-card p{margin:0;color:#5a6b86;font-size:13px;line-height:1.5}
+/* storm-aware calendar popup */
+.cal{position:absolute;top:calc(100% + 6px);left:0;z-index:1300;background:#16223c;
+  border:1px solid #2c3c5e;border-radius:8px;padding:8px;width:240px;color:#e9eef7;
+  box-shadow:0 10px 28px rgba(0,0,0,.45);font-size:12px}
+.cal.hidden{display:none}
+.cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;font-weight:700}
+.cal-head button{background:#1e2b46;border:1px solid #2c3c5e;color:#e9eef7;border-radius:5px;
+  width:26px;height:26px;cursor:pointer;font-size:14px}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:3px}
+.cal-dow span{color:#7e90b3;font-size:10px;text-align:center;padding-bottom:2px}
+.cal-day{position:relative;height:30px;border:none;background:#1a2740;color:#cdd8ee;border-radius:5px;
+  cursor:pointer;font-size:12px;padding-top:3px;line-height:1}
+.cal-day:hover{background:#274069}
+.cal-day.blank{background:transparent;cursor:default}
+.cal-day.today{outline:1.5px solid #5b8cff}
+.cal-day.selected{background:#3056a8;color:#fff;font-weight:700}
+.cal-day.storm{font-weight:700;color:#fff}
+.cal-day.dim{opacity:.38}
+.cal-dots{position:absolute;bottom:3px;left:0;right:0;display:flex;gap:2px;justify-content:center}
+.cal-dots i{width:5px;height:5px;border-radius:50%}
+.dot.hail,.cal-dots i.hail{background:#e8430a}
+.dot.wind,.cal-dots i.wind{background:#2171b5}
+.dot.torn,.cal-dots i.torn{background:#6a3fa0}
+.cal-legend{display:flex;gap:12px;margin-top:7px;color:#9fb3d9;font-size:10px}
+.cal-legend span{display:flex;align-items:center;gap:4px}
+.cal-legend .dot{width:7px;height:7px;border-radius:50%}
+/* non-blocking bottom banner (replaces the old center "no data" modal) */
+#banner{position:absolute;left:50%;transform:translateX(-50%);bottom:16px;z-index:900;
+  background:rgba(22,34,60,.95);color:#e9eef7;border:1px solid #2c3c5e;border-radius:9px;
+  padding:9px 18px;font-size:13px;box-shadow:0 6px 20px rgba(0,0,0,.4);max-width:90%;text-align:center}
+#banner.hidden{display:none}
 /* mobile: stack the side panel under the map */
 @media (max-width:760px){
   #wrap{flex-direction:column}
@@ -65,18 +88,23 @@ SHELL_HEAD = """  <div id="tbar">
     <div class="brand"><span class="logo">&#9731;</span> TEMPEST <span class="sub">KCC Storm Review</span></div>
     <div class="datenav">
       <button id="navPrev" title="Previous day">&#9664;</button>
-      <input id="navDate" type="date">
+      <button id="navDateBtn" class="datebtn">&mdash;</button>
       <button id="navNext" title="Next day">&#9654;</button>
       <button id="navToday">Today</button>
       <span class="perils" id="navPerils"></span>
+      <div id="cal" class="cal hidden">
+        <div class="cal-head"><button id="calPrev">&#8249;</button><span id="calTitle"></span><button id="calNext">&#8250;</button></div>
+        <div class="cal-grid cal-dow"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div>
+        <div class="cal-grid" id="calDays"></div>
+        <div class="cal-legend"><span><i class="dot hail"></i>hail</span><span><i class="dot wind"></i>wind</span><span><i class="dot torn"></i>tornado</span></div>
+      </div>
     </div>
     <div class="status" id="connStatus"></div>
   </div>
   <div id="main">
 """
 
-SHELL_NODATA = """    <div id="nodata" class="hidden"><div class="nd-card">
-      <h2 id="ndTitle"></h2><p id="ndMsg"></p></div></div>
+SHELL_NODATA = """    <div id="banner" class="hidden"></div>
   </div>
 """
 
@@ -87,23 +115,32 @@ BOOTSTRAP = """
 const CFG = window.TEMPEST_CONFIG || {};
 const API = (CFG.api || "").replace(/\\/$/, "");
 const ARCHIVE_START = "2020-10-14";
+const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
+let AVAIL = {};        // {date: [perils]} for the storm-aware calendar
+let calView = null;    // {y,m} currently-viewed calendar month
+
 function todayUTC(){ return new Date().toISOString().slice(0,10); }
 function getDate(){ return new URLSearchParams(location.search).get("date") || todayUTC(); }
 function goDate(d){ location.search = "?date=" + d; }
 function shiftDate(d, n){ const t=new Date(d+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()+n); return t.toISOString().slice(0,10); }
+function fmtDate(d){ const t=new Date(d+"T00:00:00Z"); return t.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"}); }
 function parseJSON(s){ try{ return JSON.parse(s||"[]"); }catch(e){ return []; } }
 async function pquery(name, params){
-  const r = await fetch(API, { method:"POST",
-    headers:{ "Content-Type":"application/json" },
+  const r = await fetch(API, { method:"POST", headers:{ "Content-Type":"application/json" },
     body: JSON.stringify({ name, params: params||{} }) });
   if(!r.ok) throw new Error(name+" HTTP "+r.status);
   return (await r.json()).rows || [];
 }
-function showNoData(title, msg){
-  const n=document.getElementById("nodata"); n.classList.remove("hidden");
-  document.getElementById("ndTitle").textContent=title;
-  document.getElementById("ndMsg").textContent=msg;
+function showBanner(msg){ const b=document.getElementById("banner"); b.textContent=msg; b.classList.remove("hidden"); }
+function hideBanner(){ document.getElementById("banner").classList.add("hidden"); }
+
+// portal default basemap = Street (the engine viewer is offline-first; the hosted
+// portal is online). Synced through the §3 band-control base switcher, untouched.
+function setBaseStreet(){
+  const s=document.querySelector('select[data-base]');
+  if(s && s.value!=='street'){ s.value='street'; s.dispatchEvent(new Event('change',{bubbles:true})); }
 }
+
 function assemble(date, rows, geo){
   const byPeril = {}; rows.forEach(r => byPeril[r.peril] = r);
   const h = byPeril.hail;
@@ -132,37 +169,85 @@ function assemble(date, rows, geo){
     D.center=[la.reduce((a,b)=>a+b,0)/la.length, lo.reduce((a,b)=>a+b,0)/lo.length]; }
   return D;
 }
+
+// ── storm-aware calendar: dates with data get peril dots (one cached query) ──
+async function loadAvailable(){
+  try {
+    const cached = sessionStorage.getItem("tempest_avail");
+    if(cached){ AVAIL = JSON.parse(cached); }
+    else {
+      const av = await pquery("storm_available_dates", {});
+      AVAIL = {}; av.forEach(x => { AVAIL[x.storm_date] = x.perils || []; });
+      sessionStorage.setItem("tempest_avail", JSON.stringify(AVAIL));
+    }
+  } catch(e){ AVAIL = AVAIL || {}; }
+  const cur = AVAIL[getDate()];
+  if(cur && cur.length) document.getElementById("navPerils").textContent = cur.join("  \\u00b7  ");
+  renderCal();
+}
+function renderCal(){
+  const sel = getDate();
+  if(!calView){ const t=new Date(sel+"T00:00:00Z"); calView={ y:t.getUTCFullYear(), m:t.getUTCMonth() }; }
+  const y=calView.y, m=calView.m;
+  document.getElementById("calTitle").textContent = MONTHS[m]+" "+y;
+  const first = new Date(Date.UTC(y,m,1)).getUTCDay();
+  const days = new Date(Date.UTC(y,m+1,0)).getUTCDate();
+  const grid = document.getElementById("calDays"); grid.innerHTML="";
+  for(let i=0;i<first;i++){ const b=document.createElement("div"); b.className="cal-day blank"; grid.appendChild(b); }
+  const today = todayUTC();
+  for(let d=1; d<=days; d++){
+    const ds = y+"-"+String(m+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
+    const btn = document.createElement("button"); btn.className="cal-day"; btn.textContent=d; btn.dataset.date=ds;
+    if(ds===today) btn.classList.add("today");
+    if(ds===sel) btn.classList.add("selected");
+    if(ds<ARCHIVE_START) btn.classList.add("dim");
+    const per = AVAIL[ds];
+    if(per && per.length){
+      btn.classList.add("storm");
+      const dots=document.createElement("div"); dots.className="cal-dots";
+      per.forEach(p=>{ const i=document.createElement("i"); i.className=(p==="hail"?"hail":p==="wind"?"wind":"torn"); dots.appendChild(i); });
+      btn.appendChild(dots);
+    }
+    btn.onclick = ()=>goDate(ds);
+    grid.appendChild(btn);
+  }
+}
+function toggleCal(){ const c=document.getElementById("cal"); c.classList.toggle("hidden"); if(!c.classList.contains("hidden")) renderCal(); }
+
 async function boot(){
   const date = getDate();
-  document.getElementById("navDate").value = date;
+  document.getElementById("navDateBtn").textContent = fmtDate(date)+" \\u25be";
+  document.getElementById("navDateBtn").onclick = e => { e.stopPropagation(); toggleCal(); };
   document.getElementById("navPrev").onclick  = () => goDate(shiftDate(date, -1));
   document.getElementById("navNext").onclick  = () => goDate(shiftDate(date,  1));
   document.getElementById("navToday").onclick = () => goDate(todayUTC());
-  document.getElementById("navDate").onchange = e => goDate(e.target.value);
+  document.getElementById("calPrev").onclick = e => { e.stopPropagation(); if(!calView)renderCal(); calView.m--; if(calView.m<0){calView.m=11;calView.y--;} renderCal(); };
+  document.getElementById("calNext").onclick = e => { e.stopPropagation(); if(!calView)renderCal(); calView.m++; if(calView.m>11){calView.m=0;calView.y++;} renderCal(); };
+  document.addEventListener("click", e => { const c=document.getElementById("cal");
+    if(!c.classList.contains("hidden") && !c.contains(e.target) && e.target.id!=="navDateBtn") c.classList.add("hidden"); });
 
-  if(date < ARCHIVE_START){
-    showNoData("No data for "+date, "Operational radar begins "+ARCHIVE_START+". Pick a later date."); return; }
+  loadAvailable();   // calendar dots + perils chip (cached in sessionStorage; non-blocking)
 
   let geo = { boundaries: [], cities: [] };
   try { geo = await (await fetch("public/geo_ref.json")).json(); } catch(e){}
 
-  let rows = null;
-  try { rows = await pquery("storm_date_layers", { date }); }
-  catch(e){
-    try { rows = await (await fetch("public/sample/"+date+".json")).json();
-          document.getElementById("connStatus").textContent = "DEMO DATA (proxy offline)"; }
-    catch(_){ showNoData("Proxy unreachable",
-        "Could not reach the storm proxy. The site needs VITE_PROXY_URL / token (Cloudflare tunnel) configured."); return; }
+  let rows = [], banner = null;
+  if(date < ARCHIVE_START){
+    banner = "No operational radar before "+ARCHIVE_START+" — pick a later date.";
+  } else {
+    try { rows = await pquery("storm_date_layers", { date }); }
+    catch(e){
+      try { rows = await (await fetch("public/sample/"+date+".json")).json();
+            document.getElementById("connStatus").textContent = "DEMO DATA (proxy offline)"; }
+      catch(_){ rows = []; banner = "Couldn't reach the storm proxy — check the connection."; }
+    }
+    if(!banner && (!rows || !rows.length))
+      banner = "No storm on record for "+date+" — nothing processed for this date yet.";
   }
-  try { const av = await pquery("storm_available_dates", {});
-        const m = (av.find(x => x.storm_date === date) || {}).perils;
-        if(m && m.length) document.getElementById("navPerils").textContent = m.join("  \\u00b7  "); } catch(e){}
-
-  if(!rows || !rows.length){
-    showNoData("No storm on record for "+date,
-      "Nothing was processed for this date yet. The daily monitor processes the prior storm day after 13:00 UTC; earlier dates can be backfilled."); return; }
-
-  renderMap(assemble(date, rows, geo));
+  // ALWAYS render the interactive map (basemap + service-area reference), storm or not.
+  renderMap(assemble(date, rows||[], geo));
+  setBaseStreet();
+  if(banner) showBanner(banner); else hideBanner();
 }
 boot();
 """
