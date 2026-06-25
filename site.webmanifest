@@ -1,7 +1,7 @@
 {
-  "name": "Tempest \u2014 Hail Intelligence",
+  "name": "TEMPEST \u2014 KCC Hail Intelligence",
   "short_name": "Tempest",
-  "description": "Storm-triggered hail intelligence and lead targeting.",
+  "description": "KCC hail intelligence \u2014 storm-triggered detection and lead targeting for Kosarek Construction.",
   "icons": [
     {
       "src": "icon-192.png",
