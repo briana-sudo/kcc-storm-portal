@@ -194,6 +194,18 @@ body.tz-arming::after{content:"Click the map to set the timezone";position:fixed
 .cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;font-weight:700;font-size:14px}
 .cal-head button{background:#1e2b46;border:1px solid #2c3c5e;color:#e9eef7;border-radius:6px;
   width:30px;height:30px;cursor:pointer;font-size:16px}
+.cal-head .cal-title{width:auto;flex:1;margin:0 6px;height:30px;font-weight:800;font-size:14px;letter-spacing:.3px}
+.cal-head .cal-title:hover{background:#274069}
+/* quick month/year picker (click the title) — replaces the day grid while open */
+.cal.picking #calDays,.cal.picking .cal-dow,.cal.picking .cal-legend{display:none}
+.cal-pick.hidden{display:none}
+.cp-yr{display:flex;align-items:center;justify-content:center;gap:14px;margin:4px 0 12px;font-weight:800;font-size:15px}
+.cp-yr button{background:#1e2b46;border:1px solid #2c3c5e;color:#e9eef7;border-radius:6px;width:32px;height:30px;cursor:pointer;font-size:16px}
+.cp-yr span{min-width:64px;text-align:center;color:#cdeafe}
+.cp-months{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}
+.cp-mo{background:#1a2740;border:none;color:#cdd8ee;border-radius:8px;padding:11px 0;font-size:13px;font-weight:700;cursor:pointer}
+.cp-mo:hover{background:#274069}
+.cp-mo.sel{background:#3056a8;color:#fff}
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
 .cal-dow span{color:#7e90b3;font-size:12px;text-align:center;padding-bottom:4px}
 /* deterministic cell: fixed height, number in a fixed top zone, dots in a fixed
@@ -343,9 +355,13 @@ SHELL_HEAD = """  <div id="tbar">
       <button id="navToday">Today</button>
       <span class="perils" id="navPerils"></span>
       <div id="cal" class="cal hidden">
-        <div class="cal-head"><button id="calPrev">&#8249;</button><span id="calTitle"></span><button id="calNext">&#8250;</button></div>
+        <div class="cal-head"><button id="calPrev">&#8249;</button><button id="calTitle" class="cal-title" title="Pick month / year"></button><button id="calNext">&#8250;</button></div>
         <div class="cal-grid cal-dow"><span>Su</span><span>Mo</span><span>Tu</span><span>We</span><span>Th</span><span>Fr</span><span>Sa</span></div>
         <div class="cal-grid" id="calDays"></div>
+        <div class="cal-pick hidden" id="calPick">
+          <div class="cp-yr"><button id="cpYrPrev">&#8249;</button><span id="cpYr"></span><button id="cpYrNext">&#8250;</button></div>
+          <div class="cp-months" id="cpMonths"></div>
+        </div>
         <div class="cal-legend"><span><i class="dot hail"></i>hail</span><span><i class="dot wind"></i>wind</span><span><i class="dot torn"></i>tornado</span><span style="margin-left:auto;color:#7e90b3">&#9679;core &#9675;margin</span></div>
       </div>
     </div>
@@ -550,7 +566,22 @@ function renderCal(){
   }
   enrichVisibleTiers();   // refine dots to P1/P2/P3 for storm dates in view (cached, read-only)
 }
-function toggleCal(){ const c=document.getElementById("cal"); c.classList.toggle("hidden"); if(!c.classList.contains("hidden")) renderCal(); }
+function toggleCal(){ const c=document.getElementById("cal"); closeCalPick(); c.classList.toggle("hidden"); if(!c.classList.contains("hidden")) renderCal(); }
+
+// quick month/year picker: click the calendar title to jump months/years fast
+let calPickYr=null;
+function openCalPick(){ const p=document.getElementById("calPick"); if(!p) return;
+  if(p.classList.contains("hidden")){ calPickYr = calView? calView.y : new Date().getUTCFullYear();
+    renderCalPick(); p.classList.remove("hidden"); document.getElementById("cal").classList.add("picking"); }
+  else closeCalPick(); }
+function closeCalPick(){ const p=document.getElementById("calPick"); if(p) p.classList.add("hidden");
+  const c=document.getElementById("cal"); if(c) c.classList.remove("picking"); }
+function renderCalPick(){ const yr=document.getElementById("cpYr"); if(yr) yr.textContent=calPickYr;
+  const mg=document.getElementById("cpMonths"); if(!mg) return; mg.innerHTML="";
+  MONTHS.forEach((nm,i)=>{ const b=document.createElement("button"); b.className="cp-mo"; b.textContent=nm.slice(0,3);
+    if(calView && calView.y===calPickYr && calView.m===i) b.classList.add("sel");
+    b.onclick=()=>{ calView={y:calPickYr, m:i}; closeCalPick(); renderCal(); };
+    mg.appendChild(b); }); }
 
 // ── MOBILE LANE: relocate Layers / Legend / Details into slide-up bottom sheets
 //    opened from a bottom toolbar (all closed by default). Device-detected. ──
@@ -1201,8 +1232,11 @@ async function boot(){
   document.getElementById("navPrev").onclick  = () => goDate(shiftDate(date, -1));
   document.getElementById("navNext").onclick  = () => goDate(shiftDate(date,  1));
   document.getElementById("navToday").onclick = () => goDate(todayUTC());
-  document.getElementById("calPrev").onclick = e => { e.stopPropagation(); if(!calView)renderCal(); calView.m--; if(calView.m<0){calView.m=11;calView.y--;} renderCal(); };
-  document.getElementById("calNext").onclick = e => { e.stopPropagation(); if(!calView)renderCal(); calView.m++; if(calView.m>11){calView.m=0;calView.y++;} renderCal(); };
+  document.getElementById("calPrev").onclick = e => { e.stopPropagation(); closeCalPick(); if(!calView)renderCal(); calView.m--; if(calView.m<0){calView.m=11;calView.y--;} renderCal(); };
+  document.getElementById("calNext").onclick = e => { e.stopPropagation(); closeCalPick(); if(!calView)renderCal(); calView.m++; if(calView.m>11){calView.m=0;calView.y++;} renderCal(); };
+  document.getElementById("calTitle").onclick = e => { e.stopPropagation(); openCalPick(); };
+  document.getElementById("cpYrPrev").onclick = e => { e.stopPropagation(); calPickYr--; renderCalPick(); };
+  document.getElementById("cpYrNext").onclick = e => { e.stopPropagation(); calPickYr++; renderCalPick(); };
   document.addEventListener("click", e => { const c=document.getElementById("cal");
     if(!c.classList.contains("hidden") && !c.contains(e.target) && e.target.id!=="navDateBtn") c.classList.add("hidden"); });
   const eb=document.getElementById("expandBtn");
