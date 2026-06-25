@@ -567,9 +567,10 @@ function showZip(z){
 }
 
 // ── TEMPEST data + date-navigation shell (chrome; renderMap is the §3 core) ──
+// API = the Netlify server-side forwarder (/api/storm). It holds the proxy bearer
+// token server-side, so this public bundle carries NO credential of any kind.
 const CFG = window.TEMPEST_CONFIG || {};
-const PROXY = (CFG.proxy || "").replace(/\/$/, "");
-const TOKEN = CFG.token || "";
+const API = (CFG.api || "").replace(/\/$/, "");
 const ARCHIVE_START = "2020-10-14";
 function todayUTC(){ return new Date().toISOString().slice(0,10); }
 function getDate(){ return new URLSearchParams(location.search).get("date") || todayUTC(); }
@@ -577,8 +578,8 @@ function goDate(d){ location.search = "?date=" + d; }
 function shiftDate(d, n){ const t=new Date(d+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()+n); return t.toISOString().slice(0,10); }
 function parseJSON(s){ try{ return JSON.parse(s||"[]"); }catch(e){ return []; } }
 async function pquery(name, params){
-  const r = await fetch(PROXY + "/query", { method:"POST",
-    headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+TOKEN },
+  const r = await fetch(API, { method:"POST",
+    headers:{ "Content-Type":"application/json" },
     body: JSON.stringify({ name, params: params||{} }) });
   if(!r.ok) throw new Error(name+" HTTP "+r.status);
   return (await r.json()).rows || [];

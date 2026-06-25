@@ -1,5 +1,5 @@
-# the proxy URL + bearer token are injected by CI from repo Secrets — never commit
-config.js
+# config.js is now a PUBLIC, token-free file (just the Netlify forwarder URL) and
+# IS committed. The bearer token lives only in the Netlify function's env var.
 # local revert backup of the storm-engine viewer template (not part of the site)
 _lastgood/
 __pycache__/
