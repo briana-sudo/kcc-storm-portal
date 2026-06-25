@@ -317,14 +317,15 @@ function buildOperatorPanel(D, forecast){
 
 // ── storm-aware calendar: dates with data get peril dots (one cached query) ──
 async function loadAvailable(){
+  // instant first-paint from cache (if any) so the grid isn't empty on load
+  try { const c = sessionStorage.getItem("tempest_avail"); if(c){ AVAIL = JSON.parse(c); renderCal(); } } catch(e){}
+  // ALWAYS refresh from the proxy (cheap tenant-guarded read) so storm-days added
+  // since last visit -- this backfill, or the daily monitor -- appear with no
+  // manual cache clear. sessionStorage is a first-paint hint only, not authoritative.
   try {
-    const cached = sessionStorage.getItem("tempest_avail");
-    if(cached){ AVAIL = JSON.parse(cached); }
-    else {
-      const av = await pquery("storm_available_dates", {});
-      AVAIL = {}; av.forEach(x => { AVAIL[x.storm_date] = x.perils || []; });
-      sessionStorage.setItem("tempest_avail", JSON.stringify(AVAIL));
-    }
+    const av = await pquery("storm_available_dates", {});
+    AVAIL = {}; av.forEach(x => { AVAIL[x.storm_date] = x.perils || []; });
+    sessionStorage.setItem("tempest_avail", JSON.stringify(AVAIL));
   } catch(e){ AVAIL = AVAIL || {}; }
   const cur = AVAIL[getDate()];
   if(cur && cur.length) document.getElementById("navPerils").textContent = cur.join("  \\u00b7  ");
