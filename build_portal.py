@@ -98,6 +98,15 @@ body.fullmap #fmExit:hover{background:#1e2b46}
 .svc-row .ago{color:#6f86ad;font-size:11px}
 .svc-risk{margin-top:7px;padding:6px 9px;border-radius:7px;background:#16223c;font-size:12px;color:#cfe}
 .svc-why{margin-top:5px;font-size:11px;color:#ffb27a}
+/* ── NATIONAL RADAR overlay control (item 7): IEM NEXRAD N0Q, toggle + opacity dial.
+   Tile layer lives in its own pane UNDER the engine swath (swath-above-all-tiles). ── */
+.nexctl{background:#fff;padding:6px 9px;border-radius:6px;box-shadow:0 1px 5px rgba(0,0,0,.3);font-size:12px;max-width:210px}
+.nexctl label{display:flex;align-items:center;gap:6px;font-weight:700;cursor:pointer}
+.nexctl .muted{color:#888;font-weight:400}
+.nexctl .nexsub{display:flex;align-items:center;gap:7px;margin-top:5px}
+.nexctl .nexsub.off{opacity:.45}
+.nexctl input[type=range]{flex:1}
+.nexctl #nexv{min-width:34px;text-align:right;color:#555}
 /* storm-aware calendar popup */
 .cal{position:absolute;top:calc(100% + 6px);left:0;z-index:1300;background:#16223c;
   border:1px solid #2c3c5e;border-radius:10px;padding:11px;width:300px;max-width:94vw;color:#e9eef7;
@@ -491,6 +500,35 @@ async function enrichVisibleTiers(){
   renderCal();   // repaint with tier treatment (targets now cached -> no re-loop)
 }
 
+// ── NATIONAL RADAR (item 7): add IEM NEXRAD N0Q base-reflectivity as a toggleable
+//    national overlay so the operator can see hail anywhere. DISPLAY ONLY — no data is
+//    computed/fetched/written outside the geofence; the engine swath/circles stay put.
+//    Wired from the bootstrap via the captured map handle so renderMap(D) is untouched.
+//    The tile goes in a dedicated pane (z230) ABOVE the basemap but BELOW the swath/
+//    geofence (z250+), so swath-above-all-tiles holds. Off by default; it is the LATEST
+//    national mosaic (current time), labelled as such, independent of the reviewed date. ──
+function addNexrad(){
+  if(!TMAP || document.querySelector(".nexctl")) return;
+  if(!TMAP.getPane("nexradPane")){ TMAP.createPane("nexradPane");
+    const pn=TMAP.getPane("nexradPane"); pn.style.zIndex=230; pn.style.pointerEvents="none"; }
+  const radar=L.tileLayer("https://mesonet.agron.iastate.edu/cache/tile.py/1.0.0/nexrad-n0q-900913/{z}/{x}/{y}.png",
+    { pane:"nexradPane", opacity:0.7, maxZoom:19, attribution:"NEXRAD N0Q &copy; IEM / NOAA" });
+  const ctl=L.control({position:"bottomright"});
+  ctl.onAdd=function(){
+    const d=L.DomUtil.create("div","nexctl");
+    d.innerHTML='<label><input type="checkbox" id="nexOn"> \\u2622 Live NEXRAD <span class="muted">(current)</span></label>'+
+                '<div class="nexsub off" id="nexSub"><input type="range" id="nexOp" min="0" max="100" value="70"><span id="nexv">70%</span></div>';
+    L.DomEvent.disableClickPropagation(d); L.DomEvent.disableScrollPropagation(d);
+    return d;
+  };
+  ctl.addTo(TMAP);
+  const on=document.getElementById("nexOn"), op=document.getElementById("nexOp"),
+        v=document.getElementById("nexv"), sub=document.getElementById("nexSub");
+  if(on) on.addEventListener("change",()=>{ if(on.checked){ radar.addTo(TMAP); sub.classList.remove("off"); }
+    else { if(TMAP.hasLayer(radar)) TMAP.removeLayer(radar); sub.classList.add("off"); } });
+  if(op) op.addEventListener("input",()=>{ radar.setOpacity(op.value/100); if(v) v.textContent=op.value+"%"; });
+}
+
 async function boot(){
   if(matchMedia("(pointer:coarse)").matches || /Android|iPhone|iPad|iPod|Mobile|Silk/i.test(navigator.userAgent))
     document.body.classList.add("mobile");
@@ -549,6 +587,7 @@ async function boot(){
   const D = assemble(date, rows||[], geo);
   renderMap(D);
   setBaseStreet();
+  addNexrad();          // item 7: national NEXRAD overlay (display-only, off by default)
   buildOperatorPanel(D, forecast);
   setupMobile();
   if(banner) showBanner(banner); else hideBanner();
