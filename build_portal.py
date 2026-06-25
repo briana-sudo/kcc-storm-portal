@@ -109,31 +109,34 @@ body.fullmap #fmExit:hover{background:#1e2b46}
 .nexctl #nexv{min-width:34px;text-align:right;color:#555}
 /* storm-aware calendar popup */
 .cal{position:absolute;top:calc(100% + 6px);left:0;z-index:1300;background:#16223c;
-  border:1px solid #2c3c5e;border-radius:10px;padding:11px;width:300px;max-width:94vw;color:#e9eef7;
-  box-shadow:0 12px 30px rgba(0,0,0,.5);font-size:13px;box-sizing:border-box}
+  border:1px solid #2c3c5e;border-radius:10px;padding:13px;width:404px;max-width:96vw;color:#e9eef7;
+  box-shadow:0 12px 30px rgba(0,0,0,.5);font-size:14px;box-sizing:border-box}
 .cal.hidden{display:none}
 .cal *{box-sizing:border-box}
 .cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;font-weight:700;font-size:14px}
 .cal-head button{background:#1e2b46;border:1px solid #2c3c5e;color:#e9eef7;border-radius:6px;
   width:30px;height:30px;cursor:pointer;font-size:16px}
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
-.cal-dow span{color:#7e90b3;font-size:11px;text-align:center;padding-bottom:4px}
-.cal-day{height:40px;border:none;background:#1a2740;color:#cdd8ee;border-radius:7px;cursor:pointer;font-size:13px;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px}
+.cal-dow span{color:#7e90b3;font-size:12px;text-align:center;padding-bottom:4px}
+/* deterministic cell: fixed height, number in a fixed top zone, dots in a fixed
+   bottom strip -- the number never moves and dots never crowd it, 0 dots or 3. */
+.cal-day{height:56px;border:none;background:#1a2740;color:#cdd8ee;border-radius:8px;cursor:pointer;font-size:16px;
+  display:flex;flex-direction:column;align-items:center;justify-content:flex-start;gap:0;padding-top:8px}
+.cal-day .cal-num{line-height:1;height:18px;display:flex;align-items:center}
 .cal-day:hover{background:#274069}
 .cal-day.blank{background:transparent;cursor:default}
 .cal-day.today{outline:2px solid #5b8cff}
 .cal-day.selected{background:#3056a8;color:#fff;font-weight:700}
 .cal-day.storm{font-weight:700;color:#fff}
 .cal-day.dim{opacity:.38}
-.cal-dots{display:flex;gap:3px;justify-content:center;min-height:7px}
-.cal-dots i{width:7px;height:7px;border-radius:50%;border:1px solid transparent;box-sizing:border-box}
+.cal-dots{display:flex;gap:4px;justify-content:center;align-items:center;height:14px;margin-top:6px}
+.cal-dots i{width:9px;height:9px;border-radius:50%;border:1.5px solid transparent;box-sizing:border-box}
 /* §3 peril colors: hail warm [247,182,0] / wind blue [107,175,215] / tornado violet [158,155,200] */
 .dot.hail,.cal-dots i.hail{background:#f7b600}
 .dot.wind,.cal-dots i.wind{background:#6bafd7}
 .dot.torn,.cal-dots i.torn{background:#9e9bc8}
 /* tier treatment (item 4): P1 core = bright + halo ring, P2 = solid, P3 margin = hollow/faint */
-.cal-dots i.t1{width:8px;height:8px;box-shadow:0 0 0 2px rgba(255,255,255,.9),0 0 4px rgba(0,0,0,.5)}
+.cal-dots i.t1{width:10px;height:10px;box-shadow:0 0 0 2px rgba(255,255,255,.9),0 0 4px rgba(0,0,0,.5)}
 .cal-dots i.t3{background:transparent;opacity:.7}
 .cal-dots i.t3.hail{border-color:#f7b600}
 .cal-dots i.t3.wind{border-color:#6bafd7}
@@ -343,19 +346,21 @@ function renderCal(){
   const today = todayUTC();
   for(let d=1; d<=days; d++){
     const ds = y+"-"+String(m+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
-    const btn = document.createElement("button"); btn.className="cal-day"; btn.textContent=d; btn.dataset.date=ds;
+    const btn = document.createElement("button"); btn.className="cal-day"; btn.dataset.date=ds;
+    const num=document.createElement("span"); num.className="cal-num"; num.textContent=d; btn.appendChild(num);
     if(ds===today) btn.classList.add("today");
     if(ds===sel) btn.classList.add("selected");
     if(ds<ARCHIVE_START) btn.classList.add("dim");
+    // dots strip is ALWAYS present (fixed-height) so the number never shifts and
+    // dots never crowd it -- deterministic whether the day has 0 or 3 perils.
+    const dots=document.createElement("div"); dots.className="cal-dots"; btn.appendChild(dots);
     const per = AVAIL[ds];
     if(per && per.length){
       btn.classList.add("storm");
-      const dots=document.createElement("div"); dots.className="cal-dots";
       const tt = TIERS[ds] || {};
       per.forEach(p=>{ const i=document.createElement("i"); const cls=(p==="hail"?"hail":p==="wind"?"wind":"torn");
         const tier=tt[p]; const tcl=(tier==="P1"?" t1":tier==="P3"?" t3":"");   // P2 = base solid dot
         i.className=cls+tcl; dots.appendChild(i); });
-      btn.appendChild(dots);
     }
     btn.onclick = ()=>goDate(ds);
     grid.appendChild(btn);
