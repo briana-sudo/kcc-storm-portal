@@ -121,6 +121,7 @@ body.fullmap #fmExit:hover{background:#1e2b46}
 .livectl .live-sub,.livectl .live-op{display:flex;align-items:center;gap:6px;margin-top:4px;padding-left:21px}
 .livectl .live-sub.off,.livectl .live-op.off{opacity:.4;pointer-events:none}
 .livectl .live-sub button{background:#1e2b46;border:none;color:#fff;border-radius:5px;width:27px;height:22px;cursor:pointer;font-size:11px}
+.livectl .live-sub #lvNow{width:auto;padding:0 7px;font-size:9px;font-weight:800;letter-spacing:.5px;background:#0a8a2e}
 .livectl input[type=range]{flex:1;min-width:60px}
 .livectl .ts{font-variant-numeric:tabular-nums;color:#0a8a2e;font-weight:700;font-size:10px;min-width:104px;text-align:right}
 .livectl .opv{min-width:32px;text-align:right;color:#555}
@@ -555,7 +556,7 @@ function addLiveLayers(){
   // ===== LAYER A: NEXRAD reflectivity LOOP (national USCOMP-N0Q, 5-min frames) =====
   const N0Q=ts=>"https://mesonet.agron.iastate.edu/c/tile.py/1.0.0/ridge::USCOMP-N0Q-"+ts+"/{z}/{x}/{y}.png";
   const NFR=12, STEP=5;
-  let frames=[], fIdx=0, playT=null, refreshT=null, radarOn=false, radarOp=0.7;
+  let frames=[], fIdx=0, playT=null, refreshT=null, radarOn=false, radarOp=0.7, frameOffsetMin=0;
   const pad=x=>String(x).padStart(2,"0");
   function stamps(){ const now=new Date(); now.setUTCSeconds(0,0);
     now.setUTCMinutes(now.getUTCMinutes()-(now.getUTCMinutes()%STEP)-STEP);   // back off newest for availability
@@ -570,7 +571,9 @@ function addLiveLayers(){
     fIdx=frames.length-1; showFrame(); }
   function showFrame(){ frames.forEach((f,i)=>f.layer.setOpacity(i===fIdx?radarOp:0));
     const fr=document.getElementById("lvFrame"), t=document.getElementById("lvTime");
-    if(fr) fr.value=fIdx; if(t) t.textContent=frames[fIdx]?fmtTs(frames[fIdx].ts):"\\u2014"; }
+    if(fr) fr.value=fIdx; if(t) t.textContent=frames[fIdx]?fmtTs(frames[fIdx].ts):"\\u2014";
+    // sync storm tracks to the displayed frame's time (newest frame = 0 min ago = live)
+    frameOffsetMin=(NFR-1-fIdx)*STEP; if(trackOn) renderTracks(); }
   function play(){ stopPlay(); playT=setInterval(()=>{ fIdx=(fIdx+1)%frames.length; showFrame(); },560);
     const b=document.getElementById("lvPlay"); if(b) b.textContent="\\u23f8"; }
   function stopPlay(){ if(playT){clearInterval(playT);playT=null;} const b=document.getElementById("lvPlay"); if(b) b.textContent="\\u25b6"; }
@@ -608,9 +611,12 @@ function addLiveLayers(){
   function renderTracks(){
     if(trackLayer&&TMAP.hasLayer(trackLayer)) TMAP.removeLayer(trackLayer);
     trackLayer=L.layerGroup(); if(!trackData){ return; }
-    const z=TMAP.getZoom(), COARSE=(z<7), FULL=(z>=9), PROJ=45, SPR=16; let shown=0;
+    const z=TMAP.getZoom(), COARSE=(z<8), FULL=(z>=10), PROJ=45, SPR=16;
+    const view=TMAP.getBounds().pad(0.35), off=frameOffsetMin; let shown=0;
     (trackData.features||[]).forEach(f=>{ const p=f.properties, c=f.geometry&&f.geometry.coordinates; if(!c) return;
-      const lat=c[1], lng=c[0], sknt=+p.sknt||0, drct=+p.drct||0, sz=+p.max_size||0;
+      let lat=c[1], lng=c[0]; const sknt=+p.sknt||0, drct=+p.drct||0, sz=+p.max_size||0;
+      if(off>0 && sknt>0){ const d2=dest(lat,lng,drct,sknt*1.852*(off/60)); lat=d2[0]; lng=d2[1]; }  // loop time-sync: back-project to frame time
+      if(!view.contains([lat,lng])) return;                 // viewport cull (perf + relevance)
       const tor=(p.tvs&&p.tvs!=="NONE"), meso=(p.meso&&p.meso!=="NONE"&&p.meso!=="0"), sig=isSig(p);
       if(COARSE && !sig) return;                            // coarse: significant cells ONLY
       if(!FULL && !COARSE && !sig){                         // medium: trivial cell -> faint dot, no cone/tag
@@ -621,7 +627,7 @@ function addLiveLayers(){
       const haz=[]; if(sz>0) haz.push(sz+'" hail'); if(tor) haz.push("TVS"); if(meso) haz.push("meso");
       const mkr=L.circleMarker([lat,lng],{pane:"trackPane",renderer:R_track,radius:sig?6:3,
         color:col,weight:1.5,opacity:trackOp,fillColor:col,fillOpacity:0.55*trackOp});
-      mkr.bindTooltip("Cell "+p.storm_id+" ("+(p.nexrad||"")+") \\u00b7 "+(sknt?mph+" mph toward "+Math.round(travel)+"\\u00b0":"stationary")+(haz.length?" \\u00b7 "+haz.join(" \\u00b7 "):""),{sticky:true});
+      mkr.bindTooltip("Cell "+p.storm_id+" ("+(p.nexrad||"")+") \\u00b7 "+(sknt?mph+" mph toward "+Math.round(travel)+"\\u00b0":"stationary")+(haz.length?" \\u00b7 "+haz.join(" \\u00b7 "):"")+(off>0?" \\u00b7 "+off+" min ago":""),{sticky:true});
       trackLayer.addLayer(mkr); shown++;
       if(sknt>0 && !COARSE){ const km=sknt*1.852*(PROJ/60);   // forward cone toward TRAVEL bearing
         [travel-SPR,travel+SPR].forEach(b=>trackLayer.addLayer(L.polyline([[lat,lng],dest(lat,lng,b,km)],
@@ -632,7 +638,7 @@ function addLiveLayers(){
           icon:L.divIcon({className:"trk-tag"+(sev?" sev":""),html:lbl,iconSize:null,iconAnchor:[-8,7]})})); }
     });
     if(trackOn) trackLayer.addTo(TMAP);
-    const cnt=document.getElementById("lvTrackN"); if(cnt) cnt.textContent=" "+shown+(COARSE?" sig":""); }
+    const cnt=document.getElementById("lvTrackN"); if(cnt) cnt.textContent=" "+shown+(COARSE?" sig":(off>0?" @-"+off+"m":"")); }
   async function loadTrack(){ try{ const r=await fetch(ATTR,{cache:"no-store"}); trackData=await r.json(); renderTracks(); }catch(e){} }
   function trackOpacity(){ if(!trackLayer) return; trackLayer.eachLayer(l=>{ if(l.setStyle) l.setStyle({opacity:trackOp,fillOpacity:0.55*trackOp}); }); }
 
@@ -648,7 +654,7 @@ function addLiveLayers(){
     d.innerHTML=
       '<div class="live-hd"><label class="lv-master"><input type="checkbox" id="lvMaster" checked> <b>\\u26a1 LIVE <span class="tag">current</span></b></label><small>live awareness \\u2014 not the scored storm</small></div>'+
       '<div class="live-row"><label><input type="checkbox" id="lvRadar"> \\u2622 NEXRAD loop <span class="muted">(60 min)</span></label>'+
-        '<div class="live-sub off" id="lvRadarSub"><button id="lvPlay">\\u25b6</button><input type="range" id="lvFrame" min="0" max="'+(NFR-1)+'" value="'+(NFR-1)+'"><span class="ts" id="lvTime">\\u2014</span></div>'+
+        '<div class="live-sub off" id="lvRadarSub"><button id="lvPlay">\\u25b6</button><button id="lvNow" title="Stop on the current (live) frame">NOW</button><input type="range" id="lvFrame" min="0" max="'+(NFR-1)+'" value="'+(NFR-1)+'"><span class="ts" id="lvTime">\\u2014</span></div>'+
         '<div class="live-op off" id="lvRadarOp"><input type="range" id="lvRadarV" min="0" max="100" value="70"><span class="opv" id="lvRadarVv">70%</span></div></div>'+
       '<div class="live-row"><label><input type="checkbox" id="lvWarn"> \\u25a2 NWS warnings <span class="muted">TOR/SVR<span id="lvWarnN"></span></span></label>'+
         '<div class="live-op off" id="lvWarnOp"><input type="range" id="lvWarnV" min="0" max="100" value="85"><span class="opv" id="lvWarnVv">85%</span></div></div>'+
@@ -662,10 +668,12 @@ function addLiveLayers(){
   if(elA) elA.addEventListener("change",()=>{ radarOn=elA.checked;
     document.getElementById("lvRadarSub").classList.toggle("off",!radarOn);
     document.getElementById("lvRadarOp").classList.toggle("off",!radarOn);
-    if(radarOn){ buildFrames(); play(); } else { stopPlay(); frames.forEach(f=>{ if(TMAP.hasLayer(f.layer)) TMAP.removeLayer(f.layer); }); frames=[]; }
+    if(radarOn){ buildFrames(); play(); } else { stopPlay(); frames.forEach(f=>{ if(TMAP.hasLayer(f.layer)) TMAP.removeLayer(f.layer); }); frames=[]; frameOffsetMin=0; if(trackOn) renderTracks(); }
     ensureTimer(); });
   const pl=document.getElementById("lvPlay");
   if(pl) pl.addEventListener("click",()=>{ if(playT) stopPlay(); else play(); });
+  const nw=document.getElementById("lvNow");   // snap to the current (live) frame + stop
+  if(nw) nw.addEventListener("click",()=>{ stopPlay(); if(frames.length){ fIdx=frames.length-1; showFrame(); } });
   const fr=document.getElementById("lvFrame");
   if(fr) fr.addEventListener("input",()=>{ stopPlay(); fIdx=+fr.value; showFrame(); });
   const rv=document.getElementById("lvRadarV");
@@ -698,9 +706,9 @@ function addLiveLayers(){
       if(card) card.classList.add("lv-off");
     } else if(card) card.classList.remove("lv-off"); });
 
-  // ADD 4: zoom drives level-of-detail for the storm-track layer (re-render from the
-  // in-memory data on zoom; no re-fetch). Coarse when out, full when in.
-  TMAP.on("zoomend",()=>{ if(trackOn) renderTracks(); });
+  // ADD 4: zoom drives level-of-detail + viewport cull for the storm-track layer
+  // (re-render from in-memory data on zoom/pan; no re-fetch). Coarse out, full in.
+  TMAP.on("zoomend moveend",()=>{ if(trackOn) renderTracks(); });
 }
 
 async function boot(){
