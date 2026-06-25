@@ -1,0 +1,10 @@
+# the proxy URL + bearer token are injected by CI from repo Secrets — never commit
+config.js
+# local revert backup of the storm-engine viewer template (not part of the site)
+_lastgood/
+__pycache__/
+*.pyc
+node_modules/
+
+# local-only demo render data (real lead targeting) — never publish
+public/sample/

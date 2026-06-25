@@ -1,0 +1,655 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1"/>
+<title>TEMPEST — KCC Storm Review</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+
+  html,body{margin:0;height:100%;font:13px/1.4 system-ui,Segoe UI,Arial}
+  #wrap{display:flex;height:100%}
+  #map{flex:1;background:#eef2f4}            /* neutral bg so layers draw offline */
+  #side{width:330px;overflow:auto;border-left:1px solid #ddd;padding:10px 12px;box-sizing:border-box}
+  h1{font-size:15px;margin:0 0 6px}
+  .muted{color:#777}
+  .pills{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 12px}
+  .pill{background:#f1f1f4;border-radius:10px;padding:2px 8px;font-size:12px}.pill b{color:#111}
+  #detail{border-top:1px solid #eee;padding-top:10px;margin-top:6px}
+  #detail .empty{color:#999}
+  table.snap{border-collapse:collapse;width:100%;margin-top:6px}
+  table.snap td{border-bottom:1px solid #f0f0f0;padding:2px 4px;font-size:12px}
+  table.snap td:first-child{color:#666;white-space:nowrap}
+  .tag{display:inline-block;border-radius:4px;padding:1px 6px;font-size:11px;color:#fff}
+  .tag.inarea{background:#1f78b4}.tag.buffer{background:#888}.tag.pri{background:#bd0026}
+  .ev{margin:2px 0}
+  .legend{font-size:12px;line-height:1.6;background:#fff;padding:8px 10px;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.25);max-width:300px}
+  .legend i{display:inline-block;width:14px;height:13px;margin:0 4px 0 0;vertical-align:-2px;border:1px solid #888}
+  .readout{background:#fff;padding:4px 9px;border-radius:4px;box-shadow:0 1px 4px rgba(0,0,0,.25);font-size:12px}
+  /* PORTAL multi-peril band control */
+  .ctlpanel{background:#fff;padding:6px 8px;border-radius:6px;box-shadow:0 1px 5px rgba(0,0,0,.3);font-size:12px;max-height:84vh;overflow:auto;width:226px}
+  .ctlpanel .ptitle{font-weight:700;margin-bottom:3px}
+  .ctlpanel .band{border-top:1px solid #e8e8e8;padding:4px 0}
+  .ctlpanel .band.off{opacity:.6}
+  .ctlpanel .bm{font-size:12px;display:block}
+  .ctlpanel .na{color:#999;font-weight:400;font-style:italic;font-size:11px}
+  .ctlpanel .sub{display:flex;align-items:center;justify-content:space-between;gap:6px;margin:2px 0 2px 16px}
+  .ctlpanel .sub.mode{color:#666}
+  .ctlpanel .sub>label{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ctlpanel .dial{width:62px;flex:none}
+  .ctlpanel select{font-size:11px}
+  /* zip score label (annotation, not a fill) */
+  .zlbl span{background:rgba(255,255,255,.88);border:1px solid #555;border-radius:3px;padding:0 3px;font-size:11px;font-weight:600;color:#222;white-space:nowrap}
+  .zlbl span.pri{border-color:#b10026;color:#b10026;font-weight:800}
+  /* event peak-size + city labels */
+  .foot-label{background:rgba(255,255,255,.85);border:1px solid #2b5dab;border-radius:3px;color:#16386f;font-weight:700;font-size:11px;padding:0 3px}
+  .city{color:#566; font-size:10px; font-weight:600; text-shadow:0 0 2px #fff,0 0 2px #fff; white-space:nowrap}
+  .leaflet-tooltip.foot-label:before{display:none}
+  .dmg{font-size:15px;font-weight:900;line-height:14px;text-shadow:0 0 2px #fff,0 0 2px #fff,0 0 3px #000}
+  .leaflet-div-icon.dmg{background:none;border:none}
+  .circ-label{background:rgba(255,255,255,.82);border:1px solid #555;border-radius:3px;font-size:10px;font-weight:700;color:#222;padding:0 3px;white-space:nowrap}
+  .leaflet-tooltip.circ-label:before{display:none}
+
+
+/* ── TEMPEST presentation polish (chrome only; §3 map colors untouched) ── */
+:root{ --tmp-bg:#0b1220; --tmp-bg2:#131c2e; --tmp-line:#243456; --tmp-accent:#5b8cff; --tmp-text:#e9eef7; }
+html,body{height:100%}
+#app{display:flex;flex-direction:column;height:100%}
+#tbar{display:flex;align-items:center;gap:14px;flex-wrap:wrap;
+  background:linear-gradient(90deg,#0b1220,#16223c);color:#e9eef7;
+  padding:8px 14px;box-shadow:0 2px 10px rgba(0,0,0,.3);z-index:1200}
+#tbar .brand{display:flex;align-items:center;gap:8px;font-weight:800;letter-spacing:.5px;font-size:16px}
+#tbar .brand .logo{font-size:18px;filter:drop-shadow(0 0 6px #5b8cff)}
+#tbar .brand .sub{font-weight:500;color:#9fb3d9;font-size:12px;letter-spacing:.3px}
+#tbar .datenav{display:flex;align-items:center;gap:6px}
+#tbar .datenav button{background:#1e2b46;color:#e9eef7;border:1px solid #2c3c5e;border-radius:6px;
+  padding:5px 10px;font-size:13px;cursor:pointer;line-height:1}
+#tbar .datenav button:hover{background:#274069}
+#tbar .datenav input[type=date]{background:#1e2b46;color:#e9eef7;border:1px solid #2c3c5e;
+  border-radius:6px;padding:4px 8px;font-size:13px;color-scheme:dark}
+#tbar .perils{color:#9fb3d9;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+#tbar .status{margin-left:auto;color:#ffd28a;font-size:12px}
+#main{flex:1;min-height:0;position:relative}
+#wrap{height:100%}
+#side h1{font-size:14px}
+.legend{font-size:11.5px}
+#nodata{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  background:rgba(13,20,34,.55);z-index:800}
+#nodata.hidden{display:none}
+#nodata .nd-card{background:#fff;border-radius:12px;padding:22px 26px;max-width:420px;
+  box-shadow:0 8px 30px rgba(0,0,0,.35);text-align:center}
+#nodata .nd-card h2{margin:0 0 8px;font-size:18px;color:#16223c}
+#nodata .nd-card p{margin:0;color:#5a6b86;font-size:13px;line-height:1.5}
+/* mobile: stack the side panel under the map */
+@media (max-width:760px){
+  #wrap{flex-direction:column}
+  #map{flex:none;height:58vh}
+  #side{width:auto;max-height:42vh;border-left:none;border-top:1px solid #ddd}
+  #tbar{gap:8px}
+  #tbar .brand .sub{display:none}
+}
+
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="tbar">
+    <div class="brand"><span class="logo">&#9731;</span> TEMPEST <span class="sub">KCC Storm Review</span></div>
+    <div class="datenav">
+      <button id="navPrev" title="Previous day">&#9664;</button>
+      <input id="navDate" type="date">
+      <button id="navNext" title="Next day">&#9654;</button>
+      <button id="navToday">Today</button>
+      <span class="perils" id="navPerils"></span>
+    </div>
+    <div class="status" id="connStatus"></div>
+  </div>
+  <div id="main">
+<div id="wrap">
+  <div id="map"></div>
+  <div id="side">
+    <h1>Storm Review <span id="sd" class="muted"></span></h1>
+    <div class="muted">Read-only verification surface — :StormNode only.</div>
+    <div class="pills" id="summary"></div>
+    <div id="tierkey" class="muted" style="font-size:11px;margin:-4px 0 10px;line-height:1.4"></div>
+    <div id="detail"><div class="empty">Click a zip score or outline for lead detail.</div></div>
+  </div>
+</div>
+    <div id="nodata" class="hidden"><div class="nd-card">
+      <h2 id="ndTitle"></h2><p id="ndMsg"></p></div></div>
+  </div>
+
+</div>
+<script src="config.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+function renderMap(D){
+// ── SINGLE band table: swath fill AND legend both read from this (cannot drift) ──
+// WARM thermal ramp — NO green, NO blue. pale yellow -> magenta-red (high never
+// collides with green terrain). Size + intensity share this family, own breaks.
+const BANDS=[
+  {min:2.0,  label:'2.0+',       color:'#8c0044'},
+  {min:1.75, label:'1.75–1.99',  color:'#c1121f'},
+  {min:1.25, label:'1.25–1.74',  color:'#e8430a'},
+  {min:1.0,  label:'1.0–1.24',   color:'#f97316'},
+  {min:0,    label:'<1.0',       color:'#f7b500'},
+];
+function bandColor(v){for(const b of BANDS){if(v>=b.min)return b.color;}return BANDS[BANDS.length-1].color;}
+// INTENSITY (1–10) band table — primary heatmap. Legend + fill read from this.
+const INT_BANDS=[
+  {min:9, label:'9–10', color:'#8c0044'},
+  {min:7, label:'7–8',  color:'#c1121f'},
+  {min:5, label:'5–6',  color:'#e8430a'},
+  {min:3, label:'3–4',  color:'#f97316'},
+  {min:0, label:'1–2',  color:'#f7b500'},
+];
+function intColor(v){for(const b of INT_BANDS){if(v>=b.min)return b.color;}return INT_BANDS[INT_BANDS.length-1].color;}
+// Priority tiers (knock-first): P1 core / P2 / P3 margin; gated cells (int 0) skipped.
+const TIER_P1=7, TIER_P2=4;
+// ONE tier table drives circle color, priority-swath color, AND the legend
+// (legend swatch == on-screen color, cannot drift). High-contrast:
+// ONE continuous warm scale (NOT tiers + grey): deep red / orange / PALE YELLOW.
+// P3 keeps its pale-yellow meaning; de-emphasis is by OPACITY, never grey.
+const TIER_COLOR={P1:'#c1121f',P2:'#f97316',P3:'#ffffff'};   // deep red / orange / WHITE (P3 = density haze)
+const TIER_LEGEND=[{t:'P3',label:'P3 margin (gate–4)'},{t:'P2',label:'P2 (4–7)'},{t:'P1',label:'P1 core (≥7)'}]; // pale->red heat scale
+function tierOf(it){return it<=0?null:it>=TIER_P1?'P1':it>=TIER_P2?'P2':'P3';}
+// Per-peril tier color ramps (circles + legend read these — distinct families:
+// hail=warm, wind=blue, tornado=violet). P3 keeps its peril hue; de-emphasis is by
+// opacity + off-by-default, never grey.
+const WIND_TIER={P1:'#08306b',P2:'#2171b5',P3:'#6baed6'};
+const TORNADO_TIER={P1:'#4a1486',P2:'#807dba',P3:'#bcbddc'};
+const PERIL_RAMP={
+  hail:   [['P1','#c1121f'],['P2','#f97316'],['P3','#f7b500']],  // P3 legend amber (on map = white haze)
+  wind:   [['P1','#08306b'],['P2','#2171b5'],['P3','#6baed6']],
+  tornado:[['P1','#4a1486'],['P2','#807dba'],['P3','#bcbddc']],
+};
+const PERIL_LABEL={hail:'HAIL',wind:'WIND',tornado:'TORNADO'};
+// swath render state (operator controls)
+let swathMode='intensity';   // 'intensity' | 'size' | 'priority'
+let swathAlpha=0.65;
+// cell = [lat,lon,size,intensity,duration_h,reports]
+function cellColor(c){
+  if(swathMode==='size')return bandColor(c[2]);
+  if(swathMode==='priority'){const t=tierOf(c[3]);return t?TIER_COLOR[t]:null;}  // null => gated, skip
+  return intColor(c[3]);
+}
+const SRC_COLOR={SPC:'#6a3d9a',LSR:'#1f78b4'};
+const AGREE_COLOR={agree:'#33a02c',disagree:'#e31a1c',priority_inspect:'#ff7f00'};
+
+document.getElementById('sd').textContent=D.storm_date;
+const s=D.summary;
+const tc={P1:0,P2:0,P3:0}; (D.circles||[]).forEach(c=>{if(tc[c.tier]!=null)tc[c.tier]++;});
+document.getElementById('summary').innerHTML=
+  `<span class="pill">events <b>${s.events}</b></span>`+
+  `<span class="pill">MESH cells <b>${s.swath_cells}</b></span>`+
+  `<span class="pill">circles <b>${(D.circles||[]).length}</b></span>`+
+  `<span class="pill">P1 <b>${tc.P1}</b> · P2 <b>${tc.P2}</b> · P3 <b>${tc.P3}</b></span>`;
+document.getElementById('tierkey').textContent=
+  'P1/P2 = ad targets (worth spend) · P3 = margin (hail touched, low value, hidden)';
+
+const map=L.map('map').setView([D.center[0],D.center[1]],10);   // center=[lat,lon]
+
+// ── Base layers (neutral default = OFFLINE; tiled bases need network) ──
+const neutral=L.layerGroup();
+const osm=L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; OpenStreetMap'});
+const esri=L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{maxZoom:19,attribution:'Esri World Imagery'});
+const dark=L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',{maxZoom:19,attribution:'&copy; CARTO'});
+neutral.addTo(map);
+
+// ── Geographic reference pane (UNDER the swath, z250): boundaries + city labels ──
+map.createPane('georef'); const gpane=map.getPane('georef'); gpane.style.zIndex=250; gpane.style.pointerEvents='none';
+// P3 white-density pane: above the swath (350), BELOW the P1/P2 cores (overlay 400),
+// so dense P3 haze never hides the red/orange cores beneath it.
+map.createPane('p3Pane'); map.getPane('p3Pane').style.zIndex=360;
+const georef=L.layerGroup();
+(D.geo_ref.boundaries||[]).forEach(g=>L.geoJSON(g,{pane:'georef',interactive:false,
+  style:{color:'#90a4ae',weight:1,fill:false,dashArray:'2,3',opacity:.8}}).addTo(georef));
+(D.geo_ref.cities||[]).forEach(c=>L.marker([c.lat,c.lng],{pane:'georef',interactive:false,
+  icon:L.divIcon({className:'city',html:c.name,iconSize:null})}).addTo(georef));
+georef.addTo(map);
+
+// ── MESH intensity swath: ONE canvas overlay, banded fill, ABOVE tiles @0.65 ──
+// The swath canvas MUST live in a Leaflet PANE inside .leaflet-map-pane (which is
+// a z-index:400 stacking context). A container-sibling canvas at z350 loses to the
+// whole map-pane and hides behind opaque tiles. A dedicated pane at z350 sits
+// correctly between tilePane(200) and overlayPane(400) on every base map. Drawn in
+// LAYER coordinates so the canvas rides the pan transform (only re-anchored on
+// moveend/zoomend) — no per-frame redraw.
+const SwathLayer=L.Layer.extend({
+  initialize(cells){this._cells=cells;},
+  onAdd(map){this._map=map;
+    if(!map.getPane('swathPane')){map.createPane('swathPane');
+      const p=map.getPane('swathPane'); p.style.zIndex=350; p.style.pointerEvents='none';}
+    this._cv=L.DomUtil.create('canvas','',map.getPane('swathPane'));
+    this._cv.style.position='absolute';
+    map.on('moveend zoomend resize viewreset',this.redraw,this);
+    this.redraw(); return this;},
+  onRemove(map){L.DomUtil.remove(this._cv);map.off('moveend zoomend resize viewreset',this.redraw,this);},
+  redraw(){const m=this._map; if(!m)return; const cv=this._cv, s=m.getSize();
+    if(cv.width!==s.x)cv.width=s.x; if(cv.height!==s.y)cv.height=s.y;
+    const topLeft=m.containerPointToLayerPoint([0,0]); L.DomUtil.setPosition(cv,topLeft);
+    const ctx=cv.getContext('2d'); ctx.clearRect(0,0,s.x,s.y); const h=0.005;
+    for(const c of this._cells){const col=cellColor(c); if(!col)continue;
+      // Priority mode: fade P3 cells so P1/P2 cores pop (eye lands on real targets).
+      ctx.globalAlpha=(swathMode==='priority'&&tierOf(c[3])==='P3')?swathAlpha*0.35:swathAlpha;
+      const a=m.latLngToLayerPoint([c[0]+h,c[1]-h]),b=m.latLngToLayerPoint([c[0]-h,c[1]+h]);
+      ctx.fillStyle=col; ctx.fillRect(a.x-topLeft.x,a.y-topLeft.y,Math.max(1,b.x-a.x),Math.max(1,b.y-a.y));}}
+});
+let swath;
+if(D.swath_mode==='per_cell' && D.swath_cells.length){ swath=new SwathLayer(D.swath_cells); }
+else { swath=L.geoJSON({type:'FeatureCollection',features:D.events.filter(e=>e.geometry).map(e=>(
+        {type:'Feature',geometry:e.geometry,properties:{m:e.max_size_in}}))},
+        {style:f=>({stroke:false,fillColor:bandColor(f.properties.m),fillOpacity:0.65})}); }
+swath.addTo(map);
+
+// hover/click readout of per-cell MESH size (cells from the GRIB cache)
+// returns the cell array [lat,lon,size,intensity,dur,reports] the cursor is in
+window.meshAt=(lat,lng)=>{const h=0.005;let best=null,bd=1e9;
+  for(const c of D.swath_cells){const dl=Math.abs(c[0]-lat),dn=Math.abs(c[1]-lng);
+    if(dl<=h&&dn<=h){const d=dl+dn;if(d<bd){bd=d;best=c;}}}return best;};
+function cellText(c){const t=tierOf(c[3]);return `intensity <b>${c[3]}</b>/10 ${t?'('+t+')':'(gated)'} · size <b>${c[2].toFixed(2)}"</b> · ${c[4]}h · ${c[5]} rpt`;}
+let readoutDiv;
+const readout=L.control({position:'topleft'});
+readout.onAdd=()=>{readoutDiv=L.DomUtil.create('div','readout');readoutDiv.innerHTML='Hover swath: intensity + size';return readoutDiv;};
+readout.addTo(map);
+map.on('mousemove',e=>{const c=window.meshAt(e.latlng.lat,e.latlng.lng);
+  readoutDiv.innerHTML=c?cellText(c):'swath: — (no cell here)';});
+map.on('click',e=>{const c=window.meshAt(e.latlng.lat,e.latlng.lng);
+  if(c)L.popup().setLatLng(e.latlng).setContent(cellText(c)).openOn(map);});
+
+// ── Event footprints: thin neutral boundary + permanent PEAK-size label ──
+const footLayer=L.geoJSON(
+  {type:'FeatureCollection',features:D.events.filter(e=>e.geometry).map(e=>(
+    {type:'Feature',geometry:e.geometry,properties:{id:e.event_id,max:e.max_size_in,
+      ev:e.evidence.map(x=>x.type+' '+x.value+'"').join(' / ')}}))},
+  {style:{color:'#555',weight:1,fill:false},
+   onEachFeature:(f,l)=>{l.bindPopup(`<b>${f.properties.id}</b><br>peak ${f.properties.max}"<br>${f.properties.ev}`);
+     l.bindTooltip(`${f.properties.max}"`,{permanent:true,direction:'center',className:'foot-label',opacity:1});}}
+).addTo(map);
+
+// ── Qualifying zips: OPTIONAL reference only (OFF by default — no longer the
+//    scoring surface; the radius clusters below are the scoring layer). ──
+const zipLayer=L.layerGroup();
+function zipOutline(z){return{fill:false,color:'#333',weight:2,dashArray:z.zone==='BUFFER'?'5,4':null};}
+D.zips.forEach(z=>{
+  if(z.polygon){const o=L.geoJSON(z.polygon,{style:zipOutline(z)});o.on('click',()=>showZip(z));
+    o.bindTooltip(`${z.code} · score ${z.score} · ${z.zone}${z.priority?' · PRIORITY':''}`);o.addTo(zipLayer);}
+  if(z.centroid){const lbl=L.marker([z.centroid[1],z.centroid[0]],{icon:L.divIcon({className:'zlbl',
+      html:`<span class="${z.priority?'pri':''}">${Math.round(z.score)}${z.priority?' ⚑':''}</span>`,iconSize:null})});
+    lbl.on('click',()=>showZip(z)); lbl.addTo(zipLayer);}
+});
+
+// ── Ad-target RADIUS CLUSTERS (scoring layer): CLICK-TO-REVEAL center dots, no
+//    permanent labels (clean map). P1/P2 = visible "go" circles; P3 margins go to
+//    a faint optional layer OFF by default (P3 still in the CSV). Sits ON the swath. ──
+const circleLayer=L.layerGroup().addTo(map);   // P1+P2 (visible)
+const p3Layer=L.layerGroup();                  // P3 margins (faint, off by default)
+(D.circles||[]).forEach(c=>{
+  const col=TIER_COLOR[c.tier]||'#888';
+  const isP3=c.tier==='P3', dest=isP3?p3Layer:circleLayer;
+  const popup=`<b>${c.tier}</b> ad-target circle<br>peak <b>${c.peak_intensity}</b> / avg <b>${c.avg_intensity}</b> intensity`+
+    `<br>radius ${c.radius_mi} mi · ${c.cells_covered} cells · max hail ${c.max_hail_size_in}"`+
+    (c.served_floor_widened?'<br><i>widened to Google serving floor</i>':'');
+  const r=c.radius_mi*1609.344;
+  if(isP3){
+    // P3 = semi-opaque WHITE fill that BUILDS density where circles overlap (SVG
+    // alpha compositing): single = faint mist, dense overlap = thicker white mass.
+    // In p3Pane (below cores) so it never hides P1/P2 red. Off by default; P3 dial scales it.
+    L.circle([c.center_lat,c.center_lng],{radius:r,pane:'p3Pane',color:'#fff',weight:0.5,
+      opacity:0.4,fillColor:'#fff',fillOpacity:0.12}).bindPopup(popup).addTo(dest);
+    L.circleMarker([c.center_lat,c.center_lng],{radius:2,pane:'p3Pane',color:'#999',weight:1,
+      fillColor:'#fff',fillOpacity:0.85,opacity:0.7}).bindPopup(popup).addTo(dest);
+  } else {
+    const w=c.tier==='P1'?3:2.5;
+    // WHITE HALO casing under the ring -> separates from warm swath/basemap, any color
+    L.circle([c.center_lat,c.center_lng],{radius:r,color:'#fff',weight:w+2.5,opacity:0.95,fill:false})
+     .bindPopup(popup).addTo(dest);
+    // bold tier-color ring
+    L.circle([c.center_lat,c.center_lng],{radius:r,color:col,weight:w,opacity:0.95,
+      fillColor:col,fillOpacity:0.15}).bindPopup(popup).addTo(dest);
+    // center dot with white halo, click-to-reveal
+    L.circleMarker([c.center_lat,c.center_lng],{radius:5,color:'#fff',weight:1.5,
+      fillColor:col,fillOpacity:0.95,opacity:1}).bindPopup(popup).addTo(dest);
+  }
+});
+
+// ── Evidence pins: SWATH/POINT RECONCILIATION (the trust feature) ──
+// Each pin shows BOTH its reported diameter AND the MESH swath size at the SAME
+// grid cell, with the delta — so the operator can see whether radar (swath) and
+// the ground report agree at that spot. A systematic gap is the §5 calibration
+// signal, not something to hide.
+const evLayer=L.layerGroup().addTo(map);
+D.evidence_points.forEach(p=>{
+  const sc=window.meshAt(p.lat,p.lng);                 // swath cell at the pin
+  const sw=sc?sc[2]:null;                              // swath SIZE for like-for-like compare
+  const d=sw!=null?(p.size_in-sw):null;
+  const cmp=sw!=null?`swath ${sw.toFixed(2)}" (Δ ${d>=0?'+':''}${d.toFixed(2)}")`:'swath — (outside swath)';
+  L.circleMarker([p.lat,p.lng],{radius:3+Math.min(p.size_in,3)*1.5,fillColor:SRC_COLOR[p.source]||'#444',fillOpacity:.85,color:'#fff',weight:1})
+   .bindTooltip(`${p.source} ${p.size_in}" · ${cmp}`)
+   .bindPopup(`<b>${p.source}</b> reported <b>${p.size_in}"</b><br>${cmp}<br>${p.city||''}`).addTo(evLayer);
+});
+
+// ── WIND LAYER (peril='wind') — COOL palette, visually distinct from the warm
+//    hail swath, toggleable. WHERE = the >=50 dBZ swept reflectivity line gated
+//    by measured gusts + damage reports; HOW HARD = gust-calibrated intensity. ──
+let windSwath=null; const windCircleLayer=L.layerGroup(); const windP3Layer=L.layerGroup();
+const windEvLayer=L.layerGroup(); let windAlpha=0.55;
+if(D.wind && D.wind.swath_cells && D.wind.swath_cells.length){
+  if(!map.getPane('windPane')){map.createPane('windPane');
+    const wpane=map.getPane('windPane'); wpane.style.zIndex=352; wpane.style.pointerEvents='none';}
+  function windCellColor(it){ if(it<=0)return null;
+    if(it>=7)return '#08306b'; if(it>=5.5)return '#08519c'; if(it>=4)return '#2171b5';
+    if(it>=2.5)return '#4292c6'; if(it>=1)return '#6baed6'; return '#9ecae1'; }
+  const WindSwathLayer=L.Layer.extend({
+    initialize(cells){this._cells=cells;},
+    onAdd(map){this._map=map; this._cv=L.DomUtil.create('canvas','',map.getPane('windPane'));
+      this._cv.style.position='absolute';
+      map.on('moveend zoomend resize viewreset',this.redraw,this); this.redraw(); return this;},
+    onRemove(map){L.DomUtil.remove(this._cv);map.off('moveend zoomend resize viewreset',this.redraw,this);},
+    redraw(){const m=this._map; if(!m)return; const cv=this._cv,s=m.getSize();
+      if(cv.width!==s.x)cv.width=s.x; if(cv.height!==s.y)cv.height=s.y;
+      const tl=m.containerPointToLayerPoint([0,0]); L.DomUtil.setPosition(cv,tl);
+      const ctx=cv.getContext('2d'); ctx.clearRect(0,0,s.x,s.y); const h=0.005;
+      for(const c of this._cells){const col=windCellColor(c[2]); if(!col)continue;
+        ctx.globalAlpha=windAlpha;
+        const a=m.latLngToLayerPoint([c[0]+h,c[1]-h]),b=m.latLngToLayerPoint([c[0]-h,c[1]+h]);
+        ctx.fillStyle=col; ctx.fillRect(a.x-tl.x,a.y-tl.y,Math.max(1,b.x-a.x),Math.max(1,b.y-a.y));}}
+  });
+  windSwath=new WindSwathLayer(D.wind.swath_cells); windSwath.addTo(map);
+  (D.wind.circles||[]).forEach(c=>{
+    const col=WIND_TIER[c.tier]||'#2171b5', dest=c.tier==='P3'?windP3Layer:windCircleLayer;
+    const r=c.radius_mi*1609.344;
+    const pop=`<b>${c.tier}</b> WIND ad-target<br>peak gust <b>${c.max_hail_size_in}</b> mph · intensity ${c.peak_intensity}/10<br>radius ${c.radius_mi} mi · ${c.cells_covered} cells`;
+    L.circle([c.center_lat,c.center_lng],{radius:r,color:'#fff',weight:4,opacity:0.9,fill:false}).addTo(dest);    // white halo (§3)
+    L.circle([c.center_lat,c.center_lng],{radius:r,color:col,weight:2,opacity:0.95,fillColor:col,fillOpacity:0.12,dashArray:'6,4'}).bindPopup(pop).addTo(dest);
+    L.circleMarker([c.center_lat,c.center_lng],{radius:4,color:'#fff',weight:1.2,fillColor:col,fillOpacity:0.95}).bindPopup(pop).addTo(dest);  // click-to-reveal dot (§3)
+  });
+  windCircleLayer.addTo(map);                  // P1/P2 on; windP3Layer off by default
+  // WIND evidence: gust points (measured = filled, damage-only = hollow), distinct blue
+  (D.wind.evidence||[]).forEach(p=>{
+    const meas=p.measured && p.gust>0;
+    L.circleMarker([p.lat,p.lng],{radius:meas?5:3,color:'#08306b',weight:1.3,
+      fillColor:meas?'#2171b5':'#9ecae1',fillOpacity:meas?0.9:0.6})
+     .bindPopup(`<b>WIND</b> ${meas?('measured '+p.gust+' mph'):'damage-confirmed'}`+(p.damage?'<br>damage report':'')).addTo(windEvLayer);
+  });
+  windEvLayer.addTo(map);
+}
+
+// ── TORNADO LAYER (peril='tornado') — VIOLET palette, distinct from hail-warm
+//    and wind-blue. WHERE = RotationTrack cores BUFFERED into the debris swath
+//    around confirmed tornado paths; HOW HARD = rotation strength. ──
+let tornadoSwath=null; const tornadoCircleLayer=L.layerGroup(); const tornadoP3Layer=L.layerGroup();
+const tornadoEvLayer=L.layerGroup(); let tornadoAlpha=0.55;
+if(D.tornado && D.tornado.swath_cells && D.tornado.swath_cells.length){
+  if(!map.getPane('tornadoPane')){map.createPane('tornadoPane');
+    const tpane=map.getPane('tornadoPane'); tpane.style.zIndex=353; tpane.style.pointerEvents='none';}
+  function tornadoCellColor(it){ if(it<=0)return null;
+    if(it>=7)return '#4a1486'; if(it>=5.5)return '#6a51a3'; if(it>=4)return '#807dba';
+    if(it>=2.5)return '#9e9ac8'; if(it>=1)return '#bcbddc'; return '#dadaeb'; }
+  const TornadoSwathLayer=L.Layer.extend({
+    initialize(cells){this._cells=cells;},
+    onAdd(map){this._map=map; this._cv=L.DomUtil.create('canvas','',map.getPane('tornadoPane'));
+      this._cv.style.position='absolute';
+      map.on('moveend zoomend resize viewreset',this.redraw,this); this.redraw(); return this;},
+    onRemove(map){L.DomUtil.remove(this._cv);map.off('moveend zoomend resize viewreset',this.redraw,this);},
+    redraw(){const m=this._map; if(!m)return; const cv=this._cv,s=m.getSize();
+      if(cv.width!==s.x)cv.width=s.x; if(cv.height!==s.y)cv.height=s.y;
+      const tl=m.containerPointToLayerPoint([0,0]); L.DomUtil.setPosition(cv,tl);
+      const ctx=cv.getContext('2d'); ctx.clearRect(0,0,s.x,s.y); const h=0.005;
+      for(const c of this._cells){const col=tornadoCellColor(c[2]); if(!col)continue;
+        ctx.globalAlpha=tornadoAlpha;
+        const a=m.latLngToLayerPoint([c[0]+h,c[1]-h]),b=m.latLngToLayerPoint([c[0]-h,c[1]+h]);
+        ctx.fillStyle=col; ctx.fillRect(a.x-tl.x,a.y-tl.y,Math.max(1,b.x-a.x),Math.max(1,b.y-a.y));}}
+  });
+  tornadoSwath=new TornadoSwathLayer(D.tornado.swath_cells); tornadoSwath.addTo(map);
+  (D.tornado.circles||[]).forEach(c=>{
+    const col=TORNADO_TIER[c.tier]||'#807dba', dest=c.tier==='P3'?tornadoP3Layer:tornadoCircleLayer;
+    const r=c.radius_mi*1609.344;
+    const pop=`<b>${c.tier}</b> TORNADO debris-target<br>rotation <b>${c.max_hail_size_in}</b> · intensity ${c.peak_intensity}/10<br>radius ${c.radius_mi} mi · ${c.cells_covered} cells`;
+    L.circle([c.center_lat,c.center_lng],{radius:r,color:'#fff',weight:4,opacity:0.9,fill:false}).addTo(dest);    // white halo (§3)
+    L.circle([c.center_lat,c.center_lng],{radius:r,color:col,weight:2,opacity:0.95,fillColor:col,fillOpacity:0.12,dashArray:'2,5'}).bindPopup(pop).addTo(dest);
+    L.circleMarker([c.center_lat,c.center_lng],{radius:4,color:'#fff',weight:1.2,fillColor:col,fillOpacity:0.95}).bindPopup(pop).addTo(dest);  // click-to-reveal dot (§3)
+  });
+  tornadoCircleLayer.addTo(map);               // P1/P2 on; tornadoP3Layer off by default
+  // TORNADO evidence: confirmed tornado LSR/SPC points (violet diamonds, EF if rated)
+  (D.tornado.evidence||[]).forEach(p=>{
+    L.marker([p.lat,p.lng],{icon:L.divIcon({className:'dmg',
+      html:`<span style="color:#4a1486">&#9650;</span>`,iconSize:[16,16]})})
+     .bindPopup(`<b>TORNADO</b> confirmed${p.ef!=null?(' · EF'+p.ef):''}<br>${p.city||''}`).addTo(tornadoEvLayer);
+  });
+  tornadoEvLayer.addTo(map);
+}
+
+// ── §16 occurrence overlay (built off; exposed as a HAIL extra toggle) ──
+let overlayLayer=null;
+if(D.overlay && D.overlay.length){
+  overlayLayer=L.layerGroup();
+  const AG={agree:'#33a02c',flag:'#ff7f00',inspect:'#e31a1c'};
+  D.overlay.forEach(o=>{
+    const col=AG[o.agreement]||'#999';
+    const pop=`<b>${o.kind}</b> · <b>${o.agreement}</b><br>source ${o.source}`+(o.size!=null?` · ${o.size}"`:'')+(o.remark?`<br><i>${o.remark}</i>`:'');
+    if(o.kind==='damage'){L.marker([o.lat,o.lng],{icon:L.divIcon({className:'dmg',html:`<span style="color:${col}">◆</span>`,iconSize:[16,16]})}).bindPopup(pop).addTo(overlayLayer);}
+    else if(o.kind==='engine_only'){L.circleMarker([o.lat,o.lng],{radius:5,color:col,weight:2,fill:false}).bindPopup(pop).addTo(overlayLayer);}
+    else{L.circleMarker([o.lat,o.lng],{radius:4,color:'#222',weight:1,fillColor:col,fillOpacity:.9}).bindPopup(pop).addTo(overlayLayer);}
+  });
+}
+
+// ── opacity helpers ──
+// fade only the big radius circles (>50 m); keep center dots crisp + clickable (§3)
+function setCirclesOpacity(lg,op){lg.eachLayer(l=>{if(l.setStyle&&l.options.radius>50)l.setStyle({opacity:op,fillOpacity:op*0.22});});}
+let basemapOpacity=1.0;
+const BASES={offline:neutral,street:osm,satellite:esri,dark:dark};
+function applyBasemapOpacity(){[osm,esri,dark].forEach(l=>{if(l.setOpacity)l.setOpacity(basemapOpacity);});}
+
+// ── layer registry + per-peril existence/state (globals so the legend can read) ──
+const REG={
+  'hail-swath':{layer:swath,kind:'swath',setA:v=>{swathAlpha=v;swath.redraw&&swath.redraw();}},
+  'hail-ad':{layer:circleLayer,kind:'rings'}, 'hail-p3':{layer:p3Layer,kind:'rings'},
+  'hail-ev':{layer:evLayer,kind:'points'}, 'hail-foot':{layer:footLayer,kind:'points'},
+  'wind-swath':{layer:windSwath,kind:'swath',setA:v=>{windAlpha=v;windSwath&&windSwath.redraw&&windSwath.redraw();}},
+  'wind-ad':{layer:windCircleLayer,kind:'rings'}, 'wind-p3':{layer:windP3Layer,kind:'rings'},
+  'wind-ev':{layer:windEvLayer,kind:'points'},
+  'tornado-swath':{layer:tornadoSwath,kind:'swath',setA:v=>{tornadoAlpha=v;tornadoSwath&&tornadoSwath.redraw&&tornadoSwath.redraw();}},
+  'tornado-ad':{layer:tornadoCircleLayer,kind:'rings'}, 'tornado-p3':{layer:tornadoP3Layer,kind:'rings'},
+  'tornado-ev':{layer:tornadoEvLayer,kind:'points'},
+  'geo':{layer:georef,kind:'points'}, 'zip':{layer:zipLayer,kind:'points'},
+};
+if(overlayLayer)REG['hail-s16']={layer:overlayLayer,kind:'points'};
+const EXISTS={
+  hail:!!((D.swath_cells&&D.swath_cells.length)||(D.circles&&D.circles.length)),
+  wind:!!windSwath, tornado:!!tornadoSwath,
+};
+const BAND_ON={hail:EXISTS.hail,wind:EXISTS.wind,tornado:EXISTS.tornado};
+// [id,label,hasDial,onByDefault,defaultOpacity%]
+const BAND_SUBS={
+  hail:[['hail-swath','Swath',1,1,60],['hail-ad','Ad targets P1/P2',1,1,100],['hail-p3','P3 margins',1,0,35],['hail-ev','Evidence',0,1],['hail-foot','Event labels',0,1]].concat(overlayLayer?[['hail-s16','§16 occurrence',0,0]]:[]),
+  wind:[['wind-swath','Swath',1,1,55],['wind-ad','Ad targets',1,1,100],['wind-p3','P3 margins',1,0,35],['wind-ev','Evidence',0,1]],
+  tornado:[['tornado-swath','Debris swath',1,1,55],['tornado-ad','Ad targets',1,1,100],['tornado-p3','P3 margins',1,0,35],['tornado-ev','Evidence',0,1]],
+};
+const subState={geo:true,zip:false};
+// absent peril -> strip its default-added layers so a disabled band isn't lingering
+['hail','wind','tornado'].forEach(pk=>{ if(EXISTS[pk])return;
+  (BAND_SUBS[pk]||[]).forEach(s=>{const e=REG[s[0]]; if(e&&e.layer&&map.hasLayer(e.layer))map.removeLayer(e.layer);}); });
+
+// ── PORTAL band control: per-peril bands, per-sub toggle + opacity dial ──
+const panel=L.control({position:'topright'});
+panel.onAdd=function(){
+  const d=L.DomUtil.create('div','ctlpanel');
+  let html='<div class="ptitle">Layers</div>';
+  ['hail','wind','tornado'].forEach(pk=>{
+    const ex=EXISTS[pk];
+    html+=`<div class="band${ex?'':' off'}" data-band="${pk}"><label class="bm"><input type="checkbox" data-master="${pk}" ${ex?'checked':'disabled'}> <b>${PERIL_LABEL[pk]}</b>${ex?'':' <span class="na">— no data this storm</span>'}</label>`;
+    if(ex){
+      if(pk==='hail')html+=`<div class="sub mode"><span>fill:</span> <label><input type="radio" name="hm" value="intensity" checked>int</label> <label><input type="radio" name="hm" value="size">size</label> <label><input type="radio" name="hm" value="priority">pri</label></div>`;
+      BAND_SUBS[pk].forEach(s=>{const[id,label,dial,on,def]=s; subState[id]=!!on;
+        html+=`<div class="sub" data-row="${id}"><label><input type="checkbox" data-layer="${id}" ${on?'checked':''}> ${label}</label>${dial?`<input type="range" class="dial" data-dial="${id}" min="0" max="100" value="${def}">`:''}</div>`;});
+    }
+    html+='</div>';
+  });
+  html+=`<div class="band shared"><label class="bm"><b>SHARED</b></label>`+
+    `<div class="sub"><label><input type="checkbox" data-layer="geo" checked> Geo reference</label></div>`+
+    `<div class="sub"><label><input type="checkbox" data-layer="zip"> Zip (reference)</label></div>`+
+    `<div class="sub"><span>Basemap</span> <input type="range" class="dial" data-dial="basemap" min="0" max="100" value="100"></div>`+
+    `<div class="sub"><span>Base</span> <select data-base><option value="offline">Offline</option><option value="street">Street</option><option value="satellite">Satellite</option><option value="dark">Dark</option></select></div></div>`;
+  d.innerHTML=html;
+  L.DomEvent.disableClickPropagation(d); L.DomEvent.disableScrollPropagation(d);
+  function applyLayer(id,vis){const e=REG[id]; if(!e||!e.layer)return; if(vis){if(!map.hasLayer(e.layer))e.layer.addTo(map);}else if(map.hasLayer(e.layer))map.removeLayer(e.layer);}
+  function refreshBand(pk){ if(!EXISTS[pk])return;
+    BAND_SUBS[pk].forEach(s=>applyLayer(s[0], BAND_ON[pk]&&subState[s[0]]));
+    d.querySelectorAll(`.band[data-band="${pk}"] .sub`).forEach(r=>r.style.opacity=BAND_ON[pk]?'1':'.45');
+    d.querySelectorAll(`.band[data-band="${pk}"] .sub input,.band[data-band="${pk}"] .sub select`).forEach(i=>i.disabled=!BAND_ON[pk]);}
+  // default opacities (swaths mid, rings full, p3 default-but-off)
+  ['hail','wind','tornado'].forEach(pk=>{if(!EXISTS[pk])return; BAND_SUBS[pk].forEach(s=>{const[id,_l,dial,_o,def]=s; if(dial){const e=REG[id]; if(e.kind==='swath'&&e.setA)e.setA(def/100); else if(e.kind==='rings')setCirclesOpacity(e.layer,def/100);}});});
+  ['hail','wind','tornado'].forEach(refreshBand);
+  applyLayer('geo',true); applyLayer('zip',false);
+  d.addEventListener('change',ev=>{const t=ev.target;
+    if(t.dataset.master!=null){BAND_ON[t.dataset.master]=t.checked; refreshBand(t.dataset.master); updateLegend(); return;}
+    if(t.name==='hm'){swathMode=t.value; swath.redraw&&swath.redraw(); updateLegend(); return;}
+    if(t.dataset.base!=null)return;
+    if(t.dataset.layer!=null){const id=t.dataset.layer; subState[id]=t.checked; const pk=(id.indexOf('-')>0)?id.split('-')[0]:null; applyLayer(id, pk?(BAND_ON[pk]&&t.checked):t.checked); updateLegend();}});
+  d.addEventListener('input',ev=>{const t=ev.target; if(!t.dataset.dial)return; const v=t.value/100;
+    if(t.dataset.dial==='basemap'){basemapOpacity=v;applyBasemapOpacity();return;}
+    const e=REG[t.dataset.dial]; if(!e)return; if(e.kind==='swath'&&e.setA)e.setA(v); else if(e.kind==='rings')setCirclesOpacity(e.layer,v);});
+  const sel=d.querySelector('select[data-base]');
+  sel.addEventListener('change',e=>{['offline','street','satellite','dark'].forEach(k=>{if(map.hasLayer(BASES[k]))map.removeLayer(BASES[k]);}); BASES[e.target.value].addTo(map); applyBasemapOpacity();});
+  return d;};
+panel.addTo(map);
+
+// ── Legend: active perils' tier ramps (reflects band master toggles) ──
+let legendDiv;
+function rampHtml(bands){return bands.map(b=>`<i style="background:${b.color}"></i>${b.label}`).join('<br>');}
+function updateLegend(){
+  if(!legendDiv)return;
+  let h='<b>Active perils</b><br>', any=false;
+  ['hail','wind','tornado'].forEach(pk=>{ if(!EXISTS[pk]||!BAND_ON[pk])return; any=true;
+    h+=`<div style="margin:2px 0"><b>${PERIL_LABEL[pk]}</b> `+PERIL_RAMP[pk].map(x=>`<i style="background:${x[1]}"></i>${x[0]}`).join(' ')+`</div>`;});
+  if(!any)h+='<span class="muted">all peril bands off</span>';
+  if(EXISTS.hail&&BAND_ON.hail){
+    const hdr=swathMode==='size'?'MESH size (in)':swathMode==='priority'?'Priority tier':'Intensity (1–10)';
+    h+='<hr style="border:none;border-top:1px solid #eee;margin:5px 0">'+
+       `<span class="muted">hail swath fill = ${hdr}</span><br>`+rampHtml(swathMode==='size'?BANDS:INT_BANDS);
+  }
+  h+='<hr style="border:none;border-top:1px solid #eee;margin:5px 0">'+
+     '<b>Circles</b>: click center dot for detail · white-halo ring · P3 off/faint (kept in CSV)<br>'+
+     '<b>Evidence</b>: hail <span style="color:#6a3d9a">●</span>SPC <span style="color:#1f78b4">●</span>LSR · wind <span style="color:#2171b5">●</span>gust · tornado <span style="color:#4a1486">▲</span>confirmed';
+  legendDiv.innerHTML=h;
+}
+const legend=L.control({position:'bottomleft'});
+legend.onAdd=function(){legendDiv=L.DomUtil.create('div','legend');updateLegend();return legendDiv;};
+legend.addTo(map);
+
+// ── Frame the storm ──
+map.invalidateSize();
+// Fit to the data (circles + zips) so any storm frames correctly even when no
+// Event/Lead nodes are persisted for it (e.g. a storm rendered for review only).
+const fitPts=[];
+(D.circles||[]).forEach(c=>fitPts.push([c.center_lat,c.center_lng]));
+(D.zips||[]).forEach(z=>{if(z.centroid)fitPts.push([z.centroid[1],z.centroid[0]]);});
+if(fitPts.length){map.fitBounds(L.latLngBounds(fitPts).pad(0.25));}
+else{map.setView([D.center[0],D.center[1]],10);}
+
+// ── Detail panel (click a zip) ──
+function showZip(z){
+  const snapRows=Object.keys(z.snapshot).sort().map(k=>`<tr><td>${k}</td><td>${z.snapshot[k]}</td></tr>`).join('');
+  const ev=z.evidence.map(e=>`<div class="ev">${e.type} ${e.value}"</div>`).join('')||'<span class="muted">none</span>';
+  document.getElementById('detail').innerHTML=
+    `<div><b>${z.code}</b> &nbsp; <span class="tag ${z.zone==='IN_AREA'?'inarea':'buffer'}">${z.zone}</span> `+
+    (z.priority?'<span class="tag pri">PRIORITY</span>':'')+`</div>`+
+    `<table class="snap">`+
+    `<tr><td>lead_id</td><td>${z.lead_id}</td></tr>`+
+    `<tr><td>score</td><td><b>${z.score}</b></td></tr>`+
+    `<tr><td>max hail</td><td>${z.max_in}"</td></tr>`+
+    `<tr><td>hit_count</td><td>${z.hit_count}</td></tr>`+
+    `<tr><td>n_sources</td><td>${z.n_sources}</td></tr></table>`+
+    `<div style="margin-top:8px"><b>§13 snapshot</b><table class="snap">${snapRows}</table></div>`+
+    `<div style="margin-top:8px"><b>evidence</b><br>${ev}</div>`;
+}
+}
+
+// ── TEMPEST data + date-navigation shell (chrome; renderMap is the §3 core) ──
+const CFG = window.TEMPEST_CONFIG || {};
+const PROXY = (CFG.proxy || "").replace(/\/$/, "");
+const TOKEN = CFG.token || "";
+const ARCHIVE_START = "2020-10-14";
+function todayUTC(){ return new Date().toISOString().slice(0,10); }
+function getDate(){ return new URLSearchParams(location.search).get("date") || todayUTC(); }
+function goDate(d){ location.search = "?date=" + d; }
+function shiftDate(d, n){ const t=new Date(d+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()+n); return t.toISOString().slice(0,10); }
+function parseJSON(s){ try{ return JSON.parse(s||"[]"); }catch(e){ return []; } }
+async function pquery(name, params){
+  const r = await fetch(PROXY + "/query", { method:"POST",
+    headers:{ "Content-Type":"application/json", "Authorization":"Bearer "+TOKEN },
+    body: JSON.stringify({ name, params: params||{} }) });
+  if(!r.ok) throw new Error(name+" HTTP "+r.status);
+  return (await r.json()).rows || [];
+}
+function showNoData(title, msg){
+  const n=document.getElementById("nodata"); n.classList.remove("hidden");
+  document.getElementById("ndTitle").textContent=title;
+  document.getElementById("ndMsg").textContent=msg;
+}
+function assemble(date, rows, geo){
+  const byPeril = {}; rows.forEach(r => byPeril[r.peril] = r);
+  const h = byPeril.hail;
+  const layer = r => r ? { swath_cells: parseJSON(r.swath_json), circles: parseJSON(r.circles_json),
+                           evidence: parseJSON(r.evidence_json),
+                           summary: { cells: parseJSON(r.swath_json).length, circles: r.circle_count } } : null;
+  const D = {
+    storm_date: date,
+    summary: { events: 0, swath_cells: h ? parseJSON(h.swath_json).length : 0,
+               swath_mode: h ? "per_cell" : "none", evidence_points: h ? parseJSON(h.evidence_json).length : 0,
+               circles: h ? h.circle_count : 0, qualifying: 0, priority: 0, in_area: 0, buffer: 0 },
+    center: [38.63, -90.2], events: [], zips: [],
+    evidence_points: h ? parseJSON(h.evidence_json) : [],
+    swath_cells: h ? parseJSON(h.swath_json) : [],
+    swath_mode: h ? "per_cell" : "none",
+    geo_ref: geo || { boundaries: [], cities: [] },
+    circles: h ? parseJSON(h.circles_json) : [],
+    overlay: null,
+    wind: layer(byPeril.wind),
+    tornado: layer(byPeril.tornado),
+  };
+  const pts = [];
+  (D.circles||[]).forEach(c => pts.push([c.center_lat, c.center_lng]));
+  ["wind","tornado"].forEach(p => { if(D[p]) (D[p].circles||[]).forEach(c => pts.push([c.center_lat, c.center_lng])); });
+  if(pts.length){ const la=pts.map(p=>p[0]), lo=pts.map(p=>p[1]);
+    D.center=[la.reduce((a,b)=>a+b,0)/la.length, lo.reduce((a,b)=>a+b,0)/lo.length]; }
+  return D;
+}
+async function boot(){
+  const date = getDate();
+  document.getElementById("navDate").value = date;
+  document.getElementById("navPrev").onclick  = () => goDate(shiftDate(date, -1));
+  document.getElementById("navNext").onclick  = () => goDate(shiftDate(date,  1));
+  document.getElementById("navToday").onclick = () => goDate(todayUTC());
+  document.getElementById("navDate").onchange = e => goDate(e.target.value);
+
+  if(date < ARCHIVE_START){
+    showNoData("No data for "+date, "Operational radar begins "+ARCHIVE_START+". Pick a later date."); return; }
+
+  let geo = { boundaries: [], cities: [] };
+  try { geo = await (await fetch("public/geo_ref.json")).json(); } catch(e){}
+
+  let rows = null;
+  try { rows = await pquery("storm_date_layers", { date }); }
+  catch(e){
+    try { rows = await (await fetch("public/sample/"+date+".json")).json();
+          document.getElementById("connStatus").textContent = "DEMO DATA (proxy offline)"; }
+    catch(_){ showNoData("Proxy unreachable",
+        "Could not reach the storm proxy. The site needs VITE_PROXY_URL / token (Cloudflare tunnel) configured."); return; }
+  }
+  try { const av = await pquery("storm_available_dates", {});
+        const m = (av.find(x => x.storm_date === date) || {}).perils;
+        if(m && m.length) document.getElementById("navPerils").textContent = m.join("  \u00b7  "); } catch(e){}
+
+  if(!rows || !rows.length){
+    showNoData("No storm on record for "+date,
+      "Nothing was processed for this date yet. The daily monitor processes the prior storm day after 13:00 UTC; earlier dates can be backfilled."); return; }
+
+  renderMap(assemble(date, rows, geo));
+}
+boot();
+
+</script>
+</body>
+</html>
