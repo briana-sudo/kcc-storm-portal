@@ -118,6 +118,20 @@ body.fullmap #fmExit:hover{background:#1e2b46}
 .chasectl #chasev{min-width:34px;text-align:right;color:#555}
 .chasectl .ckey{margin-top:5px;color:#667;font-size:11px;line-height:1.4}
 .chasectl .ckey i{display:inline-block;width:13px;height:0;border-top:2px dashed #c1121f;vertical-align:middle;margin-right:4px}
+/* ── LEFT-EDGE SLIDE-OUT DRAWERS (item 8 Step 3 v2 Part 6): LIVE + Active perils
+   relocate from the right to two independent collapsible drawers on the left edge.
+   Layers panel stays on the right. Desktop only (mobile uses the slide-up sheets). ── */
+#leftDrawers{position:absolute;left:0;top:64px;z-index:1150;display:flex;flex-direction:column;gap:12px;pointer-events:none}
+.ldrawer{display:flex;align-items:flex-start;pointer-events:auto}
+.ldrawer .ltab{writing-mode:vertical-rl;background:#16223c;color:#e9eef7;border:1px solid #2c3c5e;border-left:none;
+  border-radius:0 9px 9px 0;padding:11px 6px;font-size:11px;font-weight:800;letter-spacing:.6px;cursor:pointer;white-space:nowrap;
+  box-shadow:2px 2px 9px rgba(0,0,0,.35);user-select:none}
+.ldrawer .ltab:hover{background:#22324f}
+.ldrawer .lbody{max-width:0;overflow:hidden;transition:max-width .25s ease;opacity:0}
+.ldrawer.open .lbody{max-width:360px;overflow:visible;opacity:1;transition:max-width .25s ease,opacity .2s ease .05s}
+.ldrawer .lbody-inner{margin-left:6px}
+/* the relocated controls drop their floating leaflet chrome (they're in a drawer now) */
+.ldrawer .lbody-inner .livectl,.ldrawer .lbody-inner .legend{position:static !important;margin:0 !important;max-width:340px}
 /* ── LIVE (current) awareness group (item 7 ext): NEXRAD loop + NWS warnings +
    storm-track cones. Three independent toggles + opacity dials, visually separated
    from the engine's date-driven scored layers. All display-only, in-memory only. ── */
@@ -243,6 +257,57 @@ body.mobile .msheet-body .ctlpanel,body.mobile .msheet-body .legend{position:sta
 body.mobile .msheet-body #side{width:auto;border:none;overflow:visible}
 /* the moved Leaflet controls leave empty corner wrappers — hide them */
 body.mobile .leaflet-top.leaflet-right,body.mobile .leaflet-bottom.leaflet-left{display:none}
+
+/* ===== WEATHER TAB (rain forecast for scheduling) — isolated tool view ===== */
+#tbar #wxBtn{background:#16324a;color:#cdeafe;border:1px solid #2c4c6e;border-radius:6px;padding:5px 10px;font-size:13px;cursor:pointer}
+#tbar #wxBtn:hover{background:#1d456a}
+#wxBackdrop{position:fixed;inset:0;z-index:2490;background:rgba(6,12,22,.55)}
+#wxBackdrop.hidden{display:none}
+.wx-panel{position:fixed;top:0;right:0;height:100%;width:420px;max-width:96vw;z-index:2500;background:#0f1830;color:#e9eef7;
+  box-shadow:-12px 0 36px rgba(0,0,0,.5);display:flex;flex-direction:column;border-left:1px solid #243352}
+.wx-panel.hidden{display:none}
+.wx-hd{display:flex;align-items:center;gap:10px;padding:13px 15px;border-bottom:1px solid #243352}
+.wx-hd b{font-size:15px;letter-spacing:.3px}.wx-hd .wx-sub{color:#8aa0c6;font-size:11px}
+.wx-hd .wx-x{margin-left:auto;background:transparent;border:none;color:#9fb3d9;font-size:22px;line-height:1;cursor:pointer}
+.wx-hd .wx-x:hover{color:#fff}
+.wx-loc{padding:11px 15px;border-bottom:1px solid #243352;background:#0c1426}
+.wx-place{font-weight:800;font-size:14px;margin-bottom:7px;color:#cdeafe}
+.wx-form{display:flex;gap:6px}
+.wx-addr{flex:1;background:#16223c;border:1px solid #2c3c5e;border-radius:7px;color:#e9eef7;padding:7px 9px;font-size:12px}
+.wx-form button,.wx-pick{background:#2f6fe0;border:none;color:#fff;border-radius:7px;padding:7px 11px;font-size:12px;font-weight:700;cursor:pointer}
+.wx-pick{background:#1e8a4a;margin-top:6px;width:100%}
+.wx-gc-status{font-size:11px;color:#ffb27a;min-height:14px;margin-top:4px}
+.wx-body{flex:1;overflow:auto;padding:13px 15px}
+.wx-load,.wx-err{color:#9fb3d9;font-size:13px;padding:18px 4px;text-align:center}
+.wx-err{color:#ff9a76}
+.wx-now{border-radius:11px;padding:12px 13px;margin-bottom:14px}
+.wx-now.wx-wet{background:#3a1b1b;border:1px solid #7a2b2b}.wx-now.wx-risk{background:#3a3320;border:1px solid #7a6a2b}.wx-now.wx-dry{background:#15301f;border:1px solid #2b6a45}
+.wx-now-h{font-weight:800;font-size:15px}.wx-now-s{font-size:12px;color:#cfe;margin-top:3px}.wx-now-note{font-size:10px;color:#8aa0c6;margin-top:6px;font-style:italic}
+.wx-sec-t{font-weight:800;font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:#8aa0c6;margin:6px 0 7px}
+.wx-hours{display:flex;gap:5px;overflow-x:auto;padding-bottom:8px;margin-bottom:14px}
+.wx-h{flex:0 0 auto;width:40px;display:flex;flex-direction:column;align-items:center;gap:3px;background:#13203c;border-radius:8px;padding:6px 2px}
+.wx-ht{font-size:9px;color:#8aa0c6;white-space:nowrap}.wx-hv{font-size:10px;font-weight:800;color:#7fd1ff}.wx-htemp{font-size:9px;color:#9fb3d9}
+.wx-bar{height:46px;width:14px;display:flex;align-items:flex-end;background:#0c1426;border-radius:3px;overflow:hidden}
+.wx-bar i{display:block;width:100%;background:linear-gradient(#7fd1ff,#2f6fe0);border-radius:3px}
+.wx-days{display:flex;flex-direction:column;gap:5px}
+.wx-d{display:grid;grid-template-columns:84px 46px 1fr auto;gap:8px;align-items:center;background:#13203c;border-radius:8px;padding:7px 10px;font-size:12px}
+.wx-d.night{background:#0e1830;opacity:.92}
+.wx-dn{font-weight:700;color:#cdeafe;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wx-dv{font-weight:800;color:#6f87a8}.wx-dv.mid{color:#7fd1ff}.wx-dv.hi{color:#ff8aa0}
+.wx-ds{color:#aebcd4;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.wx-dt{color:#9fb3d9;font-weight:700}
+.wx-saved{border-top:1px solid #243352;padding:11px 15px;background:#0c1426}
+.wx-saved-h{display:flex;align-items:center;gap:8px;margin-bottom:8px}
+.wx-saved-h b{font-size:12px}.wx-save-cur{margin-left:auto;background:#243352;border:none;color:#cdeafe;border-radius:6px;padding:5px 9px;font-size:11px;font-weight:700;cursor:pointer}
+.wx-saved-list{display:flex;flex-direction:column;gap:5px;max-height:140px;overflow:auto}
+.wx-empty{color:#6f87a8;font-size:11px;font-style:italic}
+.wx-srow{display:flex;gap:6px}
+.wx-go{flex:1;text-align:left;background:#13203c;border:1px solid #243352;color:#e9eef7;border-radius:7px;padding:7px 9px;font-size:12px;cursor:pointer}
+.wx-go:hover{background:#1b2c4e}
+.wx-del{background:#2a1622;border:1px solid #5a2b3b;color:#ff9ab0;border-radius:7px;width:30px;font-size:16px;cursor:pointer}
+body.wx-arming .leaflet-container{cursor:crosshair}
+body.wx-arming::after{content:"Click the map to set the weather location";position:fixed;top:64px;left:50%;transform:translateX(-50%);
+  z-index:3000;background:#2f6fe0;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.4)}
+@media(max-width:520px){.wx-panel{width:100%}}
 """
 
 SHELL_HEAD = """  <div id="tbar">
@@ -260,6 +325,7 @@ SHELL_HEAD = """  <div id="tbar">
         <div class="cal-legend"><span><i class="dot hail"></i>hail</span><span><i class="dot wind"></i>wind</span><span><i class="dot torn"></i>tornado</span><span style="margin-left:auto;color:#7e90b3">&#9679;core &#9675;margin</span></div>
       </div>
     </div>
+    <button id="wxBtn" title="Rain forecast for job scheduling">&#127783; Weather</button>
     <button id="expandBtn" title="Full-screen radar">&#9974; Full-screen radar</button>
     <button id="statusBtn" title="Service health (is Tempest alive)"><span class="hbdot"></span>Status</button>
     <div class="status" id="connStatus"></div>
@@ -319,32 +385,39 @@ function assemble(date, rows, geo){
   const isChase = r => r.coverage_zone === "chase";
   const inmkt = {}, chase = {};
   rows.forEach(r => { (isChase(r) ? chase : inmkt)[r.peril] = r; });
-  const h = inmkt.hail;
+  const h = inmkt.hail, ch = chase.hail;
   const layer = r => r ? { swath_cells: parseJSON(r.swath_json), circles: parseJSON(r.circles_json),
                            evidence: parseJSON(r.evidence_json),
                            summary: { cells: parseJSON(r.swath_json).length, circles: r.circle_count } } : null;
+  // UNIFIED SWATH (Step 3 v2 Part 2): ONE seamless hail swath — geofence-interior
+  // cells + 150mi ring cells concatenated — rendered by renderMap's §3 SwathLayer,
+  // gated ONLY by the hail "Swath" sub-toggle. NEVER gated by chase: chase OFF still
+  // shows the full 150mi swath. No chase dimming — it is just hail.
+  const unifiedSwath = (h ? parseJSON(h.swath_json) : []).concat(ch ? parseJSON(ch.swath_json) : []);
+  const hasSwath = unifiedSwath.length > 0;
   const D = {
     storm_date: date,
-    summary: { events: 0, swath_cells: h ? parseJSON(h.swath_json).length : 0,
-               swath_mode: h ? "per_cell" : "none", evidence_points: h ? parseJSON(h.evidence_json).length : 0,
+    summary: { events: 0, swath_cells: unifiedSwath.length,
+               swath_mode: hasSwath ? "per_cell" : "none", evidence_points: h ? parseJSON(h.evidence_json).length : 0,
                circles: h ? h.circle_count : 0, qualifying: 0, priority: 0, in_area: 0, buffer: 0 },
     center: [38.63, -90.2], events: [], zips: [],
     evidence_points: h ? parseJSON(h.evidence_json) : [],
-    swath_cells: h ? parseJSON(h.swath_json) : [],
-    swath_mode: h ? "per_cell" : "none",
+    swath_cells: unifiedSwath,
+    swath_mode: hasSwath ? "per_cell" : "none",
     geo_ref: geo || { boundaries: [], cities: [] },
     circles: h ? parseJSON(h.circles_json) : [],
     overlay: null,
     wind: layer(inmkt.wind),
     tornado: layer(inmkt.tornado),
-    chase: chase.hail ? { swath_cells: parseJSON(chase.hail.swath_json),
-                          circles: parseJSON(chase.hail.circles_json),
-                          evidence: parseJSON(chase.hail.evidence_json) } : null,
+    // CHASE = TARGETING ONLY (circles + evidence); its swath is folded into the
+    // unified hail swath above, so the swath is always available regardless of chase.
+    chase: ch ? { circles: parseJSON(ch.circles_json), evidence: parseJSON(ch.evidence_json) } : null,
   };
+  // Initial framing uses in-market targeting only — the chase toggle never moves the
+  // map (Part 3), and the unified swath renders to 150mi regardless of view.
   const pts = [];
   (D.circles||[]).forEach(c => pts.push([c.center_lat, c.center_lng]));
   ["wind","tornado"].forEach(p => { if(D[p]) (D[p].circles||[]).forEach(c => pts.push([c.center_lat, c.center_lng])); });
-  // a pure-ring storm (no in-market layer) frames on the chase circles instead
   if(!pts.length && D.chase) (D.chase.circles||[]).forEach(c => pts.push([c.center_lat, c.center_lng]));
   if(pts.length){ const la=pts.map(p=>p[0]), lo=pts.map(p=>p[1]);
     D.center=[la.reduce((a,b)=>a+b,0)/la.length, lo.reduce((a,b)=>a+b,0)/lo.length]; }
@@ -805,83 +878,194 @@ function addLiveLayers(){
     document.body.classList.remove("tz-arming"); applyTz(e.latlng.lat,e.latlng.lng); } });
 }
 
-// ── CHASE LAYER (item 8 Step 3): the 150mi ring fill (chase swath + tier circles)
-//    as a DISTINCT toggleable overlay, OFF by default, that COEXISTS with in-market
-//    (renderMap renders in-market; this draws chase from the bootstrap via TMAP —
-//    renderMap's §3 core is untouched). All chase styling is isolated in CHASE_STYLE
-//    so Brian can tune dash/tint/dim cheaply. ──
+// ── CHASE TARGETING LAYER (item 8 Step 3 v2): chase-ZONE TARGETING only — ad-target
+//    circles (P1/P2), P3 margins, evidence. The chase SWATH is NOT here; it is folded
+//    into the unified hail swath (assemble) so the swath is always available, gated
+//    only by the hail "Swath" sub-toggle. Presented as a peril-style block appended to
+//    the BOTTOM of the §3 Layers panel; drawn via TMAP (renderMap §3 core untouched).
+//    Chase OFF (default) => NOTHING here renders. Toggling NEVER moves the map. ──
 const CHASE_STYLE = {
-  swathAlpha: 0.30,                         // dimmer than in-market swath (reads as chase)
-  paneZ: 360,                               // swath: just above in-market swath(350), below circles
-  circPaneZ: 432,                           // circles: just above in-market circles
+  circPaneZ: 432,                           // chase targeting sits just above in-market circles
   circleDash: "6,5",                        // DASHED (in-market is solid) = chase at a glance
   circleOpacity: 0.95, fillOpacity: 0.10,
-  // mirror of the §3 intensity ramp — CHASE RENDERING ONLY (tune freely; meaning, not pixels, is locked)
-  intBands: [[9,"#8c0044"],[7,"#c1121f"],[5,"#e8430a"],[3,"#f97316"],[0,"#f7b500"]],
-  tierColor: { P1:"#c1121f", P2:"#f97316", P3:"#ffffff" },
+  tierColor: { P1:"#c1121f", P2:"#f97316", P3:"#ffffff" },   // tier MEANING preserved (== in-market)
+  evColor: { SPC:"#6a3d9a", LSR:"#1f78b4" },
 };
-function chaseIntColor(v){ for(const b of CHASE_STYLE.intBands){ if(v>=b[0]) return b[1]; } return CHASE_STYLE.intBands[CHASE_STYLE.intBands.length-1][1]; }
-let CHASE_GROUP = null;
-function buildChaseLayer(chase){
+let CHASE_LAYERS = null;     // { targets, p3, evidence } layer groups
+function buildChaseLayers(chase){
   const map=TMAP; if(!map||!chase) return null;
-  if(!map.getPane("chasePane")){ map.createPane("chasePane"); const p=map.getPane("chasePane");
-    p.style.zIndex=CHASE_STYLE.paneZ; p.style.pointerEvents="none"; }
-  if(!map.getPane("chaseCircPane")){ map.createPane("chaseCircPane");
-    map.getPane("chaseCircPane").style.zIndex=CHASE_STYLE.circPaneZ; }
-  const group=L.layerGroup();
-  const cells=chase.swath_cells||[];
-  if(cells.length){
-    // chase swath: canvas mirror of the §3 SwathLayer (per-cell warm ramp), dimmed.
-    const ChaseSwath=L.Layer.extend({
-      onAdd(m){ this._m=m; this._cv=L.DomUtil.create("canvas","",m.getPane("chasePane"));
-        this._cv.style.position="absolute"; m.on("moveend zoomend resize viewreset",this._draw,this); this._draw(); return this; },
-      onRemove(m){ L.DomUtil.remove(this._cv); m.off("moveend zoomend resize viewreset",this._draw,this); },
-      _draw(){ const m=this._m, cv=this._cv, s=m.getSize();
-        if(cv.width!==s.x)cv.width=s.x; if(cv.height!==s.y)cv.height=s.y;
-        const tl=m.containerPointToLayerPoint([0,0]); L.DomUtil.setPosition(cv,tl);
-        const ctx=cv.getContext("2d"); ctx.clearRect(0,0,s.x,s.y); const hh=0.005;
-        for(const c of cells){ if(c[3]<=0) continue; ctx.globalAlpha=CHASE_STYLE.swathAlpha;
-          const a=m.latLngToLayerPoint([c[0]+hh,c[1]-hh]), b=m.latLngToLayerPoint([c[0]-hh,c[1]+hh]);
-          ctx.fillStyle=chaseIntColor(c[3]); ctx.fillRect(a.x-tl.x,a.y-tl.y,Math.max(1,b.x-a.x),Math.max(1,b.y-a.y)); } }
-    });
-    group.addLayer(new ChaseSwath());
-  }
-  // chase circles: tier colors (P1/P2/P3 meaning preserved) but DASHED + chase fill.
+  if(!map.getPane("chaseCircPane")){ map.createPane("chaseCircPane"); map.getPane("chaseCircPane").style.zIndex=CHASE_STYLE.circPaneZ; }
+  const targets=L.layerGroup(), p3=L.layerGroup(), evidence=L.layerGroup();
   (chase.circles||[]).forEach(c=>{
     const col=CHASE_STYLE.tierColor[c.tier]||"#888", r=c.radius_mi*1609.344;
     const pop="<b>CHASE "+c.tier+"</b> ring target<br>peak <b>"+c.peak_intensity+"</b> / avg <b>"+c.avg_intensity+
       "</b> intensity<br>radius "+c.radius_mi+" mi \\u00b7 max hail "+c.max_hail_size_in+'"';
+    const dest = c.tier==="P3" ? p3 : targets;
     L.circle([c.center_lat,c.center_lng],{pane:"chaseCircPane",radius:r,color:col,weight:c.tier==="P1"?2.5:2,
-      opacity:CHASE_STYLE.circleOpacity,dashArray:CHASE_STYLE.circleDash,fillColor:col,fillOpacity:CHASE_STYLE.fillOpacity})
-      .bindPopup(pop).addTo(group);
+      opacity:CHASE_STYLE.circleOpacity,dashArray:CHASE_STYLE.circleDash,fillColor:col,fillOpacity:CHASE_STYLE.fillOpacity}).bindPopup(pop).addTo(dest);
     L.circleMarker([c.center_lat,c.center_lng],{pane:"chaseCircPane",radius:3,color:"#fff",weight:1,
-      fillColor:col,fillOpacity:0.9}).bindPopup(pop).addTo(group);
+      fillColor:col,fillOpacity:0.9}).bindPopup(pop).addTo(dest);
   });
-  return group;
+  (chase.evidence||[]).forEach(p=>{
+    L.circleMarker([p.lat,p.lng],{pane:"chaseCircPane",radius:3+Math.min(p.size_in||1,3)*1.3,
+      fillColor:CHASE_STYLE.evColor[p.source]||"#444",fillOpacity:.85,color:"#fff",weight:1,dashArray:CHASE_STYLE.circleDash})
+      .bindTooltip((p.source||"")+" "+(p.size_in||"")+'"'+(p.city?" \\u00b7 "+p.city:"")).addTo(evidence);
+  });
+  return { targets, p3, evidence };
 }
-function setChaseOpacity(v){ ["chasePane","chaseCircPane"].forEach(n=>{ const p=TMAP&&TMAP.getPane(n); if(p)p.style.opacity=v; }); }
+function setChaseOpacity(v){ const p=TMAP&&TMAP.getPane("chaseCircPane"); if(p)p.style.opacity=v; }
 function addChaseLayer(chase){
-  if(!TMAP || !chase || document.querySelector(".chasectl")) return;
-  const n=(chase.circles||[]).length, sc=(chase.swath_cells||[]).length;
-  if(!n && !sc) return;                                   // nothing to show for this date
-  CHASE_GROUP = buildChaseLayer(chase);
-  const ctl=L.control({position:"bottomright"});
-  ctl.onAdd=function(){ const d=L.DomUtil.create("div","chasectl");
-    d.innerHTML='<label><input type="checkbox" id="chaseOn"> \\u26d3 Chase fill (150mi) <span class="muted">'+n+' circles</span></label>'+
-      '<div class="chasesub off" id="chaseSub"><input type="range" id="chaseOp" min="0" max="100" value="90"><span id="chasev">90%</span></div>'+
-      '<div class="ckey"><i></i>dashed = chase ring (vs solid in-market) \\u00b7 tiers P1/P2/P3 as in-market</div>';
-    L.DomEvent.disableClickPropagation(d); L.DomEvent.disableScrollPropagation(d); return d; };
-  ctl.addTo(TMAP);
-  const on=document.getElementById("chaseOn"), op=document.getElementById("chaseOp"),
-        v=document.getElementById("chasev"), sub=document.getElementById("chaseSub");
-  if(on) on.addEventListener("change",()=>{ if(!CHASE_GROUP)return;
-    if(on.checked){ CHASE_GROUP.addTo(TMAP); sub.classList.remove("off");
-      const cs=chase.circles||[];                        // frame the ring fill on first reveal
-      if(cs.length){ try{ const b=L.latLngBounds(cs.map(c=>[c.center_lat,c.center_lng]));
-        if(b.isValid()) TMAP.fitBounds(b.pad(0.15)); }catch(e){} } }
-    else { if(TMAP.hasLayer(CHASE_GROUP)) TMAP.removeLayer(CHASE_GROUP); sub.classList.add("off"); } });
-  if(op) op.addEventListener("input",()=>{ setChaseOpacity(op.value/100); if(v)v.textContent=op.value+"%"; });
+  if(!TMAP || !chase || document.querySelector(".chaseband")) return;
+  const circles=chase.circles||[]; if(!circles.length && !(chase.evidence||[]).length) return;
+  CHASE_LAYERS = buildChaseLayers(chase);
+  const tc={P1:0,P2:0,P3:0}; circles.forEach(c=>{ if(tc[c.tier]!=null)tc[c.tier]++; });
+  // master OFF by default => nothing renders. Sub defaults (effective only when master
+  // ON): Ad targets + Evidence ON, P3 margins OFF.
+  const master={on:false}, sub={targets:true, p3:false, evidence:true};
+  function apply(){
+    [["targets",CHASE_LAYERS.targets],["p3",CHASE_LAYERS.p3],["evidence",CHASE_LAYERS.evidence]].forEach(a=>{
+      const show=master.on && sub[a[0]];
+      if(show){ if(!TMAP.hasLayer(a[1])) a[1].addTo(TMAP); } else if(TMAP.hasLayer(a[1])) TMAP.removeLayer(a[1]); });
+    const blk=document.querySelector(".chaseband");
+    if(blk){ blk.querySelectorAll(".sub").forEach(r=>r.style.opacity=master.on?"1":".45");
+      blk.querySelectorAll(".sub input,.sub .dial").forEach(i=>i.disabled=!master.on); }
+  }
+  const panel=document.querySelector(".ctlpanel"); if(!panel) return;
+  const blk=document.createElement("div"); blk.className="band chaseband";
+  blk.innerHTML='<label class="bm"><input type="checkbox" data-cmaster> <b>CHASE FILL</b> <span class="na" style="font-style:normal;color:#888">150mi ring</span></label>'+
+    '<div class="sub"><label><input type="checkbox" data-csub="targets" checked> Ad targets <span style="color:#888">P1 '+tc.P1+' \\u00b7 P2 '+tc.P2+'</span></label></div>'+
+    '<div class="sub"><label><input type="checkbox" data-csub="p3"> P3 margins <span style="color:#888">'+tc.P3+'</span></label></div>'+
+    '<div class="sub"><label><input type="checkbox" data-csub="evidence" checked> Evidence</label><input type="range" class="dial" data-cdial min="0" max="100" value="90"></div>'+
+    '<div class="sub" style="border:none"><span style="color:#888"><span style="display:inline-block;width:13px;border-top:2px dashed #c1121f;vertical-align:middle"></span> dashed = chase (tiers as in-market)</span></div>';
+  panel.appendChild(blk);
+  blk.addEventListener("change",ev=>{ const t=ev.target;
+    if(t.dataset.cmaster!=null){ master.on=t.checked; apply(); return; }
+    if(t.dataset.csub!=null){ sub[t.dataset.csub]=t.checked; apply(); } });
+  blk.addEventListener("input",ev=>{ if(ev.target.dataset.cdial!=null) setChaseOpacity(ev.target.value/100); });
   setChaseOpacity(0.90);
+  apply();   // master off -> nothing renders; rows dimmed
+}
+
+// ── LEFT-EDGE DRAWERS (item 8 Step 3 v2 Part 6): relocate LIVE (.livectl) and Active
+//    perils (.legend) from the right corners into two independent left-edge slide-out
+//    drawers (vertical tab; click slides out, click again slides in). Layers stays
+//    right. Desktop only — mobile uses the slide-up sheets. Controls keep all wiring
+//    (we move the DOM nodes, like the mobile lane does). ──
+function setupLeftDrawers(){
+  if(!TMAP || document.body.classList.contains("mobile") || document.getElementById("leftDrawers")) return;
+  const main=document.getElementById("main"); if(!main) return;
+  const host=document.createElement("div"); host.id="leftDrawers";
+  L.DomEvent.disableClickPropagation(host); L.DomEvent.disableScrollPropagation(host);
+  function drawer(label, node){
+    const d=document.createElement("div"); d.className="ldrawer";
+    const tab=document.createElement("div"); tab.className="ltab"; tab.textContent=label;
+    const body=document.createElement("div"); body.className="lbody";
+    const inner=document.createElement("div"); inner.className="lbody-inner";
+    if(node) inner.appendChild(node);                    // move the control DOM in (keeps its listeners)
+    body.appendChild(inner); d.appendChild(tab); d.appendChild(body);
+    tab.addEventListener("click", ()=>d.classList.toggle("open"));
+    return d;
+  }
+  const live=document.querySelector(".livectl"), legend=document.querySelector(".legend");
+  if(live) host.appendChild(drawer("\\u26a1 LIVE", live));
+  if(legend) host.appendChild(drawer("ACTIVE PERILS", legend));
+  if(host.children.length) main.appendChild(host);
+}
+
+// ===================== WEATHER TAB — rain forecast for job scheduling =====================
+// ISOLATED tool view. NWS api.weather.gov (public-domain, commercial-safe) for hourly +
+// 7-day precip; Census geocoder via JSONP for typed addresses (no key, no CORS dependency);
+// the storm map's click for coordinates. NO graph, NO engine, NO storm-scoring touch.
+// Saved locations persist in localStorage (per-device).
+let wxGcN=0;
+function initWeather(){
+  const HOME={label:"1521 N Berry Rd, Webster Groves MO 63119", lat:38.6071, lng:-90.3776};
+  let curLoc=null, wxArmed=false;
+  const ov=document.createElement("div"); ov.id="wxPanel"; ov.className="wx-panel hidden";
+  ov.innerHTML=
+    '<div class="wx-hd"><b>\\ud83c\\udf27 Weather</b><span class="wx-sub">rain timing \\u00b7 job scheduling</span><button class="wx-x" title="Close">\\u00d7</button></div>'+
+    '<div class="wx-loc"><div class="wx-place">\\u2014</div>'+
+      '<form class="wx-form"><input class="wx-addr" type="text" placeholder="Type an address\\u2026" autocomplete="off"><button type="submit">Go</button></form>'+
+      '<button class="wx-pick" type="button">\\ud83d\\udccd Pick location on the map</button>'+
+      '<div class="wx-gc-status"></div></div>'+
+    '<div class="wx-body"></div>'+
+    '<div class="wx-saved"><div class="wx-saved-h"><b>Saved locations</b><button class="wx-save-cur" type="button">+ Save current</button></div><div class="wx-saved-list"></div></div>';
+  document.body.appendChild(ov);
+  const bk=document.createElement("div"); bk.id="wxBackdrop"; bk.className="hidden"; document.body.appendChild(bk);
+
+  function openWx(){ ov.classList.remove("hidden"); bk.classList.remove("hidden"); if(!curLoc) setLoc(HOME); }
+  function closeWx(){ ov.classList.add("hidden"); bk.classList.add("hidden"); }
+  bk.onclick=closeWx;
+  const wb=document.getElementById("wxBtn"); if(wb) wb.onclick=openWx;
+  ov.querySelector(".wx-x").onclick=closeWx;
+
+  const pop=p=>(p&&p.probabilityOfPrecipitation&&p.probabilityOfPrecipitation.value!=null)?p.probabilityOfPrecipitation.value:0;
+  const fmtHour=iso=>{ try{ return new Intl.DateTimeFormat("en-US",{hour:"numeric",hour12:true,timeZone:"America/Chicago"}).format(new Date(iso)); }catch(e){ return String(iso).slice(11,16); } };
+
+  function geocode(addr){ return new Promise((res,rej)=>{ const cb="__wxgc"+(++wxGcN);
+    window[cb]=d=>{ cleanup(); const m=d&&d.result&&d.result.addressMatches&&d.result.addressMatches[0];
+      m? res({lat:m.coordinates.y, lng:m.coordinates.x, label:m.matchedAddress}) : rej("address not found"); };
+    const s=document.createElement("script");
+    s.src="https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?address="+encodeURIComponent(addr)+"&benchmark=Public_AR_Current&format=jsonp&callback="+cb;
+    s.onerror=()=>{ cleanup(); rej("geocoder unreachable"); };
+    function cleanup(){ try{ delete window[cb]; s.remove(); }catch(e){} }
+    document.body.appendChild(s); setTimeout(()=>{ if(window[cb]){ cleanup(); rej("timeout"); } },8000); }); }
+
+  async function loadForecast(lat,lng,label){
+    const body=ov.querySelector(".wx-body"); body.innerHTML='<div class="wx-load">Loading NWS forecast\\u2026</div>';
+    try{
+      const pr=await (await fetch("https://api.weather.gov/points/"+(+lat).toFixed(4)+","+(+lng).toFixed(4),{headers:{Accept:"application/geo+json"}})).json();
+      const pp=pr.properties; if(!pp||!pp.forecastHourly) throw new Error("no NWS coverage for this point");
+      const rl=pp.relativeLocation&&pp.relativeLocation.properties;
+      ov.querySelector(".wx-place").textContent = label || (rl? rl.city+", "+rl.state : (+lat).toFixed(3)+", "+(+lng).toFixed(3));
+      const hr=await (await fetch(pp.forecastHourly,{headers:{Accept:"application/geo+json"}})).json();
+      const dy=await (await fetch(pp.forecast,{headers:{Accept:"application/geo+json"}})).json();
+      renderForecast(body, hr.properties.periods, dy.properties.periods);
+    }catch(e){ body.innerHTML='<div class="wx-err">Couldn\\'t load the forecast here.<br>'+((e&&e.message)||e)+'</div>'; }
+  }
+
+  function renderForecast(body, hourly, daily){
+    const near=Math.max(0, ...hourly.slice(0,2).map(pop));
+    const nextRain=hourly.find(h=>pop(h)>=30);
+    const cls= near>=50?"wet":near>=20?"risk":"dry";
+    const head= near>=50?"Rain likely soon \\u2014 "+near+"% next 2 hr" : near>=20?"Some rain risk \\u2014 "+near+"% next 2 hr" : "Dry the next 2 hours";
+    const sub = nextRain? "Next \\u226530% rain chance at "+fmtHour(nextRain.startTime)+" ("+pop(nextRain)+"%)" : "No \\u226530% rain chance in the hourly window";
+    let h='<div class="wx-now wx-'+cls+'"><div class="wx-now-h">'+head+'</div><div class="wx-now-s">'+sub+'</div>'+
+          '<div class="wx-now-note">Minute-by-minute nowcast: pending \\u2014 no free commercial source (NWS resolution is hourly)</div></div>';
+    h+='<div class="wx-sec-t">Hourly rain chance (Central)</div><div class="wx-hours">';
+    hourly.slice(0,24).forEach(p=>{ const v=pop(p); h+='<div class="wx-h"><span class="wx-ht">'+fmtHour(p.startTime)+'</span><div class="wx-bar"><i style="height:'+Math.max(3,v)+'%"></i></div><span class="wx-hv">'+v+'%</span><span class="wx-htemp">'+p.temperature+'\\u00b0</span></div>'; });
+    h+='</div>';
+    h+='<div class="wx-sec-t">7-day outlook</div><div class="wx-days">';
+    daily.slice(0,14).forEach(p=>{ const v=pop(p); h+='<div class="wx-d'+(p.isDaytime?"":" night")+'"><span class="wx-dn">'+p.name+'</span><span class="wx-dv '+(v>=50?"hi":v>=20?"mid":"")+'">'+v+'%</span><span class="wx-ds">'+p.shortForecast+'</span><span class="wx-dt">'+p.temperature+'\\u00b0</span></div>'; });
+    h+='</div>';
+    body.innerHTML=h;
+  }
+
+  async function setLoc(loc){ curLoc=loc; const a=ov.querySelector(".wx-addr"); if(a) a.value=""; await loadForecast(loc.lat,loc.lng,loc.label); renderSaved(); }
+
+  // saved locations (localStorage; server-side via the proxy is the cross-device upgrade)
+  const SK="kcc_wx_saved_v1";
+  const getSaved=()=>{ try{ return JSON.parse(localStorage.getItem(SK)||"[]"); }catch(e){ return []; } };
+  const putSaved=a=>{ try{ localStorage.setItem(SK, JSON.stringify(a)); }catch(e){} };
+  function renderSaved(){ const el=ov.querySelector(".wx-saved-list"), arr=getSaved(); el.innerHTML="";
+    if(!arr.length){ el.innerHTML='<div class="wx-empty">No saved locations yet \\u2014 use \\u201c+ Save current\\u201d to add this spot.</div>'; return; }
+    arr.forEach((s,i)=>{ const row=document.createElement("div"); row.className="wx-srow";
+      const go=document.createElement("button"); go.className="wx-go"; go.textContent=s.label; go.onclick=()=>setLoc(s);
+      const del=document.createElement("button"); del.className="wx-del"; del.title="Delete"; del.innerHTML="\\u00d7";
+      del.onclick=()=>{ const a=getSaved(); a.splice(i,1); putSaved(a); renderSaved(); };
+      row.appendChild(go); row.appendChild(del); el.appendChild(row); }); }
+  ov.querySelector(".wx-save-cur").onclick=()=>{ if(!curLoc) return; const a=getSaved();
+    if(!a.some(x=>Math.abs(x.lat-curLoc.lat)<1e-4 && Math.abs(x.lng-curLoc.lng)<1e-4)){ a.push({label:curLoc.label, lat:curLoc.lat, lng:curLoc.lng}); putSaved(a); renderSaved(); } };
+
+  ov.querySelector(".wx-form").onsubmit=async e=>{ e.preventDefault(); const v=ov.querySelector(".wx-addr").value.trim(); if(!v) return;
+    const st=ov.querySelector(".wx-gc-status"); st.textContent="Looking up address\\u2026";
+    try{ const loc=await geocode(v); st.textContent=""; setLoc(loc); }catch(err){ st.textContent="\\u26a0 "+err; } };
+
+  ov.querySelector(".wx-pick").onclick=()=>{ wxArmed=true; document.body.classList.add("wx-arming"); closeWx(); };
+  if(TMAP) TMAP.on("click",e=>{ if(wxArmed){ wxArmed=false; document.body.classList.remove("wx-arming"); openWx();
+    setLoc({label:"Map point "+e.latlng.lat.toFixed(3)+", "+e.latlng.lng.toFixed(3), lat:e.latlng.lat, lng:e.latlng.lng}); } });
+
+  renderSaved();
 }
 
 async function boot(){
@@ -943,7 +1127,9 @@ async function boot(){
   renderMap(D);
   setBaseStreet();
   addLiveLayers();      // item 7 ext: live NEXRAD loop + NWS warnings + storm-track cones (display-only, all off by default)
-  addChaseLayer(D.chase);   // item 8 Step 3: 150mi chase ring fill (swath + circles), toggle OFF by default
+  initWeather();        // weather tab: rain forecast for job scheduling (isolated tool view; NWS + Census, no graph/engine)
+  addChaseLayer(D.chase);   // item 8 Step 3 v2: chase TARGETING block at the bottom of the Layers panel (master OFF)
+  setupLeftDrawers();       // item 8 Step 3 v2 Part 6: LIVE + Active perils -> left-edge slide-out drawers (desktop)
   buildOperatorPanel(D, forecast);
   setupMobile();
   if(banner) showBanner(banner); else hideBanner();
