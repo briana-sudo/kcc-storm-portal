@@ -107,6 +107,17 @@ body.fullmap #fmExit:hover{background:#1e2b46}
 .nexctl .nexsub.off{opacity:.45}
 .nexctl input[type=range]{flex:1}
 .nexctl #nexv{min-width:34px;text-align:right;color:#555}
+/* ── CHASE LAYER control (item 8 Step 3): toggle + opacity for the 150mi ring fill.
+   OFF by default; coexists with in-market (never hides it). ── */
+.chasectl{background:#fff;padding:6px 9px;border-radius:6px;box-shadow:0 1px 5px rgba(0,0,0,.3);font-size:12px;max-width:230px}
+.chasectl label{display:flex;align-items:center;gap:6px;font-weight:700;cursor:pointer}
+.chasectl .muted{color:#888;font-weight:400}
+.chasectl .chasesub{display:flex;align-items:center;gap:7px;margin-top:5px}
+.chasectl .chasesub.off{opacity:.45}
+.chasectl input[type=range]{flex:1}
+.chasectl #chasev{min-width:34px;text-align:right;color:#555}
+.chasectl .ckey{margin-top:5px;color:#667;font-size:11px;line-height:1.4}
+.chasectl .ckey i{display:inline-block;width:13px;height:0;border-top:2px dashed #c1121f;vertical-align:middle;margin-right:4px}
 /* ── LIVE (current) awareness group (item 7 ext): NEXRAD loop + NWS warnings +
    storm-track cones. Three independent toggles + opacity dials, visually separated
    from the engine's date-driven scored layers. All display-only, in-memory only. ── */
@@ -290,8 +301,14 @@ function setBaseStreet(){
 }
 
 function assemble(date, rows, geo){
-  const byPeril = {}; rows.forEach(r => byPeril[r.peril] = r);
-  const h = byPeril.hail;
+  // COLLAPSE FIX (item 8 Step 3): key by peril AND zone so an in-market hail row
+  // and a chase hail row no longer overwrite each other. In-market ALWAYS renders
+  // (renderMap, untouched); chase is a separate coexisting layer drawn by the
+  // bootstrap. coverage_zone==='chase' => chase; null/'geofence' => in-market.
+  const isChase = r => r.coverage_zone === "chase";
+  const inmkt = {}, chase = {};
+  rows.forEach(r => { (isChase(r) ? chase : inmkt)[r.peril] = r; });
+  const h = inmkt.hail;
   const layer = r => r ? { swath_cells: parseJSON(r.swath_json), circles: parseJSON(r.circles_json),
                            evidence: parseJSON(r.evidence_json),
                            summary: { cells: parseJSON(r.swath_json).length, circles: r.circle_count } } : null;
@@ -307,12 +324,17 @@ function assemble(date, rows, geo){
     geo_ref: geo || { boundaries: [], cities: [] },
     circles: h ? parseJSON(h.circles_json) : [],
     overlay: null,
-    wind: layer(byPeril.wind),
-    tornado: layer(byPeril.tornado),
+    wind: layer(inmkt.wind),
+    tornado: layer(inmkt.tornado),
+    chase: chase.hail ? { swath_cells: parseJSON(chase.hail.swath_json),
+                          circles: parseJSON(chase.hail.circles_json),
+                          evidence: parseJSON(chase.hail.evidence_json) } : null,
   };
   const pts = [];
   (D.circles||[]).forEach(c => pts.push([c.center_lat, c.center_lng]));
   ["wind","tornado"].forEach(p => { if(D[p]) (D[p].circles||[]).forEach(c => pts.push([c.center_lat, c.center_lng])); });
+  // a pure-ring storm (no in-market layer) frames on the chase circles instead
+  if(!pts.length && D.chase) (D.chase.circles||[]).forEach(c => pts.push([c.center_lat, c.center_lng]));
   if(pts.length){ const la=pts.map(p=>p[0]), lo=pts.map(p=>p[1]);
     D.center=[la.reduce((a,b)=>a+b,0)/la.length, lo.reduce((a,b)=>a+b,0)/lo.length]; }
   return D;
@@ -764,6 +786,85 @@ function addLiveLayers(){
     document.body.classList.remove("tz-arming"); applyTz(e.latlng.lat,e.latlng.lng); } });
 }
 
+// ── CHASE LAYER (item 8 Step 3): the 150mi ring fill (chase swath + tier circles)
+//    as a DISTINCT toggleable overlay, OFF by default, that COEXISTS with in-market
+//    (renderMap renders in-market; this draws chase from the bootstrap via TMAP —
+//    renderMap's §3 core is untouched). All chase styling is isolated in CHASE_STYLE
+//    so Brian can tune dash/tint/dim cheaply. ──
+const CHASE_STYLE = {
+  swathAlpha: 0.30,                         // dimmer than in-market swath (reads as chase)
+  paneZ: 360,                               // swath: just above in-market swath(350), below circles
+  circPaneZ: 432,                           // circles: just above in-market circles
+  circleDash: "6,5",                        // DASHED (in-market is solid) = chase at a glance
+  circleOpacity: 0.95, fillOpacity: 0.10,
+  // mirror of the §3 intensity ramp — CHASE RENDERING ONLY (tune freely; meaning, not pixels, is locked)
+  intBands: [[9,"#8c0044"],[7,"#c1121f"],[5,"#e8430a"],[3,"#f97316"],[0,"#f7b500"]],
+  tierColor: { P1:"#c1121f", P2:"#f97316", P3:"#ffffff" },
+};
+function chaseIntColor(v){ for(const b of CHASE_STYLE.intBands){ if(v>=b[0]) return b[1]; } return CHASE_STYLE.intBands[CHASE_STYLE.intBands.length-1][1]; }
+let CHASE_GROUP = null;
+function buildChaseLayer(chase){
+  const map=TMAP; if(!map||!chase) return null;
+  if(!map.getPane("chasePane")){ map.createPane("chasePane"); const p=map.getPane("chasePane");
+    p.style.zIndex=CHASE_STYLE.paneZ; p.style.pointerEvents="none"; }
+  if(!map.getPane("chaseCircPane")){ map.createPane("chaseCircPane");
+    map.getPane("chaseCircPane").style.zIndex=CHASE_STYLE.circPaneZ; }
+  const group=L.layerGroup();
+  const cells=chase.swath_cells||[];
+  if(cells.length){
+    // chase swath: canvas mirror of the §3 SwathLayer (per-cell warm ramp), dimmed.
+    const ChaseSwath=L.Layer.extend({
+      onAdd(m){ this._m=m; this._cv=L.DomUtil.create("canvas","",m.getPane("chasePane"));
+        this._cv.style.position="absolute"; m.on("moveend zoomend resize viewreset",this._draw,this); this._draw(); return this; },
+      onRemove(m){ L.DomUtil.remove(this._cv); m.off("moveend zoomend resize viewreset",this._draw,this); },
+      _draw(){ const m=this._m, cv=this._cv, s=m.getSize();
+        if(cv.width!==s.x)cv.width=s.x; if(cv.height!==s.y)cv.height=s.y;
+        const tl=m.containerPointToLayerPoint([0,0]); L.DomUtil.setPosition(cv,tl);
+        const ctx=cv.getContext("2d"); ctx.clearRect(0,0,s.x,s.y); const hh=0.005;
+        for(const c of cells){ if(c[3]<=0) continue; ctx.globalAlpha=CHASE_STYLE.swathAlpha;
+          const a=m.latLngToLayerPoint([c[0]+hh,c[1]-hh]), b=m.latLngToLayerPoint([c[0]-hh,c[1]+hh]);
+          ctx.fillStyle=chaseIntColor(c[3]); ctx.fillRect(a.x-tl.x,a.y-tl.y,Math.max(1,b.x-a.x),Math.max(1,b.y-a.y)); } }
+    });
+    group.addLayer(new ChaseSwath());
+  }
+  // chase circles: tier colors (P1/P2/P3 meaning preserved) but DASHED + chase fill.
+  (chase.circles||[]).forEach(c=>{
+    const col=CHASE_STYLE.tierColor[c.tier]||"#888", r=c.radius_mi*1609.344;
+    const pop="<b>CHASE "+c.tier+"</b> ring target<br>peak <b>"+c.peak_intensity+"</b> / avg <b>"+c.avg_intensity+
+      "</b> intensity<br>radius "+c.radius_mi+" mi \\u00b7 max hail "+c.max_hail_size_in+'"';
+    L.circle([c.center_lat,c.center_lng],{pane:"chaseCircPane",radius:r,color:col,weight:c.tier==="P1"?2.5:2,
+      opacity:CHASE_STYLE.circleOpacity,dashArray:CHASE_STYLE.circleDash,fillColor:col,fillOpacity:CHASE_STYLE.fillOpacity})
+      .bindPopup(pop).addTo(group);
+    L.circleMarker([c.center_lat,c.center_lng],{pane:"chaseCircPane",radius:3,color:"#fff",weight:1,
+      fillColor:col,fillOpacity:0.9}).bindPopup(pop).addTo(group);
+  });
+  return group;
+}
+function setChaseOpacity(v){ ["chasePane","chaseCircPane"].forEach(n=>{ const p=TMAP&&TMAP.getPane(n); if(p)p.style.opacity=v; }); }
+function addChaseLayer(chase){
+  if(!TMAP || !chase || document.querySelector(".chasectl")) return;
+  const n=(chase.circles||[]).length, sc=(chase.swath_cells||[]).length;
+  if(!n && !sc) return;                                   // nothing to show for this date
+  CHASE_GROUP = buildChaseLayer(chase);
+  const ctl=L.control({position:"bottomright"});
+  ctl.onAdd=function(){ const d=L.DomUtil.create("div","chasectl");
+    d.innerHTML='<label><input type="checkbox" id="chaseOn"> \\u26d3 Chase fill (150mi) <span class="muted">'+n+' circles</span></label>'+
+      '<div class="chasesub off" id="chaseSub"><input type="range" id="chaseOp" min="0" max="100" value="90"><span id="chasev">90%</span></div>'+
+      '<div class="ckey"><i></i>dashed = chase ring (vs solid in-market) \\u00b7 tiers P1/P2/P3 as in-market</div>';
+    L.DomEvent.disableClickPropagation(d); L.DomEvent.disableScrollPropagation(d); return d; };
+  ctl.addTo(TMAP);
+  const on=document.getElementById("chaseOn"), op=document.getElementById("chaseOp"),
+        v=document.getElementById("chasev"), sub=document.getElementById("chaseSub");
+  if(on) on.addEventListener("change",()=>{ if(!CHASE_GROUP)return;
+    if(on.checked){ CHASE_GROUP.addTo(TMAP); sub.classList.remove("off");
+      const cs=chase.circles||[];                        // frame the ring fill on first reveal
+      if(cs.length){ try{ const b=L.latLngBounds(cs.map(c=>[c.center_lat,c.center_lng]));
+        if(b.isValid()) TMAP.fitBounds(b.pad(0.15)); }catch(e){} } }
+    else { if(TMAP.hasLayer(CHASE_GROUP)) TMAP.removeLayer(CHASE_GROUP); sub.classList.add("off"); } });
+  if(op) op.addEventListener("input",()=>{ setChaseOpacity(op.value/100); if(v)v.textContent=op.value+"%"; });
+  setChaseOpacity(0.90);
+}
+
 async function boot(){
   if(matchMedia("(pointer:coarse)").matches || /Android|iPhone|iPad|iPod|Mobile|Silk/i.test(navigator.userAgent))
     document.body.classList.add("mobile");
@@ -823,6 +924,7 @@ async function boot(){
   renderMap(D);
   setBaseStreet();
   addLiveLayers();      // item 7 ext: live NEXRAD loop + NWS warnings + storm-track cones (display-only, all off by default)
+  addChaseLayer(D.chase);   // item 8 Step 3: 150mi chase ring fill (swath + circles), toggle OFF by default
   buildOperatorPanel(D, forecast);
   setupMobile();
   if(banner) showBanner(banner); else hideBanner();
