@@ -1468,16 +1468,19 @@ const CHASE_STYLE = {
 let CHASE_LAYERS = null;     // { targets, p3, evidence } layer groups
 function buildChaseLayers(chase){
   const map=TMAP; if(!map||!chase) return null;
+  // Ad-target circles get their OWN pane so the opacity dial controls ONLY them.
+  // P3 margins + evidence live in chaseCircPane and are NOT affected by the dial.
+  if(!map.getPane("chaseTgtPane")){ map.createPane("chaseTgtPane"); map.getPane("chaseTgtPane").style.zIndex=CHASE_STYLE.circPaneZ+1; }
   if(!map.getPane("chaseCircPane")){ map.createPane("chaseCircPane"); map.getPane("chaseCircPane").style.zIndex=CHASE_STYLE.circPaneZ; }
   const targets=L.layerGroup(), p3=L.layerGroup(), evidence=L.layerGroup();
   (chase.circles||[]).forEach(c=>{
     const col=CHASE_STYLE.tierColor[c.tier]||"#888", r=c.radius_mi*1609.344;
     const pop="<b>CHASE "+c.tier+"</b> ring target<br>peak <b>"+c.peak_intensity+"</b> / avg <b>"+c.avg_intensity+
       "</b> intensity<br>radius "+c.radius_mi+" mi \u00b7 max hail "+c.max_hail_size_in+'"';
-    const dest = c.tier==="P3" ? p3 : targets;
-    L.circle([c.center_lat,c.center_lng],{pane:"chaseCircPane",radius:r,color:col,weight:c.tier==="P1"?2.5:2,
+    const isP3 = c.tier==="P3", dest = isP3 ? p3 : targets, pane = isP3 ? "chaseCircPane" : "chaseTgtPane";
+    L.circle([c.center_lat,c.center_lng],{pane:pane,radius:r,color:col,weight:c.tier==="P1"?2.5:2,
       opacity:CHASE_STYLE.circleOpacity,dashArray:CHASE_STYLE.circleDash,fillColor:col,fillOpacity:CHASE_STYLE.fillOpacity}).bindPopup(pop).addTo(dest);
-    L.circleMarker([c.center_lat,c.center_lng],{pane:"chaseCircPane",radius:3,color:"#fff",weight:1,
+    L.circleMarker([c.center_lat,c.center_lng],{pane:pane,radius:3,color:"#fff",weight:1,
       fillColor:col,fillOpacity:0.9}).bindPopup(pop).addTo(dest);
   });
   (chase.evidence||[]).forEach(p=>{
@@ -1487,7 +1490,7 @@ function buildChaseLayers(chase){
   });
   return { targets, p3, evidence };
 }
-function setChaseOpacity(v){ const p=TMAP&&TMAP.getPane("chaseCircPane"); if(p)p.style.opacity=v; }
+function setChaseOpacity(v){ const p=TMAP&&TMAP.getPane("chaseTgtPane"); if(p)p.style.opacity=v; }  // dial = AD TARGETS only (not evidence)
 function addChaseLayer(chase){
   if(!TMAP || !chase || document.querySelector(".chaseband")) return;
   const circles=chase.circles||[]; if(!circles.length && !(chase.evidence||[]).length) return;
@@ -1507,9 +1510,9 @@ function addChaseLayer(chase){
   const panel=document.querySelector(".ctlpanel"); if(!panel) return;
   const blk=document.createElement("div"); blk.className="band chaseband";
   blk.innerHTML='<label class="bm"><input type="checkbox" data-cmaster> <b>CHASE FILL</b> <span class="na" style="font-style:normal;color:#888">150mi ring</span></label>'+
-    '<div class="sub"><label><input type="checkbox" data-csub="targets" checked> Ad targets <span style="color:#888">P1 '+tc.P1+' \u00b7 P2 '+tc.P2+'</span></label></div>'+
+    '<div class="sub"><label><input type="checkbox" data-csub="targets" checked> Ad targets <span style="color:#888">P1 '+tc.P1+' \u00b7 P2 '+tc.P2+'</span></label><input type="range" class="dial" data-cdial min="0" max="100" value="90"></div>'+
     '<div class="sub"><label><input type="checkbox" data-csub="p3"> P3 margins <span style="color:#888">'+tc.P3+'</span></label></div>'+
-    '<div class="sub"><label><input type="checkbox" data-csub="evidence" checked> Evidence</label><input type="range" class="dial" data-cdial min="0" max="100" value="90"></div>'+
+    '<div class="sub"><label><input type="checkbox" data-csub="evidence" checked> Evidence</label></div>'+
     '<div class="sub" style="border:none"><span style="color:#888"><span style="display:inline-block;width:13px;border-top:2px dashed #c1121f;vertical-align:middle"></span> dashed = chase (tiers as in-market)</span></div>';
   panel.appendChild(blk);
   blk.addEventListener("change",ev=>{ const t=ev.target;
