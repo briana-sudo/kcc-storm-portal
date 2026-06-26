@@ -169,6 +169,11 @@ body.pull-armed #tbar #pullBtn{background:#2c6e4c;color:#fff}
 #pullPanel .pp-go:disabled{opacity:.6;cursor:default}
 #pullPanel .pp-x{background:#1e2b46;color:#cdd8ee;border:1px solid #2c3c5e;border-radius:6px;padding:6px 11px;cursor:pointer}
 #pullPanel .pp-status{font-size:12px;color:#ffd28a}
+/* center crosshair = the pull circle's center / aim point (over the map center) */
+#pullCrosshair{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:48px;height:48px;z-index:1100;pointer-events:none}
+#pullCrosshair .ch-h{position:absolute;left:0;right:0;top:50%;height:2px;background:#2f6fe0;transform:translateY(-50%);box-shadow:0 0 2px #fff,0 0 2px #fff}
+#pullCrosshair .ch-v{position:absolute;top:0;bottom:0;left:50%;width:2px;background:#2f6fe0;transform:translateX(-50%);box-shadow:0 0 2px #fff,0 0 2px #fff}
+#pullCrosshair .ch-dot{position:absolute;left:50%;top:50%;width:9px;height:9px;border-radius:50%;background:#2f6fe0;border:2px solid #fff;transform:translate(-50%,-50%);box-shadow:0 0 3px rgba(0,0,0,.4)}
 /* ── LIVE (current) awareness group (item 7 ext): NEXRAD loop + NWS warnings +
    storm-track cones. Three independent toggles + opacity dials, visually separated
    from the engine's date-driven scored layers. All display-only, in-memory only. ── */
@@ -1407,19 +1412,30 @@ function addMapSearch(){
 function addPull(){
   const btn=document.getElementById("pullBtn"); if(!btn || !TMAP || btn.dataset.wired) return;
   btn.dataset.wired="1";
-  let circle=null, panel=null, recenter=null;
+  let circle=null, panel=null, recenter=null, crosshair=null;
   function exitPull(){ document.body.classList.remove("pull-armed");
     if(recenter){ TMAP.off("move", recenter); recenter=null; }
     if(circle){ TMAP.removeLayer(circle); circle=null; }
+    if(crosshair){ crosshair.remove(); crosshair=null; }
     if(panel){ panel.remove(); panel=null; } }
   btn.addEventListener("click", ()=>{
     if(circle){ exitPull(); return; }                          // toggle off
     document.body.classList.add("pull-armed");
     const R=150*1609.344;
-    circle=L.circle(TMAP.getCenter(), {radius:R, color:"#2f6fe0", weight:2, dashArray:"7,5",
-      fillColor:"#2f6fe0", fillOpacity:0.06, interactive:false}).addTo(TMAP);
+    circle=L.circle(TMAP.getCenter(), {radius:R, color:"#2f6fe0", weight:3, opacity:0.95, dashArray:"9,6",
+      fillColor:"#2f6fe0", fillOpacity:0.08, interactive:false}).addTo(TMAP);
+    // The 150mi circle (300mi across) is bigger than the default view, so its outline
+    // sits off-screen. Reveal it with a FIXED zoom (keeps center) instead of fitBounds:
+    // fitBounds needs a correct map pixel size, which can read 0 mid-render. At CONUS
+    // latitudes zoom 6 renders the full circle ~250px wide -> visible on phone + desktop.
+    if(TMAP.getZoom()>6){ try{ TMAP.setView(TMAP.getCenter(), 6, {animate:false}); }catch(e){} }
     recenter=()=>circle.setLatLng(TMAP.getCenter());          // follows pan; radius FIXED
     TMAP.on("move", recenter);
+    // center crosshair at the map center = the circle's center = the aim point
+    const mapEl=document.getElementById("map");
+    crosshair=document.createElement("div"); crosshair.id="pullCrosshair";
+    crosshair.innerHTML='<span class="ch-h"></span><span class="ch-v"></span><span class="ch-dot"></span>';
+    if(mapEl) mapEl.appendChild(crosshair);
     panel=document.createElement("div"); panel.id="pullPanel";
     panel.innerHTML='<span class="pp-txt">Pan to aim the 150mi circle over a storm</span>'+
       '<button class="pp-go" type="button">Confirm pull</button>'+
@@ -1455,15 +1471,19 @@ function addPull(){
 // Continuous intensity ramp: DARK (low/less) -> BRIGHT (heavy), per the feedback (a light
 // colour + transparency washes out; a dark colour holds up and reads more 3D). Dark purple
 // -> purple -> magenta -> red -> orange -> bright yellow (the 1-10 legend direction).
-const INT_RAMP=[[38,9,66],[92,20,140],[173,23,158],[227,55,30],[255,150,0],[255,231,64]];
-function rampRGB(t){ t=Math.max(0,Math.min(1,t)); const x=t*(INT_RAMP.length-1), i=Math.floor(x), f=x-i;
-  const a=INT_RAMP[i], b=INT_RAMP[Math.min(INT_RAMP.length-1,i+1)];
+// DARK (low) -> BRIGHT (high) ramps, one per peril family (§3 keeps hail/wind/tornado
+// visually distinct): same dark->bright inversion the operator liked, different hue.
+const HAIL_RAMP=[[38,9,66],[92,20,140],[173,23,158],[227,55,30],[255,150,0],[255,231,64]];   // purple -> yellow
+const WIND_RAMP=[[6,20,66],[8,48,107],[33,113,181],[107,174,214],[173,216,255],[224,247,255]]; // navy -> pale cyan
+const TORN_RAMP=[[33,8,78],[74,20,134],[128,82,196],[170,130,224],[214,180,250],[250,235,255]]; // deep violet -> lilac
+function rampRGB(ramp,t){ t=Math.max(0,Math.min(1,t)); const x=t*(ramp.length-1), i=Math.floor(x), f=x-i;
+  const a=ramp[i], b=ramp[Math.min(ramp.length-1,i+1)];
   return [Math.round(a[0]+(b[0]-a[0])*f),Math.round(a[1]+(b[1]-a[1])*f),Math.round(a[2]+(b[2]-a[2])*f)]; }
-// CONTINUOUS heatmap (fades between every level -> effectively infinite levels): build the
-// intensity grid, smooth it, paint each cell with the continuous ramp + a value-scaled
-// alpha (low fainter but still dark, high solid), then let the image scale smoothly over
-// its geographic bbox. Display-only; the §3 cell data + ad-circles are untouched.
-function buildHailContours(cells){
+// CONTINUOUS heatmap for ANY peril swath (fades between every level -> effectively infinite
+// levels): build the value grid (vIdx = which cell field), smooth it, paint with the ramp +
+// a value-scaled alpha (low fainter but still dark, high solid), and scale the image smoothly
+// over its bbox. Display-only; the §3 cell data + ad-circles are untouched.
+function buildHeatmap(cells, vIdx, ramp, vmax, paneName, paneZ){
   if(!TMAP || !cells || !cells.length) return null;
   const lats=cells.map(c=>c[0]), lons=cells.map(c=>c[1]);
   const latMin=Math.min.apply(null,lats), latMax=Math.max.apply(null,lats);
@@ -1473,28 +1493,27 @@ function buildHailContours(cells){
   const dLat=sp(lats), dLon=sp(lons);
   const nLat=Math.round((latMax-latMin)/dLat)+1, nLon=Math.round((lonMax-lonMin)/dLon)+1;
   if(nLat*nLon>900000 || nLat<3 || nLon<3) return null;
-  const V=new Float32Array(nLat*nLon);                                  // grid of INTENSITY (1..10), 0 elsewhere
+  const V=new Float32Array(nLat*nLon);
   cells.forEach(c=>{ const r=Math.round((c[0]-latMin)/dLat), q=Math.round((c[1]-lonMin)/dLon);
-    if(r>=0&&r<nLat&&q>=0&&q<nLon){ const i=r*nLon+q; if(c[3]>V[i]) V[i]=c[3]; } });
+    if(r>=0&&r<nLat&&q>=0&&q<nLon){ const i=r*nLon+q; const val=+c[vIdx]||0; if(val>V[i]) V[i]=val; } });
   const blur=src=>{ const out=new Float32Array(src.length);
     for(let r=0;r<nLat;r++)for(let q=0;q<nLon;q++){ let s=0,n=0;
       for(let dr=-1;dr<=1;dr++)for(let dq=-1;dq<=1;dq++){ const rr=r+dr,qq=q+dq;
         if(rr>=0&&rr<nLat&&qq>=0&&qq<nLon){ s+=src[rr*nLon+qq]; n++; } } out[r*nLon+q]=s/n; } return out; };
-  const G=blur(blur(V));
+  const G=blur(blur(V)), lo=vmax*0.03;
   const cv=document.createElement("canvas"); cv.width=nLon; cv.height=nLat;
   const ctx=cv.getContext("2d"), img=ctx.createImageData(nLon,nLat);
   for(let r=0;r<nLat;r++)for(let q=0;q<nLon;q++){ const v=G[r*nLon+q];
     const row=nLat-1-r, idx=(row*nLon+q)*4;                             // flip so canvas top = north
-    if(v<0.3){ img.data[idx+3]=0; continue; }                          // outside swath -> transparent
-    const t=Math.max(0,Math.min(1,v/10)), rgb=rampRGB(t);
+    if(v<lo){ img.data[idx+3]=0; continue; }                           // outside swath -> transparent
+    const t=Math.max(0,Math.min(1,v/vmax)), rgb=rampRGB(ramp,t);
     img.data[idx]=rgb[0]; img.data[idx+1]=rgb[1]; img.data[idx+2]=rgb[2];
     img.data[idx+3]=Math.round(255*Math.max(0.40, Math.min(0.92, 0.40+0.55*t))); }
   ctx.putImageData(img,0,0);
-  if(!TMAP.getPane("contourPane")){ TMAP.createPane("contourPane");
-    const p=TMAP.getPane("contourPane"); p.style.zIndex=351; p.style.pointerEvents="none"; }
-  const ov=L.imageOverlay(cv.toDataURL(), [[latMin,lonMin],[latMax,lonMax]],
-    {pane:"contourPane", opacity:0.85, interactive:false, className:"hailheat"});
-  return L.layerGroup([ov]);
+  if(!TMAP.getPane(paneName)){ TMAP.createPane(paneName);
+    const p=TMAP.getPane(paneName); p.style.zIndex=paneZ; p.style.pointerEvents="none"; }
+  return L.layerGroup([L.imageOverlay(cv.toDataURL(), [[latMin,lonMin],[latMax,lonMax]],
+    {pane:paneName, opacity:0.85, interactive:false, className:"hailheat"})]);
 }
 
 async function boot(){

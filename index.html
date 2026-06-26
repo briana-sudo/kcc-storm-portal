@@ -212,6 +212,11 @@ body.pull-armed #tbar #pullBtn{background:#2c6e4c;color:#fff}
 #pullPanel .pp-go:disabled{opacity:.6;cursor:default}
 #pullPanel .pp-x{background:#1e2b46;color:#cdd8ee;border:1px solid #2c3c5e;border-radius:6px;padding:6px 11px;cursor:pointer}
 #pullPanel .pp-status{font-size:12px;color:#ffd28a}
+/* center crosshair = the pull circle's center / aim point (over the map center) */
+#pullCrosshair{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:48px;height:48px;z-index:1100;pointer-events:none}
+#pullCrosshair .ch-h{position:absolute;left:0;right:0;top:50%;height:2px;background:#2f6fe0;transform:translateY(-50%);box-shadow:0 0 2px #fff,0 0 2px #fff}
+#pullCrosshair .ch-v{position:absolute;top:0;bottom:0;left:50%;width:2px;background:#2f6fe0;transform:translateX(-50%);box-shadow:0 0 2px #fff,0 0 2px #fff}
+#pullCrosshair .ch-dot{position:absolute;left:50%;top:50%;width:9px;height:9px;border-radius:50%;background:#2f6fe0;border:2px solid #fff;transform:translate(-50%,-50%);box-shadow:0 0 3px rgba(0,0,0,.4)}
 /* ── LIVE (current) awareness group (item 7 ext): NEXRAD loop + NWS warnings +
    storm-track cones. Three independent toggles + opacity dials, visually separated
    from the engine's date-driven scored layers. All display-only, in-memory only. ── */
@@ -1906,19 +1911,30 @@ function addMapSearch(){
 function addPull(){
   const btn=document.getElementById("pullBtn"); if(!btn || !TMAP || btn.dataset.wired) return;
   btn.dataset.wired="1";
-  let circle=null, panel=null, recenter=null;
+  let circle=null, panel=null, recenter=null, crosshair=null;
   function exitPull(){ document.body.classList.remove("pull-armed");
     if(recenter){ TMAP.off("move", recenter); recenter=null; }
     if(circle){ TMAP.removeLayer(circle); circle=null; }
+    if(crosshair){ crosshair.remove(); crosshair=null; }
     if(panel){ panel.remove(); panel=null; } }
   btn.addEventListener("click", ()=>{
     if(circle){ exitPull(); return; }                          // toggle off
     document.body.classList.add("pull-armed");
     const R=150*1609.344;
-    circle=L.circle(TMAP.getCenter(), {radius:R, color:"#2f6fe0", weight:2, dashArray:"7,5",
-      fillColor:"#2f6fe0", fillOpacity:0.06, interactive:false}).addTo(TMAP);
+    circle=L.circle(TMAP.getCenter(), {radius:R, color:"#2f6fe0", weight:3, opacity:0.95, dashArray:"9,6",
+      fillColor:"#2f6fe0", fillOpacity:0.08, interactive:false}).addTo(TMAP);
+    // The 150mi circle (300mi across) is bigger than the default view, so its outline
+    // sits off-screen. Reveal it with a FIXED zoom (keeps center) instead of fitBounds:
+    // fitBounds needs a correct map pixel size, which can read 0 mid-render. At CONUS
+    // latitudes zoom 6 renders the full circle ~250px wide -> visible on phone + desktop.
+    if(TMAP.getZoom()>6){ try{ TMAP.setView(TMAP.getCenter(), 6, {animate:false}); }catch(e){} }
     recenter=()=>circle.setLatLng(TMAP.getCenter());          // follows pan; radius FIXED
     TMAP.on("move", recenter);
+    // center crosshair at the map center = the circle's center = the aim point
+    const mapEl=document.getElementById("map");
+    crosshair=document.createElement("div"); crosshair.id="pullCrosshair";
+    crosshair.innerHTML='<span class="ch-h"></span><span class="ch-v"></span><span class="ch-dot"></span>';
+    if(mapEl) mapEl.appendChild(crosshair);
     panel=document.createElement("div"); panel.id="pullPanel";
     panel.innerHTML='<span class="pp-txt">Pan to aim the 150mi circle over a storm</span>'+
       '<button class="pp-go" type="button">Confirm pull</button>'+
