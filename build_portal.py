@@ -1374,6 +1374,8 @@ async function boot(){
   if(banner) showBanner(banner); else hideBanner();
 }
 boot();
+// register the service worker so Chrome offers a real app Install (icon + own window)
+if("serviceWorker" in navigator){ navigator.serviceWorker.register("sw.js").catch(function(){}); }
 """
 
 
