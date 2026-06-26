@@ -425,9 +425,6 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .swathtog .st-btns{display:flex;gap:4px}
 .swathtog button{border:1px solid #c7d2e0;background:#f3f6fb;color:#26344d;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer}
 .swathtog button.on{background:#2f6fe0;border-color:#2f6fe0;color:#fff}
-.swathtog .st-op{display:flex;align-items:center;gap:6px;margin-top:4px}
-.swathtog .st-op span{font-size:10px;font-weight:700;color:#26344d;width:46px}
-.swathtog .st-op input[type=range]{flex:1;height:3px;margin:0}
 .leaflet-image-layer.hailheat{image-rendering:auto}
 
 /* MOBILE: collapsible LIVE box — sits on the map above the bottom toolbar; collapsed to
@@ -2005,7 +2002,7 @@ function rampRGB(ramp,t){ t=Math.max(0,Math.min(1,t)); const x=t*(ramp.length-1)
 // levels): build the value grid (vIdx = which cell field), smooth it, paint with the ramp +
 // a value-scaled alpha (low fainter but still dark, high solid), and scale the image smoothly
 // over its bbox. Display-only; the §3 cell data + ad-circles are untouched.
-function buildHeatmap(cells, vIdx, ramp, vmax, paneName, paneZ){
+function buildHeatmap(cells, valFn, ramp, vmax, paneName, paneZ){
   if(!TMAP || !cells || !cells.length) return null;
   const lats=cells.map(c=>c[0]), lons=cells.map(c=>c[1]);
   const latMin=Math.min.apply(null,lats), latMax=Math.max.apply(null,lats);
@@ -2028,7 +2025,7 @@ function buildHeatmap(cells, vIdx, ramp, vmax, paneName, paneZ){
   if(W*H>950000) return null;
   const V=new Float32Array(W*H);
   cells.forEach(c=>{ const r=Math.round((c[0]-latMin)/dLat)*SS+PAD, q=Math.round((c[1]-lonMin)/dLon)*SS+PAD;
-    if(r>=0&&r<H&&q>=0&&q<W){ const i=r*W+q; const val=+c[vIdx]||0; if(val>V[i]) V[i]=val; } });
+    if(r>=0&&r<H&&q>=0&&q<W){ const i=r*W+q; const val=+valFn(c)||0; if(val>V[i]) V[i]=val; } });
   const blurAxis=(src,horiz)=>{ const out=new Float32Array(src.length);
     for(let y=0;y<H;y++)for(let x=0;x<W;x++){ let s=0,n=0;
       for(let k=-R;k<=R;k++){ const xx=horiz?x+k:x, yy=horiz?y:y+k;
@@ -2164,39 +2161,57 @@ async function boot(){
   // ramp), with one Cells|Smooth toggle. Smooth = show heatmaps + hide the blocky canvas
   // panes; Cells = the original blurred §3 canvases. Display-only; circles/dots untouched.
   if(TMAP){
-    const HL=[], PL={hail:"Hail",wind:"Wind",tornado:"Tornado"};   // {pane,group,peril,op}
+    // HAIL fill modes mirror the §3 radio: intensity=c[3] (1–10), size=c[2] (in), priority=tier(c[3]).
+    const HAIL_FILL={
+      intensity:{fn:c=>+c[3]||0, vmax:10},
+      size:     {fn:c=>+c[2]||0, vmax:2.0},
+      priority: {fn:c=>{const it=+c[3]||0; return it>=7?10:it>=4?6:it>0?2:0;}, vmax:10},
+    };
+    const curHailMode=()=>{ const r=document.querySelector('.ctlpanel input[name="hm"]:checked'); return (r&&HAIL_FILL[r.value])?r.value:"intensity"; };
+    const HL=[];   // {pane,group,peril,op}
     if(D.swath_mode==="per_cell" && D.swath_cells && D.swath_cells.length){
-      const h=buildHeatmap(D.swath_cells,3,HAIL_RAMP,10,"hHeatPane",351); if(h) HL.push({pane:"swathPane",group:h,peril:"hail",op:0.85}); }
+      const m=HAIL_FILL[curHailMode()]; const h=buildHeatmap(D.swath_cells,m.fn,HAIL_RAMP,m.vmax,"hHeatPane",351);
+      if(h) HL.push({pane:"swathPane",group:h,peril:"hail",op:0.6}); }
     if(D.wind && D.wind.swath_cells && D.wind.swath_cells.length){
-      const w=buildHeatmap(D.wind.swath_cells,2,WIND_RAMP,10,"wHeatPane",354); if(w) HL.push({pane:"windPane",group:w,peril:"wind",op:0.85}); }
+      const w=buildHeatmap(D.wind.swath_cells,c=>+c[2]||0,WIND_RAMP,10,"wHeatPane",354); if(w) HL.push({pane:"windPane",group:w,peril:"wind",op:0.55}); }
     if(D.tornado && D.tornado.swath_cells && D.tornado.swath_cells.length){
-      const t=buildHeatmap(D.tornado.swath_cells,2,TORN_RAMP,10,"tHeatPane",355); if(t) HL.push({pane:"tornadoPane",group:t,peril:"tornado",op:0.85}); }
+      const t=buildHeatmap(D.tornado.swath_cells,c=>+c[2]||0,TORN_RAMP,10,"tHeatPane",355); if(t) HL.push({pane:"tornadoPane",group:t,peril:"tornado",op:0.55}); }
     if(HL.length){ let mode="smooth";
       const setOp=o=>o.group.eachLayer(im=>im.setOpacity(o.op));
-      const masterOn=pk=>{ const m=document.querySelector('.ctlpanel input[data-master="'+pk+'"]'); return !m || m.checked; };
-      const show=()=>{ HL.forEach(o=>{ const cp=TMAP.getPane(o.pane);
-        if(mode==="smooth"){ if(masterOn(o.peril)){ o.group.addTo(TMAP); setOp(o); } else if(TMAP.hasLayer(o.group)) TMAP.removeLayer(o.group);
+      const chk=sel=>{ const e=document.querySelector(sel); return !e || e.checked; };
+      // visible only when BOTH the §3 peril master AND its Swath sub-toggle are on
+      const visOf=pk=>chk('.ctlpanel input[data-master="'+pk+'"]') && chk('.ctlpanel input[data-layer="'+pk+'-swath"]');
+      const apply=()=>{ HL.forEach(o=>{ const cp=TMAP.getPane(o.pane);
+        if(mode==="smooth"){ if(visOf(o.peril)){ o.group.addTo(TMAP); setOp(o); } else if(TMAP.hasLayer(o.group)) TMAP.removeLayer(o.group);
           if(cp) cp.style.display="none"; }
         else { if(TMAP.hasLayer(o.group)) TMAP.removeLayer(o.group); if(cp) cp.style.display=""; } }); };
+      // initial opacity = the Layers-panel Swath dial position (so they start in sync)
+      HL.forEach(o=>{ const dl=document.querySelector('.ctlpanel input[data-dial="'+o.peril+'-swath"]'); if(dl) o.op=dl.value/100; });
+      // Cells | Smooth — the ONLY portal-added control. Everything else (per-peril opacity,
+      // fill mode, swath on/off) flows through the existing §3 Layers panel below.
       const ctl=L.control({position:"bottomleft"}); ctl.onAdd=function(){ const d=L.DomUtil.create("div","swathtog");
-        let html='<b>Swath render</b><div class="st-btns"><button id="stCells">Cells</button><button id="stCont" class="on">Smooth</button></div>';
-        HL.forEach(o=>{ html+='<div class="st-op"><span>'+PL[o.peril]+'</span><input type="range" min="0" max="100" value="85" data-op="'+o.peril+'"></div>'; });
-        d.innerHTML=html;
+        d.innerHTML='<b>Swath render</b><div class="st-btns"><button id="stCells">Cells</button><button id="stCont" class="on">Smooth</button></div>';
         L.DomEvent.disableClickPropagation(d); L.DomEvent.disableScrollPropagation(d); return d; };
       ctl.addTo(TMAP);
       const bc=document.getElementById("stCells"), bt=document.getElementById("stCont");
-      if(bc) bc.onclick=()=>{ mode="cells"; bc.classList.add("on"); bt.classList.remove("on"); show(); };
-      if(bt) bt.onclick=()=>{ mode="smooth"; bt.classList.add("on"); bc.classList.remove("on"); show(); };
-      document.querySelectorAll('.swathtog input[data-op]').forEach(sl=>{
-        sl.addEventListener("input",()=>{ const o=HL.find(x=>x.peril===sl.dataset.op); if(!o)return;
-          o.op=sl.value/100; if(mode==="smooth" && TMAP.hasLayer(o.group)) setOp(o); }); });
-      // mirror the §3 per-peril master toggle onto the smooth heatmap (read-only listener)
+      if(bc) bc.onclick=()=>{ mode="cells"; bc.classList.add("on"); bt.classList.remove("on"); apply(); };
+      if(bt) bt.onclick=()=>{ mode="smooth"; bt.classList.add("on"); bc.classList.remove("on"); apply(); };
+      // rebuild the hail heatmap when the §3 fill radio changes (int/size/priority)
+      const rebuildHail=()=>{ const o=HL.find(x=>x.peril==="hail"); if(!o)return;
+        const m=HAIL_FILL[curHailMode()]; if(TMAP.hasLayer(o.group)) TMAP.removeLayer(o.group);
+        const g=buildHeatmap(D.swath_cells,m.fn,HAIL_RAMP,m.vmax,"hHeatPane",351);
+        if(g){ o.group=g; if(mode==="smooth"&&visOf("hail")){ o.group.addTo(TMAP); setOp(o); } } };
+      // DRIVE the smooth swath from the existing §3 Layers panel:
       const panel=document.querySelector(".ctlpanel");
-      if(panel) panel.addEventListener("change",ev=>{ const t=ev.target;
-        if(!t.dataset || t.dataset.master==null) return; const o=HL.find(x=>x.peril===t.dataset.master);
-        if(!o || mode!=="smooth") return;
-        if(t.checked){ o.group.addTo(TMAP); setOp(o); } else if(TMAP.hasLayer(o.group)) TMAP.removeLayer(o.group); });
-      show();
+      if(panel){
+        panel.addEventListener("input",ev=>{ const t=ev.target; if(!t.dataset||!t.dataset.dial)return;   // Swath opacity dial
+          const id=t.dataset.dial; if(id.slice(-6)!=="-swath")return; const o=HL.find(x=>x.peril===id.split("-")[0]); if(!o)return;
+          o.op=t.value/100; if(mode==="smooth"&&TMAP.hasLayer(o.group)) setOp(o); });
+        panel.addEventListener("change",ev=>{ const t=ev.target; if(!t.dataset)return;
+          if(t.name==="hm"){ rebuildHail(); return; }                                                    // fill mode
+          if(t.dataset.master!=null || (t.dataset.layer!=null && t.dataset.layer.slice(-6)==="-swath")) apply(); }); // master / Swath toggle
+      }
+      apply();
     }
   }
   // Stable HOME view: renderMap fitBounds-to-storm over-zooms small swaths. Override to
