@@ -1664,7 +1664,9 @@ async function boot(){
   if(TMAP){
     // HAIL fill modes mirror the §3 radio: intensity=c[3] (1–10), size=c[2] (in), priority=tier(c[3]).
     const HAIL_FILL={
-      intensity:{fn:c=>+c[3]||0, vmax:10},
+      // intensity data clusters low (gate~2..max~9, median ~3); vmax 6 (not 10) spreads it
+      // across the ramp for contrast, the way size fills its 0..2" range. Cores (>=6) saturate.
+      intensity:{fn:c=>+c[3]||0, vmax:6},
       size:     {fn:c=>+c[2]||0, vmax:2.0},
       priority: {fn:c=>{const it=+c[3]||0; return it>=7?10:it>=4?6:it>0?2:0;}, vmax:10},
     };
@@ -1702,6 +1704,11 @@ async function boot(){
         const title=panel.querySelector(".ptitle");
         if(title) title.insertAdjacentElement("afterend", row); else panel.insertBefore(row, panel.firstChild);
         L.DomEvent.disableClickPropagation(row);
+        // spell out the §3 hail fill labels: int -> Intensity, size -> Size, pri -> Priority
+        const FILL_LABEL={intensity:"Intensity",size:"Size",priority:"Priority"};
+        panel.querySelectorAll(".sub.mode label").forEach(lb=>{ const inp=lb.querySelector('input[name="hm"]'); if(!inp)return;
+          const full=FILL_LABEL[inp.value]; if(!full)return;
+          lb.childNodes.forEach(n=>{ if(n.nodeType===3 && n.textContent.trim()) n.textContent=" "+full; }); });
         const bc=document.getElementById("stCells"), bt=document.getElementById("stCont");
         if(bc) bc.onclick=()=>{ mode="cells"; bc.classList.add("on"); bt.classList.remove("on"); apply(); };
         if(bt) bt.onclick=()=>{ mode="smooth"; bt.classList.add("on"); bc.classList.remove("on"); apply(); };
