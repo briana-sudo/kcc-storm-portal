@@ -266,13 +266,13 @@ body.tz-arming::after{content:"Click the map to set the timezone";position:fixed
 /* §3 peril colors: hail warm [247,182,0] / wind blue [107,175,215] / tornado violet [158,155,200] */
 .dot.hail,.cal-dots i.hail{background:#f7b600}
 .dot.wind,.cal-dots i.wind{background:#6bafd7}
-.dot.torn,.cal-dots i.torn{background:#9e9bc8}
+.dot.torn,.cal-dots i.torn{background:#e11421}
 /* tier treatment (item 4): P1 core = bright + halo ring, P2 = solid, P3 margin = hollow/faint */
 .cal-dots i.t1{width:10px;height:10px;box-shadow:0 0 0 2px rgba(255,255,255,.9),0 0 4px rgba(0,0,0,.5)}
 .cal-dots i.t3{background:transparent;opacity:.7}
 .cal-dots i.t3.hail{border-color:#f7b600}
 .cal-dots i.t3.wind{border-color:#6bafd7}
-.cal-dots i.t3.torn{border-color:#9e9bc8}
+.cal-dots i.t3.torn{border-color:#e11421}
 .cal-legend{display:flex;gap:12px;margin-top:7px;color:#9fb3d9;font-size:10px}
 .cal-legend span{display:flex;align-items:center;gap:4px}
 .cal-legend .dot{width:7px;height:7px;border-radius:50%}
@@ -541,7 +541,7 @@ function assemble(date, rows, geo){
 
 // ── operator summary panel: per-peril verdict + numbers (replaces debug pills) ──
 const CELL_AREA = 0.374;
-const PERIL_SWATCH = {hail:"#e8430a", wind:"#2171b5", tornado:"#6a3fa0"};
+const PERIL_SWATCH = {hail:"#e8430a", wind:"#2171b5", tornado:"#d6141b"};
 function tierCounts(circles){ const t={P1:0,P2:0,P3:0}; (circles||[]).forEach(c=>{ if(t[c.tier]!=null)t[c.tier]++; }); return t; }
 function maxMetric(circles){ return (circles||[]).reduce((m,c)=>Math.max(m, c.max_hail_size_in||0), 0); }
 function buildOperatorPanel(D, forecast){
@@ -1495,7 +1495,7 @@ function addPull(){
 // visually distinct): same dark->bright inversion the operator liked, different hue.
 const HAIL_RAMP=[[38,9,66],[92,20,140],[173,23,158],[227,55,30],[255,150,0],[255,231,64]];   // purple -> yellow
 const WIND_RAMP=[[6,20,66],[8,48,107],[33,113,181],[107,174,214],[173,216,255],[224,247,255]]; // navy -> pale cyan
-const TORN_RAMP=[[33,8,78],[74,20,134],[128,82,196],[170,130,224],[214,180,250],[250,235,255]]; // deep violet -> lilac
+const TORN_RAMP=[[61,0,0],[138,10,10],[204,20,23],[255,59,48],[255,138,128],[255,210,205]]; // dark crimson -> light red
 function rampRGB(ramp,t){ t=Math.max(0,Math.min(1,t)); const x=t*(ramp.length-1), i=Math.floor(x), f=x-i;
   const a=ramp[i], b=ramp[Math.min(ramp.length-1,i+1)];
   return [Math.round(a[0]+(b[0]-a[0])*f),Math.round(a[1]+(b[1]-a[1])*f),Math.round(a[2]+(b[2]-a[2])*f)]; }
