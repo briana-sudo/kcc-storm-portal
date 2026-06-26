@@ -377,6 +377,7 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .swathtog .st-btns{display:flex;gap:4px}
 .swathtog button{border:1px solid #c7d2e0;background:#f3f6fb;color:#26344d;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer}
 .swathtog button.on{background:#2f6fe0;border-color:#2f6fe0;color:#fff}
+.leaflet-image-layer.hailheat{image-rendering:auto}
 
 /* MOBILE: collapsible LIVE box — sits on the map above the bottom toolbar; collapsed to
    just its header, taps slide it up/down. #banner (no-storm) parks just above it. */
@@ -1451,12 +1452,19 @@ function addPull(){
 // math": the cell grid is smoothed/interpolated (not exact per-cell), and each level is
 // drawn semi-transparent + stacked low->high, so the result is a smooth colour+opacity
 // gradient -- weak/low-intensity edges fade out, strong cores stay solid.
-const INT_RAMP=[[247,181,0],[249,115,22],[232,67,10],[193,18,31],[140,0,68]];
-function rampColor(t){ t=Math.max(0,Math.min(1,t)); const x=t*(INT_RAMP.length-1), i=Math.floor(x), f=x-i;
+// Continuous intensity ramp: DARK (low/less) -> BRIGHT (heavy), per the feedback (a light
+// colour + transparency washes out; a dark colour holds up and reads more 3D). Dark purple
+// -> purple -> magenta -> red -> orange -> bright yellow (the 1-10 legend direction).
+const INT_RAMP=[[38,9,66],[92,20,140],[173,23,158],[227,55,30],[255,150,0],[255,231,64]];
+function rampRGB(t){ t=Math.max(0,Math.min(1,t)); const x=t*(INT_RAMP.length-1), i=Math.floor(x), f=x-i;
   const a=INT_RAMP[i], b=INT_RAMP[Math.min(INT_RAMP.length-1,i+1)];
-  return "rgb("+Math.round(a[0]+(b[0]-a[0])*f)+","+Math.round(a[1]+(b[1]-a[1])*f)+","+Math.round(a[2]+(b[2]-a[2])*f)+")"; }
+  return [Math.round(a[0]+(b[0]-a[0])*f),Math.round(a[1]+(b[1]-a[1])*f),Math.round(a[2]+(b[2]-a[2])*f)]; }
+// CONTINUOUS heatmap (fades between every level -> effectively infinite levels): build the
+// intensity grid, smooth it, paint each cell with the continuous ramp + a value-scaled
+// alpha (low fainter but still dark, high solid), then let the image scale smoothly over
+// its geographic bbox. Display-only; the §3 cell data + ad-circles are untouched.
 function buildHailContours(cells){
-  if(!TMAP || typeof d3==="undefined" || !d3.contours || !cells || !cells.length) return null;
+  if(!TMAP || !cells || !cells.length) return null;
   const lats=cells.map(c=>c[0]), lons=cells.map(c=>c[1]);
   const latMin=Math.min.apply(null,lats), latMax=Math.max.apply(null,lats);
   const lonMin=Math.min.apply(null,lons), lonMax=Math.max.apply(null,lons);
@@ -1464,26 +1472,29 @@ function buildHailContours(cells){
     for(let i=1;i<u.length;i++){ const d=u[i]-u[i-1]; if(d>1e-6 && d<m) m=d; } return isFinite(m)?m:0.01; };
   const dLat=sp(lats), dLon=sp(lons);
   const nLat=Math.round((latMax-latMin)/dLat)+1, nLon=Math.round((lonMax-lonMin)/dLon)+1;
-  if(nLat*nLon>700000 || nLat<3 || nLon<3) return null;                 // guard pathological grids
+  if(nLat*nLon>900000 || nLat<3 || nLon<3) return null;
   const V=new Float32Array(nLat*nLon);                                  // grid of INTENSITY (1..10), 0 elsewhere
   cells.forEach(c=>{ const r=Math.round((c[0]-latMin)/dLat), q=Math.round((c[1]-lonMin)/dLon);
     if(r>=0&&r<nLat&&q>=0&&q<nLon){ const i=r*nLon+q; if(c[3]>V[i]) V[i]=c[3]; } });
-  const blur=src=>{ const out=new Float32Array(src.length);                 // 3x3 box blur -> rounds contours
+  const blur=src=>{ const out=new Float32Array(src.length);
     for(let r=0;r<nLat;r++)for(let q=0;q<nLon;q++){ let s=0,n=0;
       for(let dr=-1;dr<=1;dr++)for(let dq=-1;dq<=1;dq++){ const rr=r+dr,qq=q+dq;
         if(rr>=0&&rr<nLat&&qq>=0&&qq<nLon){ s+=src[rr*nLon+qq]; n++; } } out[r*nLon+q]=s/n; } return out; };
-  const G=Array.from(blur(blur(blur(V))));                              // 3 passes -> silky transition
-  const TH=[]; for(let k=1;k<=10;k++) TH.push(k-0.5);                    // 10 levels: intensity 0.5 .. 9.5
-  const cs=d3.contours().size([nLon,nLat]).thresholds(TH).smooth(true)(G);
+  const G=blur(blur(V));
+  const cv=document.createElement("canvas"); cv.width=nLon; cv.height=nLat;
+  const ctx=cv.getContext("2d"), img=ctx.createImageData(nLon,nLat);
+  for(let r=0;r<nLat;r++)for(let q=0;q<nLon;q++){ const v=G[r*nLon+q];
+    const row=nLat-1-r, idx=(row*nLon+q)*4;                             // flip so canvas top = north
+    if(v<0.3){ img.data[idx+3]=0; continue; }                          // outside swath -> transparent
+    const t=Math.max(0,Math.min(1,v/10)), rgb=rampRGB(t);
+    img.data[idx]=rgb[0]; img.data[idx+1]=rgb[1]; img.data[idx+2]=rgb[2];
+    img.data[idx+3]=Math.round(255*Math.max(0.40, Math.min(0.92, 0.40+0.55*t))); }
+  ctx.putImageData(img,0,0);
   if(!TMAP.getPane("contourPane")){ TMAP.createPane("contourPane");
     const p=TMAP.getPane("contourPane"); p.style.zIndex=351; p.style.pointerEvents="none"; }
-  const R=L.canvas({pane:"contourPane"}), grp=L.layerGroup();
-  const toLL=pt=>[latMin+pt[1]*dLat, lonMin+pt[0]*dLon];
-  cs.forEach((ct,i)=>{ const col=rampColor(i/(TH.length-1));            // low->high, stacked semi-transparent
-    (ct.coordinates||[]).forEach(poly=>{
-      grp.addLayer(L.polygon(poly.map(ring=>ring.map(toLL)),{pane:"contourPane",renderer:R,
-        stroke:false,fill:true,fillColor:col,fillOpacity:0.16,interactive:false})); }); });
-  return grp;
+  const ov=L.imageOverlay(cv.toDataURL(), [[latMin,lonMin],[latMax,lonMax]],
+    {pane:"contourPane", opacity:0.85, interactive:false, className:"hailheat"});
+  return L.layerGroup([ov]);
 }
 
 async function boot(){
@@ -1564,7 +1575,7 @@ async function boot(){
       const show=()=>{ if(mode==="contours"){ contours.addTo(TMAP); if(swp) swp.style.display="none"; }
         else { if(TMAP.hasLayer(contours)) TMAP.removeLayer(contours); if(swp) swp.style.display=""; } };
       const ctl=L.control({position:"bottomleft"}); ctl.onAdd=function(){ const d=L.DomUtil.create("div","swathtog");
-        d.innerHTML='<b>Hail swath</b><div class="st-btns"><button id="stCells">Cells</button><button id="stCont" class="on">Contours</button></div>';
+        d.innerHTML='<b>Hail swath</b><div class="st-btns"><button id="stCells">Cells</button><button id="stCont" class="on">Smooth</button></div>';
         L.DomEvent.disableClickPropagation(d); return d; };
       ctl.addTo(TMAP);
       const bc=document.getElementById("stCells"), bt=document.getElementById("stCont");
