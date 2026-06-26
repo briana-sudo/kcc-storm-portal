@@ -382,6 +382,9 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .swathtog .st-btns{display:flex;gap:4px}
 .swathtog button{border:1px solid #c7d2e0;background:#f3f6fb;color:#26344d;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer}
 .swathtog button.on{background:#2f6fe0;border-color:#2f6fe0;color:#fff}
+.swathtog .st-op{display:flex;align-items:center;gap:6px;margin-top:4px}
+.swathtog .st-op span{font-size:10px;font-weight:700;color:#26344d;width:46px}
+.swathtog .st-op input[type=range]{flex:1;height:3px;margin:0}
 .leaflet-image-layer.hailheat{image-rendering:auto}
 
 /* MOBILE: collapsible LIVE box — sits on the map above the bottom toolbar; collapsed to
@@ -1512,27 +1515,44 @@ function buildHeatmap(cells, vIdx, ramp, vmax, paneName, paneZ){
     for(let i=1;i<u.length;i++){ const d=u[i]-u[i-1]; if(d>1e-6 && d<m) m=d; } return isFinite(m)?m:0.01; };
   const dLat=sp(lats), dLon=sp(lons);
   const nLat=Math.round((latMax-latMin)/dLat)+1, nLon=Math.round((lonMax-lonMin)/dLon)+1;
-  if(nLat*nLon>900000 || nLat<3 || nLon<3) return null;
-  const V=new Float32Array(nLat*nLon);
-  cells.forEach(c=>{ const r=Math.round((c[0]-latMin)/dLat), q=Math.round((c[1]-lonMin)/dLon);
-    if(r>=0&&r<nLat&&q>=0&&q<nLon){ const i=r*nLon+q; const val=+c[vIdx]||0; if(val>V[i]) V[i]=val; } });
-  const blur=src=>{ const out=new Float32Array(src.length);
-    for(let r=0;r<nLat;r++)for(let q=0;q<nLon;q++){ let s=0,n=0;
-      for(let dr=-1;dr<=1;dr++)for(let dq=-1;dq<=1;dq++){ const rr=r+dr,qq=q+dq;
-        if(rr>=0&&rr<nLat&&qq>=0&&qq<nLon){ s+=src[rr*nLon+qq]; n++; } } out[r*nLon+q]=s/n; } return out; };
-  const G=blur(blur(V)), lo=vmax*0.03;
-  const cv=document.createElement("canvas"); cv.width=nLon; cv.height=nLat;
-  const ctx=cv.getContext("2d"), img=ctx.createImageData(nLon,nLat);
-  for(let r=0;r<nLat;r++)for(let q=0;q<nLon;q++){ const v=G[r*nLon+q];
-    const row=nLat-1-r, idx=(row*nLon+q)*4;                             // flip so canvas top = north
-    if(v<lo){ img.data[idx+3]=0; continue; }                           // outside swath -> transparent
+  if(nLat<2 || nLon<2) return null;
+  // SUPERSAMPLE coarse/thin swaths up to a smoother base resolution (a 26-row tornado or
+  // 48-row wind swath upscales to hard squares otherwise). Then PAD with a transparent
+  // zero-margin so the blur fades the swath to nothing before the canvas edge -> no more
+  // rectangular bounding-box boundary. Wider, multi-pass separable box blur merges sparse
+  // native cells into continuous blobs. DISPLAY ONLY; the cell data is untouched.
+  const minDim=Math.min(nLat,nLon);
+  let SS=Math.max(1, Math.min(4, Math.ceil(64/Math.max(1,minDim))));
+  while(SS>1 && (nLat*SS)*(nLon*SS) > 520000) SS--;
+  const PAD=Math.max(3, 2*SS+2), R=Math.max(1,SS), passes=(SS>=3?5:SS===2?4:3);
+  const W=nLon*SS+2*PAD, H=nLat*SS+2*PAD;
+  if(W*H>950000) return null;
+  const V=new Float32Array(W*H);
+  cells.forEach(c=>{ const r=Math.round((c[0]-latMin)/dLat)*SS+PAD, q=Math.round((c[1]-lonMin)/dLon)*SS+PAD;
+    if(r>=0&&r<H&&q>=0&&q<W){ const i=r*W+q; const val=+c[vIdx]||0; if(val>V[i]) V[i]=val; } });
+  const blurAxis=(src,horiz)=>{ const out=new Float32Array(src.length);
+    for(let y=0;y<H;y++)for(let x=0;x<W;x++){ let s=0,n=0;
+      for(let k=-R;k<=R;k++){ const xx=horiz?x+k:x, yy=horiz?y:y+k;
+        if(xx>=0&&xx<W&&yy>=0&&yy<H){ s+=src[yy*W+xx]; n++; } }
+      out[y*W+x]=s/n; } return out; };
+  let G=V; for(let p=0;p<passes;p++){ G=blurAxis(G,true); G=blurAxis(G,false); }
+  const lo=vmax*0.02, fEnd=vmax*0.10, aFloor=0.42, aTop=0.92;   // feather alpha 0->floor across [lo,fEnd]
+  const cv=document.createElement("canvas"); cv.width=W; cv.height=H;
+  const ctx=cv.getContext("2d"), img=ctx.createImageData(W,H);
+  for(let y=0;y<H;y++)for(let x=0;x<W;x++){ const v=G[y*W+x];
+    const row=H-1-y, idx=(row*W+x)*4;                                  // flip so canvas top = north
+    if(v<lo){ img.data[idx+3]=0; continue; }                          // outside swath -> transparent
     const t=Math.max(0,Math.min(1,v/vmax)), rgb=rampRGB(ramp,t);
     img.data[idx]=rgb[0]; img.data[idx+1]=rgb[1]; img.data[idx+2]=rgb[2];
-    img.data[idx+3]=Math.round(255*Math.max(0.40, Math.min(0.92, 0.40+0.55*t))); }
+    let a = v<fEnd ? (v-lo)/(fEnd-lo)*aFloor
+                   : aFloor+(aTop-aFloor)*Math.max(0,Math.min(1,(t-fEnd/vmax)/(1-fEnd/vmax)));
+    img.data[idx+3]=Math.round(255*Math.max(0,Math.min(aTop,a))); }
   ctx.putImageData(img,0,0);
   if(!TMAP.getPane(paneName)){ TMAP.createPane(paneName);
     const p=TMAP.getPane(paneName); p.style.zIndex=paneZ; p.style.pointerEvents="none"; }
-  return L.layerGroup([L.imageOverlay(cv.toDataURL(), [[latMin,lonMin],[latMax,lonMax]],
+  const fLat=dLat/SS, fLon=dLon/SS;                                    // geo-register incl. the pad margin
+  const bounds=[[latMin-PAD*fLat, lonMin-PAD*fLon],[latMin+(H-1-PAD)*fLat, lonMin+(W-1-PAD)*fLon]];
+  return L.layerGroup([L.imageOverlay(cv.toDataURL(), bounds,
     {pane:paneName, opacity:0.85, interactive:false, className:"hailheat"})]);
 }
 
@@ -1645,24 +1665,38 @@ async function boot(){
   // ramp), with one Cells|Smooth toggle. Smooth = show heatmaps + hide the blocky canvas
   // panes; Cells = the original blurred §3 canvases. Display-only; circles/dots untouched.
   if(TMAP){
-    const HL=[];   // [canvasPaneToHide, heatmapLayer]
+    const HL=[], PL={hail:"Hail",wind:"Wind",tornado:"Tornado"};   // {pane,group,peril,op}
     if(D.swath_mode==="per_cell" && D.swath_cells && D.swath_cells.length){
-      const h=buildHeatmap(D.swath_cells,3,HAIL_RAMP,10,"hHeatPane",351); if(h) HL.push(["swathPane",h]); }
+      const h=buildHeatmap(D.swath_cells,3,HAIL_RAMP,10,"hHeatPane",351); if(h) HL.push({pane:"swathPane",group:h,peril:"hail",op:0.85}); }
     if(D.wind && D.wind.swath_cells && D.wind.swath_cells.length){
-      const w=buildHeatmap(D.wind.swath_cells,2,WIND_RAMP,10,"wHeatPane",354); if(w) HL.push(["windPane",w]); }
+      const w=buildHeatmap(D.wind.swath_cells,2,WIND_RAMP,10,"wHeatPane",354); if(w) HL.push({pane:"windPane",group:w,peril:"wind",op:0.85}); }
     if(D.tornado && D.tornado.swath_cells && D.tornado.swath_cells.length){
-      const t=buildHeatmap(D.tornado.swath_cells,2,TORN_RAMP,10,"tHeatPane",355); if(t) HL.push(["tornadoPane",t]); }
+      const t=buildHeatmap(D.tornado.swath_cells,2,TORN_RAMP,10,"tHeatPane",355); if(t) HL.push({pane:"tornadoPane",group:t,peril:"tornado",op:0.85}); }
     if(HL.length){ let mode="smooth";
-      const show=()=>{ HL.forEach(o=>{ const cp=TMAP.getPane(o[0]);
-        if(mode==="smooth"){ o[1].addTo(TMAP); if(cp) cp.style.display="none"; }
-        else { if(TMAP.hasLayer(o[1])) TMAP.removeLayer(o[1]); if(cp) cp.style.display=""; } }); };
+      const setOp=o=>o.group.eachLayer(im=>im.setOpacity(o.op));
+      const masterOn=pk=>{ const m=document.querySelector('.ctlpanel input[data-master="'+pk+'"]'); return !m || m.checked; };
+      const show=()=>{ HL.forEach(o=>{ const cp=TMAP.getPane(o.pane);
+        if(mode==="smooth"){ if(masterOn(o.peril)){ o.group.addTo(TMAP); setOp(o); } else if(TMAP.hasLayer(o.group)) TMAP.removeLayer(o.group);
+          if(cp) cp.style.display="none"; }
+        else { if(TMAP.hasLayer(o.group)) TMAP.removeLayer(o.group); if(cp) cp.style.display=""; } }); };
       const ctl=L.control({position:"bottomleft"}); ctl.onAdd=function(){ const d=L.DomUtil.create("div","swathtog");
-        d.innerHTML='<b>Swath render</b><div class="st-btns"><button id="stCells">Cells</button><button id="stCont" class="on">Smooth</button></div>';
-        L.DomEvent.disableClickPropagation(d); return d; };
+        let html='<b>Swath render</b><div class="st-btns"><button id="stCells">Cells</button><button id="stCont" class="on">Smooth</button></div>';
+        HL.forEach(o=>{ html+='<div class="st-op"><span>'+PL[o.peril]+'</span><input type="range" min="0" max="100" value="85" data-op="'+o.peril+'"></div>'; });
+        d.innerHTML=html;
+        L.DomEvent.disableClickPropagation(d); L.DomEvent.disableScrollPropagation(d); return d; };
       ctl.addTo(TMAP);
       const bc=document.getElementById("stCells"), bt=document.getElementById("stCont");
       if(bc) bc.onclick=()=>{ mode="cells"; bc.classList.add("on"); bt.classList.remove("on"); show(); };
       if(bt) bt.onclick=()=>{ mode="smooth"; bt.classList.add("on"); bc.classList.remove("on"); show(); };
+      document.querySelectorAll('.swathtog input[data-op]').forEach(sl=>{
+        sl.addEventListener("input",()=>{ const o=HL.find(x=>x.peril===sl.dataset.op); if(!o)return;
+          o.op=sl.value/100; if(mode==="smooth" && TMAP.hasLayer(o.group)) setOp(o); }); });
+      // mirror the §3 per-peril master toggle onto the smooth heatmap (read-only listener)
+      const panel=document.querySelector(".ctlpanel");
+      if(panel) panel.addEventListener("change",ev=>{ const t=ev.target;
+        if(!t.dataset || t.dataset.master==null) return; const o=HL.find(x=>x.peril===t.dataset.master);
+        if(!o || mode!=="smooth") return;
+        if(t.checked){ o.group.addTo(TMAP); setOp(o); } else if(TMAP.hasLayer(o.group)) TMAP.removeLayer(o.group); });
       show();
     }
   }
