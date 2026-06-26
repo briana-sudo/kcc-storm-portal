@@ -1446,7 +1446,15 @@ function addPull(){
 //    (marching squares via d3-contour) from the SAME swath cells, instead of the blocky
 //    canvas. Display-only; the §3 SwathLayer/data/circles are untouched. A toggle flips
 //    Cells (blurred canvas) <-> Contours so the look can be reviewed side by side. ──
-const HAIL_BANDS=[[0.75,"#ffd24d"],[1.0,"#ffae1a"],[1.5,"#ff7a00"],[2.0,"#f5400a"],[2.5,"#d11722"],[3.0,"#8a0f1a"]];
+// §3 INTENSITY ramp (amber -> orange -> red -> deep red -> magenta), interpolated to a
+// continuous scale so the contour bands transition smoothly across ~10 levels. "Assumed
+// math": the cell grid is smoothed/interpolated (not exact per-cell), and each level is
+// drawn semi-transparent + stacked low->high, so the result is a smooth colour+opacity
+// gradient -- weak/low-intensity edges fade out, strong cores stay solid.
+const INT_RAMP=[[247,181,0],[249,115,22],[232,67,10],[193,18,31],[140,0,68]];
+function rampColor(t){ t=Math.max(0,Math.min(1,t)); const x=t*(INT_RAMP.length-1), i=Math.floor(x), f=x-i;
+  const a=INT_RAMP[i], b=INT_RAMP[Math.min(INT_RAMP.length-1,i+1)];
+  return "rgb("+Math.round(a[0]+(b[0]-a[0])*f)+","+Math.round(a[1]+(b[1]-a[1])*f)+","+Math.round(a[2]+(b[2]-a[2])*f)+")"; }
 function buildHailContours(cells){
   if(!TMAP || typeof d3==="undefined" || !d3.contours || !cells || !cells.length) return null;
   const lats=cells.map(c=>c[0]), lons=cells.map(c=>c[1]);
@@ -1457,23 +1465,24 @@ function buildHailContours(cells){
   const dLat=sp(lats), dLon=sp(lons);
   const nLat=Math.round((latMax-latMin)/dLat)+1, nLon=Math.round((lonMax-lonMin)/dLon)+1;
   if(nLat*nLon>700000 || nLat<3 || nLon<3) return null;                 // guard pathological grids
-  const V=new Float32Array(nLat*nLon);
+  const V=new Float32Array(nLat*nLon);                                  // grid of INTENSITY (1..10), 0 elsewhere
   cells.forEach(c=>{ const r=Math.round((c[0]-latMin)/dLat), q=Math.round((c[1]-lonMin)/dLon);
-    if(r>=0&&r<nLat&&q>=0&&q<nLon){ const i=r*nLon+q; if(c[2]>V[i]) V[i]=c[2]; } });
+    if(r>=0&&r<nLat&&q>=0&&q<nLon){ const i=r*nLon+q; if(c[3]>V[i]) V[i]=c[3]; } });
   const blur=src=>{ const out=new Float32Array(src.length);                 // 3x3 box blur -> rounds contours
     for(let r=0;r<nLat;r++)for(let q=0;q<nLon;q++){ let s=0,n=0;
       for(let dr=-1;dr<=1;dr++)for(let dq=-1;dq<=1;dq++){ const rr=r+dr,qq=q+dq;
         if(rr>=0&&rr<nLat&&qq>=0&&qq<nLon){ s+=src[rr*nLon+qq]; n++; } } out[r*nLon+q]=s/n; } return out; };
-  const G=Array.from(blur(blur(V)));
-  const cs=d3.contours().size([nLon,nLat]).thresholds(HAIL_BANDS.map(b=>b[0])).smooth(true)(G);
+  const G=Array.from(blur(blur(blur(V))));                              // 3 passes -> silky transition
+  const TH=[]; for(let k=1;k<=10;k++) TH.push(k-0.5);                    // 10 levels: intensity 0.5 .. 9.5
+  const cs=d3.contours().size([nLon,nLat]).thresholds(TH).smooth(true)(G);
   if(!TMAP.getPane("contourPane")){ TMAP.createPane("contourPane");
-    const p=TMAP.getPane("contourPane"); p.style.zIndex=351; p.style.pointerEvents="none"; p.style.opacity="0.7"; }
+    const p=TMAP.getPane("contourPane"); p.style.zIndex=351; p.style.pointerEvents="none"; }
   const R=L.canvas({pane:"contourPane"}), grp=L.layerGroup();
   const toLL=pt=>[latMin+pt[1]*dLat, lonMin+pt[0]*dLon];
-  cs.forEach((ct,i)=>{ const col=HAIL_BANDS[i]?HAIL_BANDS[i][1]:"#ffae1a";  // low->high; opaque fills => clean bands
+  cs.forEach((ct,i)=>{ const col=rampColor(i/(TH.length-1));            // low->high, stacked semi-transparent
     (ct.coordinates||[]).forEach(poly=>{
       grp.addLayer(L.polygon(poly.map(ring=>ring.map(toLL)),{pane:"contourPane",renderer:R,
-        stroke:false,fill:true,fillColor:col,fillOpacity:1,interactive:false})); }); });
+        stroke:false,fill:true,fillColor:col,fillOpacity:0.16,interactive:false})); }); });
   return grp;
 }
 
