@@ -141,19 +141,22 @@ body.fullmap #fmExit:hover{background:#1e2b46}
 #tbar .hdr-search{display:flex;align-items:center;gap:5px;position:relative}
 #tbar .hdr-search input{padding:5px 8px;border:1px solid #2c3c5e;border-radius:6px;background:#1e2b46;color:#e9eef7;font-size:13px}
 #tbar .hdr-search input::placeholder{color:#7e90b3}
-#tbar .hdr-search #msCity{width:148px}
-#tbar .hdr-search #msAddr{width:172px}
+#tbar .hdr-search #msCity{width:170px}
+#tbar .hdr-search #msAddr{width:300px}
 #tbar .hdr-search .ms-go{background:#1e2b46;color:#e9eef7;border:1px solid #2c3c5e;border-radius:6px;padding:5px 10px;font-size:13px;cursor:pointer}
 #tbar .hdr-search .ms-go:hover{background:#274069}
-#tbar .hdr-search .ms-addrwrap{position:relative}
-.ms-sugg{position:absolute;left:0;top:calc(100% + 4px);z-index:1400;min-width:248px;background:#fff;border:1px solid #c9d2dd;
-  border-radius:6px;box-shadow:0 12px 28px rgba(0,0,0,.45);max-height:300px;overflow:auto}
+#tbar .hdr-search .ms-clear{background:#1e2b46;color:#9fb3d9;border:1px solid #2c3c5e;border-radius:6px;width:24px;height:28px;
+  padding:0;font-size:15px;line-height:1;cursor:pointer;flex:none}
+#tbar .hdr-search .ms-clear:hover{color:#fff;background:#274069}
+#tbar .hdr-search .ms-addrwrap{position:relative;display:flex;align-items:center;gap:5px}
+.ms-sugg{position:absolute;left:0;top:calc(100% + 4px);z-index:1400;min-width:360px;max-width:440px;background:#fff;border:1px solid #c9d2dd;
+  border-radius:6px;box-shadow:0 12px 28px rgba(0,0,0,.45);max-height:320px;overflow:auto}
 .ms-sugg:empty{display:none}
 .ms-sg{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid #eef1f5;
-  padding:6px 9px;font-size:12px;cursor:pointer;color:#223}
+  padding:7px 10px;font-size:12.5px;line-height:1.35;cursor:pointer;color:#223;white-space:normal}
 .ms-sg:hover{background:#eef3ff}
-body.mobile #tbar .hdr-search #msCity{width:104px}
-body.mobile #tbar .hdr-search #msAddr{width:120px}
+body.mobile #tbar .hdr-search #msCity{width:120px}
+body.mobile #tbar .hdr-search #msAddr{width:150px}
 /* ── LIVE (current) awareness group (item 7 ext): NEXRAD loop + NWS warnings +
    storm-track cones. Three independent toggles + opacity dials, visually separated
    from the engine's date-driven scored layers. All display-only, in-memory only. ── */
@@ -389,8 +392,9 @@ SHELL_HEAD = """  <div id="tbar">
     </div>
     <div class="hdr-search">
       <input id="msCity" type="text" placeholder="City, ST" title="Jump to a city/state">
+      <button class="ms-clear" type="button" data-clear="msCity" title="Clear">&times;</button>
       <button id="msCityGo" class="ms-go" type="button">Go</button>
-      <div class="ms-addrwrap"><input id="msAddr" type="text" placeholder="Address&hellip;" autocomplete="off" title="Address search (type-ahead)"><div id="msSugg" class="ms-sugg"></div></div>
+      <div class="ms-addrwrap"><input id="msAddr" type="text" placeholder="Address&hellip;" autocomplete="off" title="Address search (type-ahead)"><button class="ms-clear" type="button" data-clear="msAddr" title="Clear">&times;</button><div id="msSugg" class="ms-sugg"></div></div>
     </div>
     <button id="wxBtn" title="Rain forecast for job scheduling">&#127783; Weather</button>
     <button id="expandBtn" title="Full-screen radar">&#9974; Full-screen radar</button>
@@ -1263,19 +1267,36 @@ function initWeather(){
 //    portal) — no new dependency, no proxy. Read-only: only moves the map view +
 //    a temporary marker. renderMap's §3 core is untouched. ──
 const _PHOTON = "https://photon.komoot.io/api/";
-function _photonLabel(p){ return [p.name, (p.city||p.county||p.town), p.state, p.postcode].filter(Boolean).join(", "); }
+// label INCLUDES the house number (housenumber + street) so the address reads in full.
+function _photonLabel(p){
+  const street = [p.housenumber, p.street || p.name].filter(Boolean).join(" ");
+  return [street || p.name, (p.city||p.town||p.county), p.state, p.postcode].filter(Boolean).join(", ");
+}
 async function photonSuggest(q, limit){
   const r = await fetch(_PHOTON+"?limit="+(limit||6)+"&lang=en&q="+encodeURIComponent(q));
   const j = await r.json();
-  return (j.features||[]).map(f=>{ const c=f.geometry&&f.geometry.coordinates; if(!c) return null;
-    return { label:_photonLabel(f.properties||{}), lat:c[1], lng:c[0] }; }).filter(Boolean);
+  return (j.features||[]).map(f=>{ const c=f.geometry&&f.geometry.coordinates, p=f.properties||{}; if(!c) return null;
+    return { label:_photonLabel(p), lat:c[1], lng:c[0], city:(p.city||p.town||p.county||""), state:(p.state||""), postcode:(p.postcode||""), housenumber:p.housenumber||"" }; }).filter(Boolean);
 }
+// US Census rooftop geocoder (JSONP, no key) — the SAME one the weather tab uses. Gives
+// the EXACT building point + matched address (with house number) when the typed address
+// has a street number; Photon typeahead alone often returns only the street.
+let _gcN = 0;
+function censusGeocode(addr){ return new Promise(res=>{ const cb="__msgc"+(++_gcN);
+  window[cb]=d=>{ cleanup(); const m=d&&d.result&&d.result.addressMatches&&d.result.addressMatches[0];
+    res(m ? {lat:m.coordinates.y, lng:m.coordinates.x, label:m.matchedAddress} : null); };
+  const s=document.createElement("script");
+  s.src="https://geocoding.geo.census.gov/geocoder/locations/onelineaddress?address="+encodeURIComponent(addr)+"&benchmark=Public_AR_Current&format=jsonp&callback="+cb;
+  s.onerror=()=>{ cleanup(); res(null); };
+  function cleanup(){ try{ delete window[cb]; s.remove(); }catch(e){} }
+  document.body.appendChild(s); setTimeout(()=>{ if(window[cb]){ cleanup(); res(null); } }, 7000); }); }
 let SEARCH_MARKER = null;
 function flyToSearch(loc, zoom){
   if(!TMAP) return;
   TMAP.setView([loc.lat, loc.lng], zoom);
   if(SEARCH_MARKER) TMAP.removeLayer(SEARCH_MARKER);
-  SEARCH_MARKER = L.marker([loc.lat, loc.lng]).addTo(TMAP).bindPopup(loc.label||"searched location").openPopup();
+  SEARCH_MARKER = L.marker([loc.lat, loc.lng]).addTo(TMAP)
+    .bindPopup(loc.label||"searched location", {autoPan:false}).openPopup();   // keep the building centered
 }
 function addMapSearch(){
   // Wires the TOP-BANNER search inputs (#msCity / #msAddr). Navigation only — moves
@@ -1284,6 +1305,9 @@ function addMapSearch(){
         addrEl=document.getElementById("msAddr"), suggEl=document.getElementById("msSugg");
   if(!cityEl || !addrEl || cityEl.dataset.wired) return;
   cityEl.dataset.wired="1";
+  // clear (x) buttons on both boxes
+  document.querySelectorAll("#tbar .hdr-search .ms-clear").forEach(btn=>btn.addEventListener("click",()=>{
+    const t=document.getElementById(btn.dataset.clear); if(t){ t.value=""; t.focus(); } if(btn.dataset.clear==="msAddr") suggEl.innerHTML=""; }));
   // (1) CITY/STATE: forward geocode the first match, pan/zoom to it
   async function cityGo(){ const q=cityEl.value.trim(); if(!q) return;
     try{ const hits=await photonSuggest(q,1);
@@ -1291,13 +1315,22 @@ function addMapSearch(){
     catch(e){ cityEl.placeholder="search unreachable"; } }
   goEl.addEventListener("click", cityGo);
   cityEl.addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); cityGo(); } });
-  // (2) ADDRESS: predictive autocomplete (debounced) -> exact point (reuses Photon)
+  // (2) ADDRESS: predictive autocomplete (debounced). On SELECT, if the typed query has a
+  //     street number, refine to the EXACT rooftop via Census (Photon = street-level only).
   let acT=null;
   addrEl.addEventListener("input", ()=>{ const q=addrEl.value.trim(); clearTimeout(acT);
     if(q.length<3){ suggEl.innerHTML=""; return; }
     acT=setTimeout(async()=>{ try{ const hits=await photonSuggest(q,6); suggEl.innerHTML="";
       hits.forEach(h=>{ const b=document.createElement("button"); b.type="button"; b.className="ms-sg"; b.textContent=h.label;
-        b.onclick=()=>{ suggEl.innerHTML=""; addrEl.value=h.label; flyToSearch(h, 16); }; suggEl.appendChild(b); });
+        b.onclick=async()=>{ const typed=addrEl.value.trim(); suggEl.innerHTML="";
+          let loc=h;
+          if(/^\\s*\\d/.test(typed) && !h.housenumber){            // user typed a house number but Photon dropped it
+            // include the suggestion's ZIP — Census needs the postcode to match a rooftop.
+            const full=typed+(h.city?", "+h.city:"")+(h.state?", "+h.state:"")+(h.postcode?" "+h.postcode:"");
+            const exact=await censusGeocode(full); if(exact) loc=exact;
+          }
+          addrEl.value=loc.label; flyToSearch(loc, 17); };
+        suggEl.appendChild(b); });
     }catch(e){ suggEl.innerHTML=""; } }, 350); });
   document.addEventListener("click", e=>{ const w=addrEl.closest(".ms-addrwrap");
     if(w && !w.contains(e.target)) suggEl.innerHTML=""; });
@@ -1364,6 +1397,10 @@ async function boot(){
   const D = assemble(date, rows||[], geo);
   renderMap(D);
   setBaseStreet();
+  // Stable HOME view: renderMap fitBounds-to-storm over-zooms small swaths. Override to
+  // a consistent STL-center view at a normal zoom (pan, don't zoom-to-fit). Post-render
+  // from the bootstrap via the captured handle — renderMap's §3 core is untouched.
+  if(TMAP) TMAP.setView([38.63, -90.2], 9);
   addLiveLayers();      // item 7 ext: live NEXRAD loop + NWS warnings + storm-track cones (display-only, all off by default)
   initWeather();        // weather tab: rain forecast for job scheduling (isolated tool view; NWS + Census, no graph/engine)
   addChaseLayer(D.chase);   // item 8 Step 3 v2: chase TARGETING block at the bottom of the Layers panel (master OFF)
