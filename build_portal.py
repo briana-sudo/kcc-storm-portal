@@ -157,6 +157,18 @@ body.fullmap #fmExit:hover{background:#1e2b46}
 .ms-sg:hover{background:#eef3ff}
 body.mobile #tbar .hdr-search #msCity{width:120px}
 body.mobile #tbar .hdr-search #msAddr{width:150px}
+/* ── PULL (item 10): on-demand 150mi capture. Header button + a floating confirm bar. ── */
+#tbar #pullBtn{background:#143a2a;color:#bdf0d6;border:1px solid #2c6e4c;border-radius:6px;padding:5px 10px;font-size:13px;cursor:pointer}
+#tbar #pullBtn:hover{background:#1a5038}
+body.pull-armed #tbar #pullBtn{background:#2c6e4c;color:#fff}
+#pullPanel{position:absolute;left:50%;top:64px;transform:translateX(-50%);z-index:2500;display:flex;align-items:center;gap:10px;
+  background:rgba(11,18,32,.96);color:#e9eef7;border:1px solid #2c6e4c;border-radius:9px;padding:9px 14px;font-size:13px;
+  box-shadow:0 8px 24px rgba(0,0,0,.5);max-width:92vw}
+#pullPanel .pp-txt{font-weight:600}
+#pullPanel .pp-go{background:#1a7a4f;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-weight:700;cursor:pointer}
+#pullPanel .pp-go:disabled{opacity:.6;cursor:default}
+#pullPanel .pp-x{background:#1e2b46;color:#cdd8ee;border:1px solid #2c3c5e;border-radius:6px;padding:6px 11px;cursor:pointer}
+#pullPanel .pp-status{font-size:12px;color:#ffd28a}
 /* ── LIVE (current) awareness group (item 7 ext): NEXRAD loop + NWS warnings +
    storm-track cones. Three independent toggles + opacity dials, visually separated
    from the engine's date-driven scored layers. All display-only, in-memory only. ── */
@@ -359,6 +371,12 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 /* map locate / re-centre control (matches the Leaflet zoom bar) */
 .locate-ctl a{display:flex;align-items:center;justify-content:center;width:30px;height:30px;font-size:18px;color:#0b1220;text-decoration:none;background:#fff}
 .locate-ctl a:hover{background:#eef3ff}
+/* hail-swath render toggle (contour prototype): Cells (blurred canvas) vs Contours (isobands) */
+.swathtog{background:#fff;padding:6px 9px;border-radius:8px;box-shadow:0 1px 6px rgba(0,0,0,.3);font-size:11px}
+.swathtog b{display:block;color:#0b1220;font-size:10px;letter-spacing:.4px;text-transform:uppercase;margin-bottom:4px}
+.swathtog .st-btns{display:flex;gap:4px}
+.swathtog button{border:1px solid #c7d2e0;background:#f3f6fb;color:#26344d;border-radius:6px;padding:4px 10px;font-size:11px;font-weight:700;cursor:pointer}
+.swathtog button.on{background:#2f6fe0;border-color:#2f6fe0;color:#fff}
 
 /* MOBILE: collapsible LIVE box — sits on the map above the bottom toolbar; collapsed to
    just its header, taps slide it up/down. #banner (no-storm) parks just above it. */
@@ -399,6 +417,7 @@ SHELL_HEAD = """  <div id="tbar">
     <button id="wxBtn" title="Rain forecast for job scheduling">&#127783; Weather</button>
     <button id="expandBtn" title="Full-screen radar">&#9974; Full-screen radar</button>
     <button id="statusBtn" title="Service health (is Tempest alive)"><span class="hbdot"></span>Status</button>
+    <button id="pullBtn" title="Pull on-demand storm data for a 150mi circle">&#10515; Pull</button>
     <div class="status" id="connStatus"></div>
   </div>
   <div id="main">
@@ -414,6 +433,9 @@ BOOTSTRAP = """
 // token server-side, so this public bundle carries NO credential of any kind.
 const CFG = window.TEMPEST_CONFIG || {};
 const API = (CFG.api || "").replace(/\\/$/, "");
+// Item 10 PULL write endpoint (separate from the read /api/storm). Token is held
+// server-side in the Netlify function; this bundle carries NO credential.
+const PULL_API = CFG.pullApi || API.replace(/\\/api\\/storm$/, "/api/storm-pull");
 const ARCHIVE_START = "2020-10-14";
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 let AVAIL = {};        // {date: [perils]} for the storm-aware calendar
@@ -454,9 +476,11 @@ function assemble(date, rows, geo){
   // (renderMap, untouched); chase is a separate coexisting layer drawn by the
   // bootstrap. coverage_zone==='chase' => chase; null/'geofence' => in-market.
   const isChase = r => r.coverage_zone === "chase";
-  const inmkt = {}, chase = {};
-  rows.forEach(r => { (isChase(r) ? chase : inmkt)[r.peril] = r; });
-  const h = inmkt.hail, ch = chase.hail;
+  const inmkt = {}, chaseHail = [];
+  // collect ALL chase hail clusters (150mi chase-fill + any on-demand PULLs) so they
+  // MERGE into one chase layer instead of overwriting each other (Item 10).
+  rows.forEach(r => { if(isChase(r)){ if(r.peril==="hail") chaseHail.push(r); } else inmkt[r.peril] = r; });
+  const h = inmkt.hail;
   // EVIDENCE-LEAK FIX (Step 3): the cached in-market evidence_json is only bbox-clipped
   // (engine uses full_poly.bounds, a rectangle), so points in the bbox-but-outside-
   // polygon rendered as in-market OUT in the ring. Clip in-market evidence to the
@@ -475,7 +499,10 @@ function assemble(date, rows, geo){
   // cells + 150mi ring cells concatenated — rendered by renderMap's §3 SwathLayer,
   // gated ONLY by the hail "Swath" sub-toggle. NEVER gated by chase: chase OFF still
   // shows the full 150mi swath. No chase dimming — it is just hail.
-  const unifiedSwath = (h ? parseJSON(h.swath_json) : []).concat(ch ? parseJSON(ch.swath_json) : []);
+  const chaseSwath = [].concat.apply([], chaseHail.map(r => parseJSON(r.swath_json)));
+  const chaseCircles = [].concat.apply([], chaseHail.map(r => parseJSON(r.circles_json)));
+  const chaseEvidence = [].concat.apply([], chaseHail.map(r => parseJSON(r.evidence_json)));
+  const unifiedSwath = (h ? parseJSON(h.swath_json) : []).concat(chaseSwath);
   const hasSwath = unifiedSwath.length > 0;
   const D = {
     storm_date: date,
@@ -491,9 +518,9 @@ function assemble(date, rows, geo){
     overlay: null,
     wind: layer(inmkt.wind),
     tornado: layer(inmkt.tornado),
-    // CHASE = TARGETING ONLY (circles + evidence); its swath is folded into the
-    // unified hail swath above, so the swath is always available regardless of chase.
-    chase: ch ? { circles: parseJSON(ch.circles_json), evidence: parseJSON(ch.evidence_json) } : null,
+    // CHASE = TARGETING ONLY (merged circles + evidence from chase-fill + pulls); the
+    // chase swath is folded into the unified hail swath above (always available).
+    chase: chaseHail.length ? { circles: chaseCircles, evidence: chaseEvidence } : null,
   };
   // Initial framing uses in-market targeting only — the chase toggle never moves the
   // map (Part 3), and the unified swath renders to 150mi regardless of view.
@@ -1371,6 +1398,85 @@ function addMapSearch(){
     if(w && !w.contains(e.target)) suggEl.innerHTML=""; });
 }
 
+// ── PULL (item 10): the FIRST portal WRITE. Click PULL -> a FIXED 150mi circle draws
+//    at the map center and follows pan (radius not resizable — it's the guardrail).
+//    Aim it, CONFIRM -> POST {center, radius=150, date} to the SECURED write endpoint
+//    (token server-side). On success, reload so the new chase data renders. NEVER moves
+//    the map on its own; renderMap's §3 core is untouched. ──
+function addPull(){
+  const btn=document.getElementById("pullBtn"); if(!btn || !TMAP || btn.dataset.wired) return;
+  btn.dataset.wired="1";
+  let circle=null, panel=null, recenter=null;
+  function exitPull(){ document.body.classList.remove("pull-armed");
+    if(recenter){ TMAP.off("move", recenter); recenter=null; }
+    if(circle){ TMAP.removeLayer(circle); circle=null; }
+    if(panel){ panel.remove(); panel=null; } }
+  btn.addEventListener("click", ()=>{
+    if(circle){ exitPull(); return; }                          // toggle off
+    document.body.classList.add("pull-armed");
+    const R=150*1609.344;
+    circle=L.circle(TMAP.getCenter(), {radius:R, color:"#2f6fe0", weight:2, dashArray:"7,5",
+      fillColor:"#2f6fe0", fillOpacity:0.06, interactive:false}).addTo(TMAP);
+    recenter=()=>circle.setLatLng(TMAP.getCenter());          // follows pan; radius FIXED
+    TMAP.on("move", recenter);
+    panel=document.createElement("div"); panel.id="pullPanel";
+    panel.innerHTML='<span class="pp-txt">Pan to aim the 150mi circle over a storm</span>'+
+      '<button class="pp-go" type="button">Confirm pull</button>'+
+      '<button class="pp-x" type="button">Cancel</button><span class="pp-status"></span>';
+    document.body.appendChild(panel);
+    panel.querySelector(".pp-x").onclick=exitPull;
+    panel.querySelector(".pp-go").onclick=async()=>{
+      const c=TMAP.getCenter(), st=panel.querySelector(".pp-status"), go=panel.querySelector(".pp-go");
+      go.disabled=true; st.textContent="Computing\\u2026 (up to ~30s)";
+      try{
+        const r=await fetch(PULL_API, { method:"POST", headers:{ "Content-Type":"application/json" },
+          body: JSON.stringify({ lat:+c.lat.toFixed(4), lon:+c.lng.toFixed(4), date:getDate(), radius_mi:150 }) });
+        let j={}; try{ j=await r.json(); }catch(e){}
+        if(!r.ok || j.status==="error"){
+          st.textContent="\\u26a0 "+(j.detail || j.error || ("HTTP "+r.status)); go.disabled=false; return; }
+        st.textContent="\\u2713 pulled "+j.circles+" circles \\u00b7 "+j.swath_cells+" swath cells \\u2014 refreshing\\u2026";
+        if(recenter){ TMAP.off("move", recenter); recenter=null; }
+        setTimeout(()=>location.reload(), 1100);               // re-fetch so the pull renders in the chase layer
+      }catch(e){ st.textContent="\\u26a0 "+e.message; go.disabled=false; }
+    };
+  });
+}
+
+// ── CONTOUR PROTOTYPE (Option A): render the hail swath as smooth filled isobands
+//    (marching squares via d3-contour) from the SAME swath cells, instead of the blocky
+//    canvas. Display-only; the §3 SwathLayer/data/circles are untouched. A toggle flips
+//    Cells (blurred canvas) <-> Contours so the look can be reviewed side by side. ──
+const HAIL_BANDS=[[0.75,"#ffd24d"],[1.0,"#ffae1a"],[1.5,"#ff7a00"],[2.0,"#f5400a"],[2.5,"#d11722"],[3.0,"#8a0f1a"]];
+function buildHailContours(cells){
+  if(!TMAP || typeof d3==="undefined" || !d3.contours || !cells || !cells.length) return null;
+  const lats=cells.map(c=>c[0]), lons=cells.map(c=>c[1]);
+  const latMin=Math.min.apply(null,lats), latMax=Math.max.apply(null,lats);
+  const lonMin=Math.min.apply(null,lons), lonMax=Math.max.apply(null,lons);
+  const sp=arr=>{ const u=Array.from(new Set(arr)).sort((a,b)=>a-b); let m=Infinity;
+    for(let i=1;i<u.length;i++){ const d=u[i]-u[i-1]; if(d>1e-6 && d<m) m=d; } return isFinite(m)?m:0.01; };
+  const dLat=sp(lats), dLon=sp(lons);
+  const nLat=Math.round((latMax-latMin)/dLat)+1, nLon=Math.round((lonMax-lonMin)/dLon)+1;
+  if(nLat*nLon>700000 || nLat<3 || nLon<3) return null;                 // guard pathological grids
+  const V=new Float32Array(nLat*nLon);
+  cells.forEach(c=>{ const r=Math.round((c[0]-latMin)/dLat), q=Math.round((c[1]-lonMin)/dLon);
+    if(r>=0&&r<nLat&&q>=0&&q<nLon){ const i=r*nLon+q; if(c[2]>V[i]) V[i]=c[2]; } });
+  const blur=src=>{ const out=new Float32Array(src.length);                 // 3x3 box blur -> rounds contours
+    for(let r=0;r<nLat;r++)for(let q=0;q<nLon;q++){ let s=0,n=0;
+      for(let dr=-1;dr<=1;dr++)for(let dq=-1;dq<=1;dq++){ const rr=r+dr,qq=q+dq;
+        if(rr>=0&&rr<nLat&&qq>=0&&qq<nLon){ s+=src[rr*nLon+qq]; n++; } } out[r*nLon+q]=s/n; } return out; };
+  const G=Array.from(blur(blur(V)));
+  const cs=d3.contours().size([nLon,nLat]).thresholds(HAIL_BANDS.map(b=>b[0])).smooth(true)(G);
+  if(!TMAP.getPane("contourPane")){ TMAP.createPane("contourPane");
+    const p=TMAP.getPane("contourPane"); p.style.zIndex=351; p.style.pointerEvents="none"; p.style.opacity="0.7"; }
+  const R=L.canvas({pane:"contourPane"}), grp=L.layerGroup();
+  const toLL=pt=>[latMin+pt[1]*dLat, lonMin+pt[0]*dLon];
+  cs.forEach((ct,i)=>{ const col=HAIL_BANDS[i]?HAIL_BANDS[i][1]:"#ffae1a";  // low->high; opaque fills => clean bands
+    (ct.coordinates||[]).forEach(poly=>{
+      grp.addLayer(L.polygon(poly.map(ring=>ring.map(toLL)),{pane:"contourPane",renderer:R,
+        stroke:false,fill:true,fillColor:col,fillOpacity:1,interactive:false})); }); });
+  return grp;
+}
+
 async function boot(){
   if(matchMedia("(pointer:coarse)").matches || /Android|iPhone|iPad|iPod|Mobile|Silk/i.test(navigator.userAgent))
     document.body.classList.add("mobile");
@@ -1442,6 +1548,22 @@ async function boot(){
       ["swathPane","windPane","tornadoPane"].forEach(n=>{ const p=TMAP.getPane(n);
         if(p) p.style.filter="blur("+b+"px) saturate(1.12)"; }); };
     smoothSwath(); TMAP.on("zoomend", smoothSwath); }
+  // CONTOUR PROTOTYPE: build smooth hail isobands + a Cells/Contours toggle (hail only).
+  if(TMAP && D.swath_mode==="per_cell" && D.swath_cells && D.swath_cells.length){
+    const contours=buildHailContours(D.swath_cells), swp=TMAP.getPane("swathPane");
+    if(contours){ let mode="contours";                      // default to the new look for review
+      const show=()=>{ if(mode==="contours"){ contours.addTo(TMAP); if(swp) swp.style.display="none"; }
+        else { if(TMAP.hasLayer(contours)) TMAP.removeLayer(contours); if(swp) swp.style.display=""; } };
+      const ctl=L.control({position:"bottomleft"}); ctl.onAdd=function(){ const d=L.DomUtil.create("div","swathtog");
+        d.innerHTML='<b>Hail swath</b><div class="st-btns"><button id="stCells">Cells</button><button id="stCont" class="on">Contours</button></div>';
+        L.DomEvent.disableClickPropagation(d); return d; };
+      ctl.addTo(TMAP);
+      const bc=document.getElementById("stCells"), bt=document.getElementById("stCont");
+      if(bc) bc.onclick=()=>{ mode="cells"; bc.classList.add("on"); bt.classList.remove("on"); show(); };
+      if(bt) bt.onclick=()=>{ mode="contours"; bt.classList.add("on"); bc.classList.remove("on"); show(); };
+      show();
+    }
+  }
   // Stable HOME view: renderMap fitBounds-to-storm over-zooms small swaths. Override to
   // a consistent STL-center view at a normal zoom (pan, don't zoom-to-fit). Post-render
   // from the bootstrap via the captured handle — renderMap's §3 core is untouched.
@@ -1450,6 +1572,7 @@ async function boot(){
   initWeather();        // weather tab: rain forecast for job scheduling (isolated tool view; NWS + Census, no graph/engine)
   addChaseLayer(D.chase);   // item 8 Step 3 v2: chase TARGETING block at the bottom of the Layers panel (master OFF)
   addMapSearch();           // map location search: City/State + address typeahead (reuses Photon; navigation only)
+  addPull();                // item 10: on-demand PULL (150mi capture -> secured write endpoint)
   setupBottomDrawers();     // LIVE + Active perils -> bottom slide-up drawers (don't overlay the map; desktop)
   buildOperatorPanel(D, forecast);
   setupMobile();
@@ -1498,6 +1621,8 @@ def main():
 <meta property="og:image" content="og-image.png"/>
 <meta property="og:type" content="website"/>
 <link rel="stylesheet" href="https://unpkg.com/leaflet@{LEAFLET}/dist/leaflet.css"/>
+<script src="https://cdn.jsdelivr.net/npm/d3-array@3"></script>
+<script src="https://cdn.jsdelivr.net/npm/d3-contour@4"></script>
 <style>
 {portal_css}
 {POLISH_CSS}
