@@ -123,36 +123,37 @@ body.fullmap #fmExit:hover{background:#1e2b46}
 .chasectl #chasev{min-width:34px;text-align:right;color:#555}
 .chasectl .ckey{margin-top:5px;color:#667;font-size:11px;line-height:1.4}
 .chasectl .ckey i{display:inline-block;width:13px;height:0;border-top:2px dashed #c1121f;vertical-align:middle;margin-right:4px}
-/* ── LEFT-EDGE SLIDE-OUT DRAWERS (item 8 Step 3 v2 Part 6): LIVE + Active perils
-   relocate from the right to two independent collapsible drawers on the left edge.
-   Layers panel stays on the right. Desktop only (mobile uses the slide-up sheets). ── */
-#leftDrawers{position:absolute;left:0;top:64px;z-index:1150;display:flex;flex-direction:column;gap:12px;pointer-events:none}
-.ldrawer{display:flex;align-items:flex-start;pointer-events:auto}
-.ldrawer .ltab{writing-mode:vertical-rl;background:#16223c;color:#e9eef7;border:1px solid #2c3c5e;border-left:none;
-  border-radius:0 9px 9px 0;padding:11px 6px;font-size:11px;font-weight:800;letter-spacing:.6px;cursor:pointer;white-space:nowrap;
-  box-shadow:2px 2px 9px rgba(0,0,0,.35);user-select:none}
-.ldrawer .ltab:hover{background:#22324f}
-.ldrawer .lbody{max-width:0;overflow:hidden;transition:max-width .25s ease;opacity:0}
-.ldrawer.open .lbody{max-width:360px;overflow:visible;opacity:1;transition:max-width .25s ease,opacity .2s ease .05s}
-.ldrawer .lbody-inner{margin-left:6px}
-/* the relocated controls drop their floating leaflet chrome (they're in a drawer now) */
-.ldrawer .lbody-inner .livectl,.ldrawer .lbody-inner .legend{position:static !important;margin:0 !important;max-width:340px}
-/* ── MAP LOCATION SEARCH (city/state + address typeahead) — navigation only.
-   Reuses the weather tab's Photon (OSM) geocoder/autocomplete; no key, no proxy. ── */
-.mapsearch{background:#fff;padding:6px;border-radius:7px;box-shadow:0 1px 6px rgba(0,0,0,.35);width:236px;font-size:12px}
-.mapsearch .ms-row{display:flex;gap:4px;margin-bottom:4px}
-.mapsearch .ms-row:last-child{margin-bottom:0}
-.mapsearch input{flex:1;min-width:0;padding:4px 7px;border:1px solid #c9d2dd;border-radius:5px;font-size:12px}
-.mapsearch button.ms-go{flex:none;background:#16223c;color:#fff;border:none;border-radius:5px;padding:0 9px;font-size:12px;cursor:pointer}
-.mapsearch button.ms-go:hover{background:#22324f}
-.mapsearch .ms-addrwrap{position:relative;display:block}
-.mapsearch .ms-sugg{position:absolute;left:0;right:0;top:calc(100% + 2px);z-index:1200;background:#fff;border:1px solid #c9d2dd;
-  border-radius:6px;box-shadow:0 8px 22px rgba(0,0,0,.25);max-height:230px;overflow:auto}
-.mapsearch .ms-sugg:empty{display:none}
-.mapsearch .ms-sg{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid #eef1f5;
-  padding:6px 8px;font-size:12px;cursor:pointer;color:#223}
-.mapsearch .ms-sg:hover{background:#eef3ff}
-.mapsearch .ms-status{color:#b00;font-size:11px;min-height:0}
+/* ── BOTTOM-EDGE SLIDE-UP DRAWERS: LIVE + Active perils sit as tabs along the
+   BOTTOM of the map (no longer overlay the left side). Click a tab -> the panel
+   slides UP above it; click again -> slides back down to just the tab. Desktop
+   only (mobile uses the slide-up sheets). Layers panel stays on the right. ── */
+#bottomDrawers{position:absolute;left:8px;bottom:6px;z-index:1150;display:flex;gap:10px;align-items:flex-end;pointer-events:none}
+.bdrawer{display:flex;flex-direction:column;justify-content:flex-end;pointer-events:auto;max-width:340px}
+.bdrawer .btab{align-self:flex-start;background:#16223c;color:#e9eef7;border:1px solid #2c3c5e;border-bottom:none;
+  border-radius:8px 8px 0 0;padding:6px 14px;font-size:11px;font-weight:800;letter-spacing:.6px;cursor:pointer;white-space:nowrap;
+  box-shadow:0 -2px 9px rgba(0,0,0,.3);user-select:none}
+.bdrawer .btab:hover{background:#22324f}
+.bdrawer .bbody{max-width:340px;max-height:0;overflow:hidden;transition:max-height .25s ease;opacity:0}
+.bdrawer.open .bbody{max-height:64vh;overflow:auto;opacity:1;margin-bottom:2px}
+.bdrawer .bbody-inner .livectl,.bdrawer .bbody-inner .legend{position:static !important;margin:0 !important;max-width:330px}
+/* ── MAP LOCATION SEARCH in the TOP BANNER (city/state + address typeahead) —
+   navigation only. Reuses the weather tab's Photon (OSM) geocoder; no key/proxy. ── */
+#tbar .hdr-search{display:flex;align-items:center;gap:5px;position:relative}
+#tbar .hdr-search input{padding:5px 8px;border:1px solid #2c3c5e;border-radius:6px;background:#1e2b46;color:#e9eef7;font-size:13px}
+#tbar .hdr-search input::placeholder{color:#7e90b3}
+#tbar .hdr-search #msCity{width:148px}
+#tbar .hdr-search #msAddr{width:172px}
+#tbar .hdr-search .ms-go{background:#1e2b46;color:#e9eef7;border:1px solid #2c3c5e;border-radius:6px;padding:5px 10px;font-size:13px;cursor:pointer}
+#tbar .hdr-search .ms-go:hover{background:#274069}
+#tbar .hdr-search .ms-addrwrap{position:relative}
+.ms-sugg{position:absolute;left:0;top:calc(100% + 4px);z-index:1400;min-width:248px;background:#fff;border:1px solid #c9d2dd;
+  border-radius:6px;box-shadow:0 12px 28px rgba(0,0,0,.45);max-height:300px;overflow:auto}
+.ms-sugg:empty{display:none}
+.ms-sg{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid #eef1f5;
+  padding:6px 9px;font-size:12px;cursor:pointer;color:#223}
+.ms-sg:hover{background:#eef3ff}
+body.mobile #tbar .hdr-search #msCity{width:104px}
+body.mobile #tbar .hdr-search #msAddr{width:120px}
 /* ── LIVE (current) awareness group (item 7 ext): NEXRAD loop + NWS warnings +
    storm-track cones. Three independent toggles + opacity dials, visually separated
    from the engine's date-driven scored layers. All display-only, in-memory only. ── */
@@ -385,6 +386,11 @@ SHELL_HEAD = """  <div id="tbar">
         </div>
         <div class="cal-legend"><span><i class="dot hail"></i>hail</span><span><i class="dot wind"></i>wind</span><span><i class="dot torn"></i>tornado</span><span style="margin-left:auto;color:#7e90b3">&#9679;core &#9675;margin</span></div>
       </div>
+    </div>
+    <div class="hdr-search">
+      <input id="msCity" type="text" placeholder="City, ST" title="Jump to a city/state">
+      <button id="msCityGo" class="ms-go" type="button">Go</button>
+      <div class="ms-addrwrap"><input id="msAddr" type="text" placeholder="Address&hellip;" autocomplete="off" title="Address search (type-ahead)"><div id="msSugg" class="ms-sugg"></div></div>
     </div>
     <button id="wxBtn" title="Rain forecast for job scheduling">&#127783; Weather</button>
     <button id="expandBtn" title="Full-screen radar">&#9974; Full-screen radar</button>
@@ -1062,24 +1068,25 @@ function addChaseLayer(chase){
   apply();   // master off -> nothing renders; rows dimmed
 }
 
-// ── LEFT-EDGE DRAWERS (item 8 Step 3 v2 Part 6): relocate LIVE (.livectl) and Active
-//    perils (.legend) from the right corners into two independent left-edge slide-out
-//    drawers (vertical tab; click slides out, click again slides in). Layers stays
-//    right. Desktop only — mobile uses the slide-up sheets. Controls keep all wiring
-//    (we move the DOM nodes, like the mobile lane does). ──
-function setupLeftDrawers(){
-  if(!TMAP || document.body.classList.contains("mobile") || document.getElementById("leftDrawers")) return;
+// ── BOTTOM DRAWERS: relocate LIVE (.livectl) and Active perils (.legend) into two
+//    tabs along the BOTTOM of the map so they don't overlay the map. Click a tab ->
+//    the panel slides UP above it; click again -> slides down to just the tab.
+//    Desktop only — mobile uses the slide-up sheets. Controls keep all wiring (we
+//    move the DOM nodes, like the mobile lane does). ──
+function setupBottomDrawers(){
+  if(!TMAP || document.body.classList.contains("mobile") || document.getElementById("bottomDrawers")) return;
   const main=document.getElementById("main"); if(!main) return;
-  const host=document.createElement("div"); host.id="leftDrawers";
+  const host=document.createElement("div"); host.id="bottomDrawers";
   L.DomEvent.disableClickPropagation(host); L.DomEvent.disableScrollPropagation(host);
   function drawer(label, node){
-    const d=document.createElement("div"); d.className="ldrawer";
-    const tab=document.createElement("div"); tab.className="ltab"; tab.textContent=label;
-    const body=document.createElement("div"); body.className="lbody";
-    const inner=document.createElement("div"); inner.className="lbody-inner";
+    const d=document.createElement("div"); d.className="bdrawer";
+    const body=document.createElement("div"); body.className="bbody";
+    const inner=document.createElement("div"); inner.className="bbody-inner";
     if(node) inner.appendChild(node);                    // move the control DOM in (keeps its listeners)
-    body.appendChild(inner); d.appendChild(tab); d.appendChild(body);
+    body.appendChild(inner);
+    const tab=document.createElement("div"); tab.className="btab"; tab.textContent=label;
     tab.addEventListener("click", ()=>d.classList.toggle("open"));
+    d.appendChild(body); d.appendChild(tab);             // body (above) + tab (at the bottom)
     return d;
   }
   const live=document.querySelector(".livectl"), legend=document.querySelector(".legend");
@@ -1271,25 +1278,17 @@ function flyToSearch(loc, zoom){
   SEARCH_MARKER = L.marker([loc.lat, loc.lng]).addTo(TMAP).bindPopup(loc.label||"searched location").openPopup();
 }
 function addMapSearch(){
-  if(!TMAP || document.querySelector(".mapsearch")) return;
-  const ctl = L.control({position:"topleft"});
-  ctl.onAdd = function(){
-    const d = L.DomUtil.create("div","mapsearch");
-    d.innerHTML =
-      '<div class="ms-row"><input class="ms-city" type="text" placeholder="City, ST (e.g. Springfield, IL)"><button class="ms-go ms-citygo" type="button">Go</button></div>'+
-      '<div class="ms-row ms-addrwrap"><input class="ms-addr" type="text" placeholder="Address\\u2026" autocomplete="off"><div class="ms-sugg"></div></div>'+
-      '<div class="ms-status"></div>';
-    L.DomEvent.disableClickPropagation(d); L.DomEvent.disableScrollPropagation(d);
-    return d;
-  };
-  ctl.addTo(TMAP);
-  const cityEl=document.querySelector(".ms-city"), goEl=document.querySelector(".ms-citygo"),
-        addrEl=document.querySelector(".ms-addr"), suggEl=document.querySelector(".ms-sugg"),
-        stEl=document.querySelector(".ms-status");
+  // Wires the TOP-BANNER search inputs (#msCity / #msAddr). Navigation only — moves
+  // the map view via the captured handle; renderMap's §3 core is untouched.
+  const cityEl=document.getElementById("msCity"), goEl=document.getElementById("msCityGo"),
+        addrEl=document.getElementById("msAddr"), suggEl=document.getElementById("msSugg");
+  if(!cityEl || !addrEl || cityEl.dataset.wired) return;
+  cityEl.dataset.wired="1";
   // (1) CITY/STATE: forward geocode the first match, pan/zoom to it
-  async function cityGo(){ const q=cityEl.value.trim(); if(!q) return; stEl.textContent="Searching\\u2026";
-    try{ const hits=await photonSuggest(q,1); if(!hits.length){ stEl.textContent="\\u26a0 not found"; return; }
-      stEl.textContent=""; flyToSearch(hits[0], 11); }catch(e){ stEl.textContent="\\u26a0 search unreachable"; } }
+  async function cityGo(){ const q=cityEl.value.trim(); if(!q) return;
+    try{ const hits=await photonSuggest(q,1);
+      if(hits.length){ flyToSearch(hits[0], 11); } else { cityEl.value=""; cityEl.placeholder="not found \\u2014 try again"; } }
+    catch(e){ cityEl.placeholder="search unreachable"; } }
   goEl.addEventListener("click", cityGo);
   cityEl.addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); cityGo(); } });
   // (2) ADDRESS: predictive autocomplete (debounced) -> exact point (reuses Photon)
@@ -1300,7 +1299,8 @@ function addMapSearch(){
       hits.forEach(h=>{ const b=document.createElement("button"); b.type="button"; b.className="ms-sg"; b.textContent=h.label;
         b.onclick=()=>{ suggEl.innerHTML=""; addrEl.value=h.label; flyToSearch(h, 16); }; suggEl.appendChild(b); });
     }catch(e){ suggEl.innerHTML=""; } }, 350); });
-  document.addEventListener("click", e=>{ const w=document.querySelector(".ms-addrwrap"); if(w && !w.contains(e.target)) suggEl.innerHTML=""; });
+  document.addEventListener("click", e=>{ const w=addrEl.closest(".ms-addrwrap");
+    if(w && !w.contains(e.target)) suggEl.innerHTML=""; });
 }
 
 async function boot(){
@@ -1368,7 +1368,7 @@ async function boot(){
   initWeather();        // weather tab: rain forecast for job scheduling (isolated tool view; NWS + Census, no graph/engine)
   addChaseLayer(D.chase);   // item 8 Step 3 v2: chase TARGETING block at the bottom of the Layers panel (master OFF)
   addMapSearch();           // map location search: City/State + address typeahead (reuses Photon; navigation only)
-  setupLeftDrawers();       // item 8 Step 3 v2 Part 6: LIVE + Active perils -> left-edge slide-out drawers (desktop)
+  setupBottomDrawers();     // LIVE + Active perils -> bottom slide-up drawers (don't overlay the map; desktop)
   buildOperatorPanel(D, forecast);
   setupMobile();
   if(banner) showBanner(banner); else hideBanner();
