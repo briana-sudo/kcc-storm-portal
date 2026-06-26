@@ -2015,6 +2015,39 @@ function buildHeatmap(cells, vIdx, ramp, vmax, paneName, paneZ){
     {pane:paneName, opacity:0.85, interactive:false, className:"hailheat"})]);
 }
 
+// ---- Zoom-scaled vector strokes/dots (portal-side, display-only) ----
+// The engine §3 render gives ad-target circles a GEOGRAPHIC radius (meters) so the
+// fills scale with zoom like the P3 margins do. But the ring STROKE weight and the
+// center dots + evidence pins are fixed PIXELS, so zoomed out they stay bold and read
+// as noise. This walks the §3 vector layers on every zoomend and scales stroke weight
+// (geographic L.Circle) and dot/pin radius+weight (pixel L.CircleMarker) with zoom, so
+// they thin out when zoomed out and bolden back up when zoomed in. Live/heat panes are
+// skipped — they have their own LOD and re-render on zoom.
+var VEC_SKIP_PANES = {trackPane:1, warnPane:1, nexradPane:1, contourPane:1,
+  hHeatPane:1, wHeatPane:1, tHeatPane:1};
+function scaleVectors(){
+  if(!TMAP) return;
+  var z = TMAP.getZoom();
+  var s = Math.max(0.30, Math.min(1.15, (z-5)/6));   // z5->0.30  z11->1.00  z12+->1.15
+  function walk(grp){
+    grp.eachLayer(function(l){
+      if(l.getLayers){ walk(l); return; }                       // recurse layer groups
+      var pane = (l.options && l.options.pane) || "overlayPane";
+      if(VEC_SKIP_PANES[pane]) return;
+      if(l instanceof L.Circle){                                // geographic ring: scale stroke only
+        if(l.__bw==null) l.__bw = l.options.weight;
+        l.setStyle({weight: Math.max(0.4, l.__bw*s)});
+      } else if(l instanceof L.CircleMarker){                   // px dot / evidence pin: scale radius + stroke
+        if(l.__br==null) l.__br = l.options.radius;
+        if(l.__bw==null) l.__bw = (l.options.weight!=null ? l.options.weight : 1);
+        l.setRadius(Math.max(1.2, l.__br*s));
+        l.setStyle({weight: Math.max(0.5, l.__bw*s)});
+      }
+    });
+  }
+  walk(TMAP);
+}
+
 async function boot(){
   if(matchMedia("(pointer:coarse)").matches || /Android|iPhone|iPad|iPod|Mobile|Silk/i.test(navigator.userAgent))
     document.body.classList.add("mobile");
@@ -2085,7 +2118,8 @@ async function boot(){
       const b=Math.max(0.8, Math.min(4.0, (z-3)*0.42)).toFixed(2);
       ["swathPane","windPane","tornadoPane"].forEach(n=>{ const p=TMAP.getPane(n);
         if(p) p.style.filter="blur("+b+"px) saturate(1.12)"; }); };
-    smoothSwath(); TMAP.on("zoomend", smoothSwath); }
+    smoothSwath(); TMAP.on("zoomend", smoothSwath);
+    scaleVectors(); TMAP.on("zoomend", scaleVectors); }
   // SMOOTH SWATHS: continuous heatmaps for hail + wind + tornado (each its own dark->bright
   // ramp), with one Cells|Smooth toggle. Smooth = show heatmaps + hide the blocky canvas
   // panes; Cells = the original blurred §3 canvases. Display-only; circles/dots untouched.
