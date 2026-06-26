@@ -2002,7 +2002,7 @@ function rampRGB(ramp,t){ t=Math.max(0,Math.min(1,t)); const x=t*(ramp.length-1)
 // levels): build the value grid (vIdx = which cell field), smooth it, paint with the ramp +
 // a value-scaled alpha (low fainter but still dark, high solid), and scale the image smoothly
 // over its bbox. Display-only; the §3 cell data + ad-circles are untouched.
-function buildHeatmap(cells, valFn, ramp, vmax, paneName, paneZ){
+function buildHeatmap(cells, valFn, ramp, paneName, paneZ){
   if(!TMAP || !cells || !cells.length) return null;
   const lats=cells.map(c=>c[0]), lons=cells.map(c=>c[1]);
   const latMin=Math.min.apply(null,lats), latMax=Math.max.apply(null,lats);
@@ -2032,16 +2032,27 @@ function buildHeatmap(cells, valFn, ramp, vmax, paneName, paneZ){
         if(xx>=0&&xx<W&&yy>=0&&yy<H){ s+=src[yy*W+xx]; n++; } }
       out[y*W+x]=s/n; } return out; };
   let G=V; for(let p=0;p<passes;p++){ G=blurAxis(G,true); G=blurAxis(G,false); }
-  const lo=vmax*0.02, fEnd=vmax*0.10, aFloor=0.42, aTop=0.92;   // feather alpha 0->floor across [lo,fEnd]
+  // Auto-fit the color range to the BLURRED grid's OWN values (per peril/storm), so the ramp
+  // is fully used no matter where values floor (intensity ~2, wind ~1.2, tornado ~3.1), how
+  // strong the storm is, or how much the blur diluted a sparse swath. gate (transparency)
+  // = 4% of peak, excluding the faint blurred fringe; vlo/vhi = p5/p90 of the in-swath values.
+  let gmax=0; for(let i=0;i<G.length;i++) if(G[i]>gmax) gmax=G[i];
+  if(gmax<=0) return null;
+  const gate=gmax*0.04, vals=[];
+  for(let i=0;i<G.length;i++) if(G[i]>gate) vals.push(G[i]);
+  if(!vals.length) return null;
+  vals.sort((a,b)=>a-b);
+  const vlo=vals[Math.floor(0.05*vals.length)], vhi=Math.max(vlo+1e-6, vals[Math.floor(0.90*vals.length)]);
+  const span=vhi-vlo, fLoEnd=gate+0.15*span, aFloor=0.42, aTop=0.92;
   const cv=document.createElement("canvas"); cv.width=W; cv.height=H;
   const ctx=cv.getContext("2d"), img=ctx.createImageData(W,H);
   for(let y=0;y<H;y++)for(let x=0;x<W;x++){ const v=G[y*W+x];
     const row=H-1-y, idx=(row*W+x)*4;                                  // flip so canvas top = north
-    if(v<lo){ img.data[idx+3]=0; continue; }                          // outside swath -> transparent
-    const t=Math.max(0,Math.min(1,v/vmax)), rgb=rampRGB(ramp,t);
+    if(v<gate){ img.data[idx+3]=0; continue; }                        // outside swath -> transparent
+    const t=Math.max(0,Math.min(1,(v-vlo)/span)), rgb=rampRGB(ramp,t);
     img.data[idx]=rgb[0]; img.data[idx+1]=rgb[1]; img.data[idx+2]=rgb[2];
-    let a = v<fEnd ? (v-lo)/(fEnd-lo)*aFloor
-                   : aFloor+(aTop-aFloor)*Math.max(0,Math.min(1,(t-fEnd/vmax)/(1-fEnd/vmax)));
+    let a=aFloor+(aTop-aFloor)*t;                                      // brighter/more opaque with value
+    if(v<fLoEnd) a*=(v-gate)/(fLoEnd-gate);                           // feather the fringe to transparent
     img.data[idx+3]=Math.round(255*Math.max(0,Math.min(aTop,a))); }
   ctx.putImageData(img,0,0);
   if(!TMAP.getPane(paneName)){ TMAP.createPane(paneName);
@@ -2162,22 +2173,23 @@ async function boot(){
   // panes; Cells = the original blurred §3 canvases. Display-only; circles/dots untouched.
   if(TMAP){
     // HAIL fill modes mirror the §3 radio: intensity=c[3] (1–10), size=c[2] (in), priority=tier(c[3]).
+    // Per-peril value extractor; the color range auto-fits inside buildHeatmap (p5..p90 of the
+    // blurred grid), so every layer spreads across the full ramp regardless of its data floor.
     const HAIL_FILL={
-      // intensity data clusters low (gate~2..max~9, median ~3); vmax 6 (not 10) spreads it
-      // across the ramp for contrast, the way size fills its 0..2" range. Cores (>=6) saturate.
-      intensity:{fn:c=>+c[3]||0, vmax:6},
-      size:     {fn:c=>+c[2]||0, vmax:2.0},
-      priority: {fn:c=>{const it=+c[3]||0; return it>=7?10:it>=4?6:it>0?2:0;}, vmax:10},
+      intensity:{fn:c=>+c[3]||0},
+      size:     {fn:c=>+c[2]||0},
+      // priority = discrete tiers (P3/P2/P1 -> 1/2/3), rendered purple/orange/yellow
+      priority: {fn:c=>{const it=+c[3]||0; return it>=7?3:it>=4?2:it>0?1:0;}},
     };
     const curHailMode=()=>{ const r=document.querySelector('.ctlpanel input[name="hm"]:checked'); return (r&&HAIL_FILL[r.value])?r.value:"intensity"; };
     const HL=[];   // {pane,group,peril,op}
     if(D.swath_mode==="per_cell" && D.swath_cells && D.swath_cells.length){
-      const m=HAIL_FILL[curHailMode()]; const h=buildHeatmap(D.swath_cells,m.fn,HAIL_RAMP,m.vmax,"hHeatPane",351);
+      const h=buildHeatmap(D.swath_cells,HAIL_FILL[curHailMode()].fn,HAIL_RAMP,"hHeatPane",351);
       if(h) HL.push({pane:"swathPane",group:h,peril:"hail",op:0.6}); }
     if(D.wind && D.wind.swath_cells && D.wind.swath_cells.length){
-      const w=buildHeatmap(D.wind.swath_cells,c=>+c[2]||0,WIND_RAMP,10,"wHeatPane",354); if(w) HL.push({pane:"windPane",group:w,peril:"wind",op:0.55}); }
+      const w=buildHeatmap(D.wind.swath_cells,c=>+c[2]||0,WIND_RAMP,"wHeatPane",354); if(w) HL.push({pane:"windPane",group:w,peril:"wind",op:0.55}); }
     if(D.tornado && D.tornado.swath_cells && D.tornado.swath_cells.length){
-      const t=buildHeatmap(D.tornado.swath_cells,c=>+c[2]||0,TORN_RAMP,10,"tHeatPane",355); if(t) HL.push({pane:"tornadoPane",group:t,peril:"tornado",op:0.55}); }
+      const t=buildHeatmap(D.tornado.swath_cells,c=>+c[2]||0,TORN_RAMP,"tHeatPane",355); if(t) HL.push({pane:"tornadoPane",group:t,peril:"tornado",op:0.55}); }
     if(HL.length){ let mode="smooth";
       const setOp=o=>o.group.eachLayer(im=>im.setOpacity(o.op));
       const chk=sel=>{ const e=document.querySelector(sel); return !e || e.checked; };
@@ -2191,8 +2203,8 @@ async function boot(){
       HL.forEach(o=>{ const dl=document.querySelector('.ctlpanel input[data-dial="'+o.peril+'-swath"]'); if(dl) o.op=dl.value/100; });
       // rebuild the hail heatmap when the §3 fill radio changes (int/size/priority)
       const rebuildHail=()=>{ const o=HL.find(x=>x.peril==="hail"); if(!o)return;
-        const m=HAIL_FILL[curHailMode()]; if(TMAP.hasLayer(o.group)) TMAP.removeLayer(o.group);
-        const g=buildHeatmap(D.swath_cells,m.fn,HAIL_RAMP,m.vmax,"hHeatPane",351);
+        if(TMAP.hasLayer(o.group)) TMAP.removeLayer(o.group);
+        const g=buildHeatmap(D.swath_cells,HAIL_FILL[curHailMode()].fn,HAIL_RAMP,"hHeatPane",351);
         if(g){ o.group=g; if(mode==="smooth"&&visOf("hail")){ o.group.addTo(TMAP); setOp(o); } } };
       // DRIVE the smooth swath from the existing §3 Layers panel:
       const panel=document.querySelector(".ctlpanel");
