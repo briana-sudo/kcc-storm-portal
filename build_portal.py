@@ -773,6 +773,14 @@ function addLiveLayers(){
   const mk=(name,z)=>{ if(!TMAP.getPane(name)){ TMAP.createPane(name);
     const p=TMAP.getPane(name); p.style.zIndex=z; p.style.pointerEvents="none"; } };
   mk("nexradPane",230); mk("warnPane",231); mk("trackPane",232);
+  // smooth the blocky N0Q radar mosaic into a soft, continuous look (modern-radar feel):
+  // blur softens the hard cell/colour-step edges; saturate/contrast keeps it vivid. A
+  // zoom-scaled blur keeps the smoothing consistent as cells grow on zoom-in.
+  const nradPane=TMAP.getPane("nexradPane");
+  const smoothRadar=()=>{ if(!nradPane) return; const z=TMAP.getZoom();
+    const b=Math.max(1.1, Math.min(4.2, (z-3)*0.45)).toFixed(2);   // ~1.1px out -> ~4px zoomed in
+    nradPane.style.filter="blur("+b+"px) saturate(1.28) contrast(1.05)"; };
+  smoothRadar(); TMAP.on("zoomend", smoothRadar);
   const R_warn=L.svg({pane:"warnPane"}), R_track=L.svg({pane:"trackPane"});
 
   // ===== LAYER A: NEXRAD reflectivity LOOP (national USCOMP-N0Q, 5-min frames) =====
@@ -1273,11 +1281,21 @@ function _photonLabel(p){
   return [street || p.name, (p.city||p.town||p.county), p.state, p.postcode].filter(Boolean).join(", ");
 }
 async function photonSuggest(q, limit){
-  const r = await fetch(_PHOTON+"?limit="+(limit||6)+"&lang=en&q="+encodeURIComponent(q));
+  // Bias to the STL home point so LOCAL addresses surface first — you don't have to
+  // type the city for "411 south clinton" to find New Athens, IL.
+  const r = await fetch(_PHOTON+"?limit="+(limit||6)+"&lang=en&lat=38.63&lon=-90.2&q="+encodeURIComponent(q));
   const j = await r.json();
   return (j.features||[]).map(f=>{ const c=f.geometry&&f.geometry.coordinates, p=f.properties||{}; if(!c) return null;
     return { label:_photonLabel(p), lat:c[1], lng:c[0], city:(p.city||p.town||p.county||""), state:(p.state||""), postcode:(p.postcode||""), housenumber:p.housenumber||"" }; }).filter(Boolean);
 }
+// OSM rooftop geocoder (Nominatim) — true building point when OSM has the house. Used
+// on SELECT to refine to the exact building; falls back to Census interpolation.
+async function nominatimGeocode(addr){ try{
+  const r=await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&addressdetails=1&limit=1&q="+encodeURIComponent(addr),{headers:{Accept:"application/json"}});
+  const j=await r.json(); const f=j&&j[0]; if(!f) return null; const a=f.address||{};
+  const label=[[a.house_number,a.road].filter(Boolean).join(" "), (a.city||a.town||a.village||a.hamlet), a.state, a.postcode].filter(Boolean).join(", ");
+  return { lat:+f.lat, lng:+f.lon, label: label||f.display_name, hasHouse: !!a.house_number };
+}catch(e){ return null; } }
 // US Census rooftop geocoder (JSONP, no key) — the SAME one the weather tab uses. Gives
 // the EXACT building point + matched address (with house number) when the typed address
 // has a street number; Photon typeahead alone often returns only the street.
@@ -1305,9 +1323,11 @@ function addMapSearch(){
         addrEl=document.getElementById("msAddr"), suggEl=document.getElementById("msSugg");
   if(!cityEl || !addrEl || cityEl.dataset.wired) return;
   cityEl.dataset.wired="1";
-  // clear (x) buttons on both boxes
+  // clear (x) buttons on both boxes — also removes the map pin
   document.querySelectorAll("#tbar .hdr-search .ms-clear").forEach(btn=>btn.addEventListener("click",()=>{
-    const t=document.getElementById(btn.dataset.clear); if(t){ t.value=""; t.focus(); } if(btn.dataset.clear==="msAddr") suggEl.innerHTML=""; }));
+    const t=document.getElementById(btn.dataset.clear); if(t){ t.value=""; t.focus(); }
+    if(btn.dataset.clear==="msAddr") suggEl.innerHTML="";
+    if(SEARCH_MARKER && TMAP){ TMAP.removeLayer(SEARCH_MARKER); SEARCH_MARKER=null; } }));
   // (1) CITY/STATE: forward geocode the first match, pan/zoom to it
   async function cityGo(){ const q=cityEl.value.trim(); if(!q) return;
     try{ const hits=await photonSuggest(q,1);
@@ -1324,10 +1344,11 @@ function addMapSearch(){
       hits.forEach(h=>{ const b=document.createElement("button"); b.type="button"; b.className="ms-sg"; b.textContent=h.label;
         b.onclick=async()=>{ const typed=addrEl.value.trim(); suggEl.innerHTML="";
           let loc=h;
-          if(/^\\s*\\d/.test(typed) && !h.housenumber){            // user typed a house number but Photon dropped it
-            // include the suggestion's ZIP — Census needs the postcode to match a rooftop.
+          if(/^\\s*\\d/.test(typed)){                              // typed a house number -> resolve the EXACT building
             const full=typed+(h.city?", "+h.city:"")+(h.state?", "+h.state:"")+(h.postcode?" "+h.postcode:"");
-            const exact=await censusGeocode(full); if(exact) loc=exact;
+            const nom=await nominatimGeocode(full);
+            if(nom && nom.hasHouse){ loc=nom; }                   // OSM rooftop (most accurate)
+            else { const cen=await censusGeocode(full); loc=cen || nom || h; }   // Census, else OSM street, else Photon
           }
           addrEl.value=loc.label; flyToSearch(loc, 17); };
         suggEl.appendChild(b); });
