@@ -1587,19 +1587,28 @@ async function boot(){
       ["swathPane","windPane","tornadoPane"].forEach(n=>{ const p=TMAP.getPane(n);
         if(p) p.style.filter="blur("+b+"px) saturate(1.12)"; }); };
     smoothSwath(); TMAP.on("zoomend", smoothSwath); }
-  // CONTOUR PROTOTYPE: build smooth hail isobands + a Cells/Contours toggle (hail only).
-  if(TMAP && D.swath_mode==="per_cell" && D.swath_cells && D.swath_cells.length){
-    const contours=buildHailContours(D.swath_cells), swp=TMAP.getPane("swathPane");
-    if(contours){ let mode="contours";                      // default to the new look for review
-      const show=()=>{ if(mode==="contours"){ contours.addTo(TMAP); if(swp) swp.style.display="none"; }
-        else { if(TMAP.hasLayer(contours)) TMAP.removeLayer(contours); if(swp) swp.style.display=""; } };
+  // SMOOTH SWATHS: continuous heatmaps for hail + wind + tornado (each its own dark->bright
+  // ramp), with one Cells|Smooth toggle. Smooth = show heatmaps + hide the blocky canvas
+  // panes; Cells = the original blurred §3 canvases. Display-only; circles/dots untouched.
+  if(TMAP){
+    const HL=[];   // [canvasPaneToHide, heatmapLayer]
+    if(D.swath_mode==="per_cell" && D.swath_cells && D.swath_cells.length){
+      const h=buildHeatmap(D.swath_cells,3,HAIL_RAMP,10,"hHeatPane",351); if(h) HL.push(["swathPane",h]); }
+    if(D.wind && D.wind.swath_cells && D.wind.swath_cells.length){
+      const w=buildHeatmap(D.wind.swath_cells,2,WIND_RAMP,10,"wHeatPane",354); if(w) HL.push(["windPane",w]); }
+    if(D.tornado && D.tornado.swath_cells && D.tornado.swath_cells.length){
+      const t=buildHeatmap(D.tornado.swath_cells,2,TORN_RAMP,10,"tHeatPane",355); if(t) HL.push(["tornadoPane",t]); }
+    if(HL.length){ let mode="smooth";
+      const show=()=>{ HL.forEach(o=>{ const cp=TMAP.getPane(o[0]);
+        if(mode==="smooth"){ o[1].addTo(TMAP); if(cp) cp.style.display="none"; }
+        else { if(TMAP.hasLayer(o[1])) TMAP.removeLayer(o[1]); if(cp) cp.style.display=""; } }); };
       const ctl=L.control({position:"bottomleft"}); ctl.onAdd=function(){ const d=L.DomUtil.create("div","swathtog");
-        d.innerHTML='<b>Hail swath</b><div class="st-btns"><button id="stCells">Cells</button><button id="stCont" class="on">Smooth</button></div>';
+        d.innerHTML='<b>Swath render</b><div class="st-btns"><button id="stCells">Cells</button><button id="stCont" class="on">Smooth</button></div>';
         L.DomEvent.disableClickPropagation(d); return d; };
       ctl.addTo(TMAP);
       const bc=document.getElementById("stCells"), bt=document.getElementById("stCont");
       if(bc) bc.onclick=()=>{ mode="cells"; bc.classList.add("on"); bt.classList.remove("on"); show(); };
-      if(bt) bt.onclick=()=>{ mode="contours"; bt.classList.add("on"); bc.classList.remove("on"); show(); };
+      if(bt) bt.onclick=()=>{ mode="smooth"; bt.classList.add("on"); bc.classList.remove("on"); show(); };
       show();
     }
   }
