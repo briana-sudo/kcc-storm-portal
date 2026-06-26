@@ -1432,6 +1432,15 @@ async function boot(){
   const D = assemble(date, rows||[], geo);
   renderMap(D);
   setBaseStreet();
+  // Smooth the engine hail swath (the §3 SwathLayer canvas in swathPane) the same way the
+  // live radar is smoothed: a zoom-scaled blur softens the per-MESH-cell blocks into a
+  // continuous heatmap. DISPLAY ONLY -- the §3 render core, the cell data, and the crisp
+  // ad-circles/dots (separate panes) are untouched; only the swathPane canvas is blurred.
+  if(TMAP){ const swp=TMAP.getPane("swathPane");
+    const smoothSwath=()=>{ if(!swp) return; const z=TMAP.getZoom();
+      const b=Math.max(0.8, Math.min(4.0, (z-3)*0.42)).toFixed(2);
+      swp.style.filter="blur("+b+"px) saturate(1.12)"; };
+    smoothSwath(); TMAP.on("zoomend", smoothSwath); }
   // Stable HOME view: renderMap fitBounds-to-storm over-zooms small swaths. Override to
   // a consistent STL-center view at a normal zoom (pan, don't zoom-to-fit). Post-render
   // from the bootstrap via the captured handle — renderMap's §3 core is untouched.
