@@ -1444,17 +1444,37 @@ function addPull(){
     panel.querySelector(".pp-x").onclick=exitPull;
     panel.querySelector(".pp-go").onclick=async()=>{
       const c=TMAP.getCenter(), st=panel.querySelector(".pp-status"), go=panel.querySelector(".pp-go");
-      go.disabled=true; st.textContent="Computing\\u2026 (up to ~30s)";
+      go.disabled=true; st.textContent="Starting\\u2026";
+      // FIRE: the compute is too slow for a synchronous request through the hosting
+      // chain, so /api/storm-pull returns a job_id immediately and computes in the
+      // background. We then POLL the read-only status until it lands, and refresh.
+      let job=null;
       try{
         const r=await fetch(PULL_API, { method:"POST", headers:{ "Content-Type":"application/json" },
           body: JSON.stringify({ lat:+c.lat.toFixed(4), lon:+c.lng.toFixed(4), date:getDate(), radius_mi:150 }) });
         let j={}; try{ j=await r.json(); }catch(e){}
-        if(!r.ok || j.status==="error"){
+        if(!r.ok || j.status==="error" || !j.job_id){
           st.textContent="\\u26a0 "+(j.detail || j.error || ("HTTP "+r.status)); go.disabled=false; return; }
-        st.textContent="\\u2713 pulled "+j.circles+" circles \\u00b7 "+j.swath_cells+" swath cells \\u2014 refreshing\\u2026";
-        if(recenter){ TMAP.off("move", recenter); recenter=null; }
-        setTimeout(()=>location.reload(), 1100);               // re-fetch so the pull renders in the chase layer
-      }catch(e){ st.textContent="\\u26a0 "+e.message; go.disabled=false; }
+        job=j.job_id;
+      }catch(e){ st.textContent="\\u26a0 "+e.message; go.disabled=false; return; }
+      // POLL: storm_pull_status is a read-only whitelist query; polling never starts
+      // a compute. Absent or 'running' -> keep waiting; terminal -> act.
+      st.textContent="Computing in the background\\u2026 you can keep working; this refreshes when ready";
+      const t0=Date.now(), CAP=240000;
+      const poll=async()=>{
+        if(Date.now()-t0>CAP){ st.textContent="\\u26a0 still computing \\u2014 reload in a moment to see it"; go.disabled=false; return; }
+        let s=null; try{ const rows=await pquery("storm_pull_status",{job_id:job}); s=(rows&&rows[0])||null; }catch(e){}
+        if(s && s.state==="done"){
+          st.textContent="\\u2713 pulled "+s.circles+" circles \\u00b7 "+s.swath_cells+" swath cells \\u2014 refreshing\\u2026";
+          if(recenter){ TMAP.off("move", recenter); recenter=null; }
+          setTimeout(()=>location.reload(), 1100); return; }
+        if(s && s.state==="empty"){
+          st.textContent="\\u2713 no storm cells in this circle on "+getDate()+" \\u2014 nothing to pull"; go.disabled=false; return; }
+        if(s && s.state==="error"){
+          st.textContent="\\u26a0 "+(s.error||"pull failed"); go.disabled=false; return; }
+        setTimeout(poll, 4000);
+      };
+      setTimeout(poll, 3000);
     };
   });
 }
