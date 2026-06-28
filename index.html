@@ -1327,6 +1327,7 @@ const SPEND_API = (CFG.spendApi || "").replace(/\/$/, "") ||
 let SD_STATE = { solution: null };
 let SD_CIRCLES = {};          // circle_id -> {lat,lng,r} for the Solve map SNAP (built in setupSpendDial)
 let SD_SNAPGRP = null;        // the funded/deselected highlight layer group (cleared each Solve)
+let SD_SORT = "value";        // readout sort mode (display only): value | cheap | vpd
 async function sdApi(action, body){
   if(!SPEND_API) throw new Error("no spend endpoint configured (v2 proxy wiring)");
   const r = await fetch(SPEND_API + "-" + action, { method:"POST",
@@ -1374,7 +1375,11 @@ function setupSpendDial(D){
     + '<div class="sd-row"><label>Spend cap</label><input id="sdCapR" type="range" min="1000" max="100000" step="1000" value="30000"><span class="val" id="sdCapV">$30,000</span></div>'
     + '<div class="sd-actions"><button id="sdSolve">Solve</button><button id="sdSend" disabled>Send &rarr;</button></div>'
     + '<div class="sd-verdict" id="sdVerdict">Set the dials and hit Solve.</div>'
-    + '<table class="sd-table" id="sdTable"><thead><tr><th>#</th><th>ring</th><th>avg val</th><th>cov</th><th>cost-to-win</th><th>IS</th></tr></thead><tbody></tbody></table>';
+    + '<div class="sd-row" style="margin:6px 0 1px"><label>Sort</label><div class="sd-seg" id="sdSort">'
+    + '<button class="on" data-sort="value">Value</button><button data-sort="cheap">Cheapest</button>'
+    + '<button data-sort="vpd">Value/$</button></div></div>'
+    + '<div class="sd-sortnote" style="font-size:10.5px;color:#778;margin:0 0 3px;font-style:italic">View order only \u2014 funding stays value-ranked.</div>'
+    + '<table class="sd-table" id="sdTable"><thead><tr><th>rank</th><th>ring ID</th><th>avg val</th><th>cov</th><th>cost-to-win</th><th>IS</th></tr></thead><tbody></tbody></table>';
   host.appendChild(p);
   // NO QUALIFIED STORM -> gray the dial: it can only fund ad targets, and there are none
   // for any peril. SAME condition as Storm Review's "No qualifying storm" verdict (no circles
@@ -1424,8 +1429,33 @@ function sdRenderSolution(sol){
     vn.style.display = "block";
     vn.innerHTML = "\u2139 Value data not computed for this date \u2014 coverage shows n/a and the value floor is inactive.";
   } else if(vn){ vn.style.display = "none"; }
-  const tb = document.querySelector("#sdTable tbody"); tb.innerHTML = "";
-  (sol.funded || []).forEach(r => {
+  // sort control (display only — funding is fixed): wire once, then render rows in the current order
+  const ss = document.getElementById("sdSort");
+  if(ss && !ss.dataset.wired){ ss.dataset.wired = "1";
+    ss.querySelectorAll("button").forEach(b => b.onclick = () => {
+      ss.querySelectorAll("button").forEach(x => x.classList.remove("on")); b.classList.add("on");
+      SD_SORT = b.dataset.sort; sdRenderRows(); }); }
+  sdRenderRows();
+  document.getElementById("sdTable").classList.remove("sd-stale");
+  document.getElementById("sdSend").disabled = !sol.valid;
+  sdRedrawMap(sol);
+}
+// readout sort is DISPLAY ONLY — it reorders the view, never the funded set (funding stays the
+// value-rank deselection + cap). VALUE = funding rank; CHEAPEST = domination_floor asc; VALUE/$ =
+// (roof-size x home-value) / domination_floor desc (efficiency frontier; div-by-zero guarded).
+function sdSortedFunded(){
+  const rows = ((SD_STATE.solution && SD_STATE.solution.funded) || []).slice();
+  if(SD_SORT === "cheap"){ rows.sort((a, b) => (a.domination_floor||0) - (b.domination_floor||0)); }
+  else if(SD_SORT === "vpd"){
+    const vpd = r => { const sz = r.avg_squares||0, hv = r.avg_home_value||0, d = r.domination_floor||0;
+      return (d > 0 && sz && hv) ? (sz*hv)/d : -1; };          // guard /0; unknown size/value sink
+    rows.sort((a, b) => vpd(b) - vpd(a));
+  } else { rows.sort((a, b) => (a.rank||0) - (b.rank||0)); }    // value = funding rank order
+  return rows;
+}
+function sdRenderRows(){
+  const tb = document.querySelector("#sdTable tbody"); if(!tb) return; tb.innerHTML = "";
+  sdSortedFunded().forEach(r => {
     const tr = document.createElement("tr"); tr.dataset.cid = r.circle_id;
     const av = r.avg_home_value ? ("$" + Math.round(r.avg_home_value/1000) + "k") : "\u2014";
     const cov = r.coverage_known ? (Math.round((r.coverage||0)*100) + "%") : "n/a";
@@ -1434,9 +1464,6 @@ function sdRenderSolution(sol){
       + "</td><td><span class='sd-band " + r.band_flag + "'></span>" + Math.round((r.projected_IS||0)*100) + "%</td>";
     tr.onclick = () => sdPopup(r.circle_id); tb.appendChild(tr);
   });
-  document.getElementById("sdTable").classList.remove("sd-stale");
-  document.getElementById("sdSend").disabled = !sol.valid;
-  sdRedrawMap(sol);
 }
 function sdRedrawMap(sol){           // v1 SNAP on Solve: highlight funded rings, grey deselected
   if(!TMAP) return;
