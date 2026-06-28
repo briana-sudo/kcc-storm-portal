@@ -383,6 +383,84 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .swathrender button{border:1px solid #c7d2e0;background:#f3f6fb;color:#26344d;border-radius:6px;padding:2px 9px;font-size:11px;font-weight:700;cursor:pointer}
 .swathrender button.on{background:#2f6fe0;border-color:#2f6fe0;color:#fff}
 .leaflet-image-layer.hailheat{image-rendering:auto}
+/* ── #6 RANKED-TARGETS badges (payout_score): additive label pane over the §3
+   ad circles. P1 deep-red / P2 orange to echo the locked ring colors; floor-muted
+   circles get a greyed, dashed badge (flagged, not deleted). Toggle = the # button. */
+.rankwrap{background:none;border:none}
+.rankbadge{display:flex;align-items:center;gap:3px;transform:translate(-50%,-50%);
+  font:800 11px/1 system-ui,sans-serif;color:#fff;padding:2px 6px;border-radius:11px;
+  white-space:nowrap;box-shadow:0 1px 4px rgba(0,0,0,.5);border:1.5px solid #fff}
+.rankbadge b{font-size:11px}
+.rankbadge .rs{font-weight:600;font-size:9px;opacity:.92;padding-left:2px;border-left:1px solid rgba(255,255,255,.5)}
+.rankbadge.t1{background:#bd0026}        /* P1 core */
+.rankbadge.t2{background:#e8430a}        /* P2 */
+.rankbadge.muted{background:#6b7280;border-style:dashed;opacity:.78}
+.rankctl a.on{background:#bd0026;color:#fff}
+.rankctl a{font-weight:800}
+/* ── SPEND-DIAL PANEL (operator decision surface; single-gate portal approval) ──
+   Desktop: docks in the right #side region. Mobile: relocated into a bottom-sheet behind
+   the "$ Spend" toolbar button (setupMobile). Solve->Send->Approve; Approve = the ONE gate
+   (shared desktop + mobile modal). No email path anywhere. */
+#spendPanel{font-size:12.5px;color:#13203c}
+#spendPanel h2{font-size:14px;margin:2px 0 8px;display:flex;align-items:center;gap:7px}
+#spendPanel h2 .pk{margin-left:auto;font-size:10px;font-weight:800;letter-spacing:.5px;color:#fff;background:#bd0026;padding:2px 7px;border-radius:10px}
+.sd-row{display:flex;align-items:center;gap:8px;margin:7px 0}
+.sd-row label{flex:0 0 92px;color:#445;font-weight:700;font-size:11.5px}
+.sd-row input[type=range]{flex:1}
+.sd-row .val{min-width:64px;text-align:right;font-variant-numeric:tabular-nums;font-weight:700;color:#13203c}
+.sd-seg{display:flex;gap:4px}
+.sd-seg button{border:1px solid #c7d2e0;background:#f3f6fb;color:#26344d;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer}
+.sd-seg button.on{background:#2f6fe0;border-color:#2f6fe0;color:#fff}
+.sd-peril button:disabled{opacity:.4;cursor:not-allowed}
+.sd-cap{display:flex;gap:10px;margin:8px 0;padding:7px 9px;background:#eef3ff;border-radius:7px;font-size:11.5px}
+.sd-cap b{color:#13203c}
+.sd-actions{display:flex;gap:8px;margin:10px 0 4px}
+.sd-actions button{flex:1;border:none;border-radius:8px;padding:9px 0;font-size:13px;font-weight:800;cursor:pointer}
+#sdSolve{background:#1e2b46;color:#fff}#sdSolve:hover{background:#274069}
+#sdSend{background:#1a7a4f;color:#fff}#sdSend:hover{background:#1f9160}
+#sdSend:disabled{background:#9fb3a8;cursor:default}
+.sd-verdict{margin:8px 0;padding:8px 10px;border-radius:7px;font-size:12px;font-weight:600;background:#fff4e6;border-left:4px solid #e8430a;color:#5a3a1a}
+.sd-verdict.ok{background:#eaf7ef;border-left-color:#1a7a4f;color:#1c4a32}
+.sd-verdict.warn{background:#fdeaea;border-left-color:#bd0026;color:#7a1620}
+.sd-claimwarn{margin:0 0 9px;padding:8px 10px;border-radius:7px;font-size:11.5px;font-weight:700;
+  background:#fff3cd;border:1px solid #e0a800;color:#7a5b00}
+.sd-stale{opacity:.5;pointer-events:none}
+.sd-table{width:100%;border-collapse:collapse;font-size:11px;margin-top:6px}
+.sd-table th{text-align:right;color:#667;font-weight:700;padding:3px 5px;border-bottom:1px solid #e3e8f0}
+.sd-table th:first-child,.sd-table td:first-child{text-align:left}
+.sd-table td{padding:3px 5px;border-bottom:1px solid #f0f3f7;text-align:right;cursor:pointer}
+.sd-table tr:hover td{background:#eef3ff}
+.sd-band{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:-1px}
+.sd-band.in_band{background:#1a7a4f}.sd-band.red_low{background:#d9a600}.sd-band.red_high{background:#bd0026}
+.sd-table tr.dropped td{opacity:.5;font-style:italic}
+/* circle popup (rebuilt drill-down) */
+#sdPop{position:fixed;z-index:2700;max-width:320px;background:#fff;border:1px solid #c9d2dd;border-radius:10px;
+  box-shadow:0 14px 36px rgba(0,0,0,.5);padding:11px 13px;font-size:12px;color:#13203c}
+#sdPop.hidden{display:none}
+#sdPop h3{margin:0 0 5px;font-size:13px;display:flex;align-items:center;gap:6px}
+#sdPop .sd-pop-x{margin-left:auto;background:none;border:none;font-size:16px;cursor:pointer;color:#889}
+#sdPop .r{display:flex;justify-content:space-between;gap:14px;padding:2px 0;border-top:1px solid #f0f3f7}
+#sdPop .r span{color:#667}#sdPop .r b{color:#13203c}
+#sdPop .sd-status{margin-top:6px;padding:5px 8px;border-radius:6px;font-weight:700;font-size:11.5px}
+#sdPop .sd-status.funded{background:#eaf7ef;color:#1c4a32}
+#sdPop .sd-status.dropped{background:#fdeaea;color:#7a1620}
+#sdPop .sd-conf{color:#bd0026;font-size:10.5px;margin-top:3px}
+/* APPROVE modal — the single gate (desktop + mobile) */
+#sdModalBack{position:fixed;inset:0;z-index:2800;background:rgba(6,12,22,.6)}
+#sdModalBack.hidden{display:none}
+#sdModal{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2810;width:420px;max-width:94vw;
+  background:#0f1830;color:#e9eef7;border:1px solid #2c3c5e;border-radius:13px;box-shadow:0 20px 60px rgba(0,0,0,.7);padding:16px 18px}
+#sdModal h2{margin:0 0 4px;font-size:16px}
+#sdModal .sd-sub{color:#8aa0c6;font-size:11px;margin-bottom:10px}
+#sdModal .sd-line{display:flex;justify-content:space-between;padding:5px 0;border-top:1px solid #24324e;font-size:13px}
+#sdModal .sd-line b{color:#7fd1ff}
+#sdModal .sd-mbtns{display:flex;gap:9px;margin-top:14px}
+#sdModal .sd-mbtns button{flex:1;border:none;border-radius:9px;padding:11px 0;font-size:14px;font-weight:800;cursor:pointer}
+#sdLaunch{background:#1a7a4f;color:#fff}#sdLaunch:hover{background:#1f9160}
+#sdCancel{background:#1e2b46;color:#cdd8ee}#sdCancel:hover{background:#274069}
+/* desktop: the spend button in the top bar */
+#tbar #spendBtn{background:#143a2a;color:#bdf0d6;border:1px solid #2c6e4c;border-radius:6px;padding:5px 10px;font-size:13px;cursor:pointer}
+#tbar #spendBtn:hover{background:#1a5038}
 
 /* MOBILE: collapsible LIVE box — sits on the map above the bottom toolbar; collapsed to
    just its header, taps slide it up/down. #banner (no-storm) parks just above it. */
@@ -460,6 +538,7 @@ function goDate(d){ location.search = "?date=" + d; }
 function shiftDate(d, n){ const t=new Date(d+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()+n); return t.toISOString().slice(0,10); }
 function fmtDate(d){ const t=new Date(d+"T00:00:00Z"); return t.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"}); }
 function parseJSON(s){ try{ return JSON.parse(s||"[]"); }catch(e){ return []; } }
+function parseScores(s){ if(!s) return null; try{ const o=JSON.parse(s); return (o && typeof o==="object") ? o : null; }catch(e){ return null; } }
 async function pquery(name, params){
   const r = await fetch(API, { method:"POST", headers:{ "Content-Type":"application/json" },
     body: JSON.stringify({ name, params: params||{} }) });
@@ -527,6 +606,14 @@ function assemble(date, rows, geo){
     // CHASE = TARGETING ONLY (merged circles + evidence from chase-fill + pulls); the
     // chase swath is folded into the unified hail swath above (always available).
     chase: chaseHail.length ? { circles: chaseCircles, evidence: chaseEvidence } : null,
+    // #6 PAYOUT TARGETING BRAIN: per-peril {idx -> {payout_score, rank, floor_pass,...}}
+    // additive AdCluster prop. Graceful: absent (proxy query w/o the field) -> no ranks.
+    payout: {
+      hail: h ? parseScores(h.payout_scores_json) : null,
+      wind: parseScores(inmkt.wind && inmkt.wind.payout_scores_json),
+      tornado: parseScores(inmkt.tornado && inmkt.tornado.payout_scores_json),
+    },
+    list_core_count: (h && h.list_core_count != null) ? +h.list_core_count : null,
   };
   // Initial framing uses in-market targeting only — the chase toggle never moves the
   // map (Part 3), and the unified swath renders to 150mi regardless of view.
@@ -576,9 +663,62 @@ function buildOperatorPanel(D, forecast){
        '<div class="tiers">Evidence: '+ev.length+' SPC/LSR \\u00b7 <b>'+dmg+'</b> damage-confirmed</div></div>';
   });
   if(forecast) h+='<div class="op-forecast"><b>Forecast (today):</b> '+forecast+'</div>';
-  h+='<div class="op-row op-adspend"><b>Ad spend:</b> <span class="muted">pending parcel data + CPC</span></div>';
+  // #6 targeting brain: ranked ad-circle count + the separate door/call list-core (>=8.5)
+  if(D.payout){
+    let nranked=0, nmuted=0;
+    ["hail","wind","tornado"].forEach(pk=>{ const ps=D.payout[pk]; if(!ps) return;
+      Object.keys(ps).forEach(k=>{ nranked++; if(!ps[k].floor_pass) nmuted++; }); });
+    if(nranked) h+='<div class="op-row"><b>Ranked ad targets:</b> '+nranked+
+      ' <span class="muted">('+(nranked-nmuted)+' above floor \\u00b7 '+nmuted+' muted)</span></div>';
+  }
+  if(D.list_core_count!=null) h+='<div class="op-row"><b>List core (\\u22658.5):</b> '+
+    D.list_core_count.toLocaleString()+' parcels <span class="muted">door/call</span></div>';
+  h+='<div class="op-row op-adspend"><b>Ad spend:</b> <span class="muted">pending CPC \\u00b7 targets ranked by payout_score</span></div>';
   h+='<div id="detail" class="op-row"><span class="muted">Click a target circle for lead detail.</span></div>';
   side.innerHTML=h;
+}
+
+// ── #6 RANKED-TARGETS overlay: payout_score rank badges on the ad circles.
+// Reuses renderMap verbatim (§3 rings untouched); this is an additive label pane.
+// Floor-excluded (muted) circles keep their ring but get a greyed badge — flagged,
+// never deleted. Toggle in the top-left; ON by default. No-op if no payout data.
+let RANKGRP = null, RANKON = true;
+function paintRankedTargets(D){
+  if(!TMAP || !D || !D.payout) return;
+  const perils = [["hail", D.circles], ["wind", D.wind && D.wind.circles],
+                  ["tornado", D.tornado && D.tornado.circles]];
+  if(!TMAP.getPane("rankPane")){ const p=TMAP.createPane("rankPane"); p.style.zIndex=655; p.style.pointerEvents="none"; }
+  const markers=[]; let scored=0, muted=0;
+  perils.forEach(([pk, circles])=>{
+    const ps = D.payout[pk]; if(!ps || !circles) return;
+    circles.forEach((c, i)=>{
+      const s = ps[String(i)]; if(!s) return;          // only in-geofence P1/P2 scored
+      scored++; if(!s.floor_pass) muted++;
+      const html='<div class="rankbadge t'+(c.tier||"").slice(1)+(s.floor_pass?"":" muted")+'">'
+        +'<b>#'+s.rank+'</b><span class="rs">'+Math.round(s.payout_score)+'</span></div>';
+      markers.push(L.marker([c.center_lat, c.center_lng], {pane:"rankPane", interactive:false,
+        icon:L.divIcon({className:"rankwrap", html, iconSize:[0,0]})}));
+    });
+  });
+  if(RANKGRP && TMAP.hasLayer(RANKGRP)) TMAP.removeLayer(RANKGRP);
+  if(!markers.length) return;
+  RANKGRP = L.layerGroup(markers);
+  if(RANKON) RANKGRP.addTo(TMAP);
+  // a tiny toggle control (top-left under zoom) so the operator can hide the badges
+  if(!document.getElementById("rankToggle")){
+    const RankCtl = L.Control.extend({ options:{position:"topleft"},
+      onAdd:function(){ const d=L.DomUtil.create("div","leaflet-bar rankctl");
+        d.innerHTML='<a id="rankToggle" href="#" title="Ranked targets (payout score)">#</a>';
+        L.DomEvent.disableClickPropagation(d);
+        d.querySelector("a").onclick=(e)=>{ e.preventDefault(); RANKON=!RANKON;
+          if(RANKON){ RANKGRP.addTo(TMAP); d.querySelector("a").classList.add("on"); }
+          else { TMAP.removeLayer(RANKGRP); d.querySelector("a").classList.remove("on"); } };
+        return d; } });
+    TMAP.addControl(new RankCtl());
+    const a=document.getElementById("rankToggle"); if(a && RANKON) a.classList.add("on");
+  }
+  const cs=document.getElementById("connStatus");
+  if(cs && scored) cs.textContent = scored+" ranked targets"+(muted?(" \\u00b7 "+muted+" below floor"):"");
 }
 
 // ── storm-aware calendar: dates with data get peril dots (one cached query) ──
@@ -647,6 +787,215 @@ function renderCalPick(){ const yr=document.getElementById("cpYr"); if(yr) yr.te
     b.onclick=()=>{ calView={y:calPickYr, m:i}; closeCalPick(); renderCal(); };
     mg.appendChild(b); }); }
 
+// ── SPEND-DIAL PANEL (operator decision surface). Reads the brain via the proxy
+//    (/api/spend-solve, /api/spend-approve); SOLVE writes nothing, APPROVE is the ONE
+//    gate (shared desktop modal + mobile). No email path. Graceful if proxy absent. ──
+const SPEND_API = (CFG.spendApi || "").replace(/\\/$/, "") ||
+                  (API ? API.replace(/\\/api\\/storm$/, "/api/spend") : "");
+let SD_STATE = { solution: null };
+async function sdApi(action, body){
+  if(!SPEND_API) throw new Error("no spend endpoint configured (v2 proxy wiring)");
+  const r = await fetch(SPEND_API + "-" + action, { method:"POST",
+    headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) });
+  if(!r.ok) throw new Error("HTTP " + r.status);
+  return await r.json();
+}
+function sdReadDials(){
+  const area = document.querySelector("#sdArea button.on").dataset.area;
+  return { date:getDate(), peril:"hail", footprint_source:"canonical", area_setting:area,
+    value_floor:+document.getElementById("sdFloor").value,
+    spend_cap:+document.getElementById("sdCapR").value,
+    target_jobs:(+document.getElementById("sdTargetJobs").value || null) };
+}
+// SHARED months-since-storm helper — the SAME rule that governs the landing-page 12-month
+// claim expiry (addendum §16). One helper so the spend box and the landing page can't drift.
+window.tempestMonthsSince = function(dateStr){
+  const d = new Date(dateStr + "T00:00:00Z"); if(isNaN(d)) return 0;
+  const now = new Date();
+  let m = (now.getUTCFullYear() - d.getUTCFullYear()) * 12 + (now.getUTCMonth() - d.getUTCMonth());
+  if(now.getUTCDate() < d.getUTCDate()) m -= 1;
+  return m;
+};
+function setupSpendDial(){
+  if(document.getElementById("spendPanel")) return;
+  const host = (document.getElementById("side") || {}).parentElement || document.getElementById("main") || document.body;
+  const p = document.createElement("div"); p.id = "spendPanel";
+  p.innerHTML =
+    '<h2>Spend Dial <span class="pk">HAIL</span></h2>'
+    + '<div class="sd-row sd-peril"><label>Peril</label><div class="sd-seg">'
+    + '<button class="on" data-peril="hail">Hail</button>'
+    + '<button disabled title="calibrating" data-peril="wind">Wind</button>'
+    + '<button disabled title="calibrating" data-peril="tornado">Tornado</button></div></div>'
+    + '<div class="sd-cap"><span>Annual room: <b id="sdCap">set in config</b></span>'
+    + '<span>Target jobs: <input id="sdTargetJobs" type="number" min="0" style="width:54px"></span></div>'
+    + '<div class="sd-row"><label>Area</label><div class="sd-seg" id="sdArea">'
+    + '<button data-area="core">Core</button><button class="on" data-area="core_plus">Core+</button>'
+    + '<button data-area="wide">Wide</button></div></div>'
+    + '<div class="sd-row"><label>Value floor</label><input id="sdFloor" type="range" min="0" max="600000" step="25000" value="0"><span class="val" id="sdFloorV">$0</span></div>'
+    + '<div class="sd-row"><label>Spend cap</label><input id="sdCapR" type="range" min="1000" max="100000" step="1000" value="30000"><span class="val" id="sdCapV">$30,000</span></div>'
+    + '<div class="sd-actions"><button id="sdSolve">Solve</button><button id="sdSend" disabled>Send &rarr;</button></div>'
+    + '<div class="sd-verdict" id="sdVerdict">Set the dials and hit Solve.</div>'
+    + '<table class="sd-table" id="sdTable"><thead><tr><th>#</th><th>ring</th><th>avg val</th><th>cov</th><th>cost-to-win</th><th>IS</th></tr></thead><tbody></tbody></table>';
+  host.appendChild(p);
+  // 12-month MO claim-filing WARNING banner — warn only, NEVER blocks the solve (old dates,
+  // incl. the golden 2024-05-26, stay testable). Date-driven via the shared months-since helper.
+  if(window.tempestMonthsSince(getDate()) > 12){
+    const w = document.createElement("div"); w.className = "sd-claimwarn";
+    w.innerHTML = "\\u26a0 This storm is past Missouri\\u2019s 12-month claim-filing window \\u2014 these targets aren\\u2019t claimable.";
+    p.insertBefore(w, p.querySelector(".sd-row.sd-peril"));
+  }
+  if(CFG.remainingAnnualCapacity != null) document.getElementById("sdCap").textContent = CFG.remainingAnnualCapacity + " jobs";
+  function invalidate(){ SD_STATE.solution = null; document.getElementById("sdSend").disabled = true;
+    document.getElementById("sdTable").classList.add("sd-stale"); }
+  p.querySelectorAll("#sdArea button").forEach(b => b.onclick = () => {
+    p.querySelectorAll("#sdArea button").forEach(x => x.classList.remove("on")); b.classList.add("on"); invalidate(); });
+  const floor = document.getElementById("sdFloor"), capr = document.getElementById("sdCapR");
+  floor.oninput = () => { document.getElementById("sdFloorV").textContent = "$" + (+floor.value).toLocaleString(); invalidate(); };
+  capr.oninput = () => { document.getElementById("sdCapV").textContent = "$" + (+capr.value).toLocaleString(); invalidate(); };
+  document.getElementById("sdTargetJobs").oninput = invalidate;
+  document.getElementById("sdSolve").onclick = sdSolve;
+  document.getElementById("sdSend").onclick = sdOpenApprove;
+}
+async function sdSolve(){
+  const v = document.getElementById("sdVerdict"); v.textContent = "Solving\\u2026"; v.className = "sd-verdict";
+  try {
+    const sol = await sdApi("solve", sdReadDials());
+    SD_STATE.solution = sol; sdRenderSolution(sol);
+  } catch(e){ v.textContent = "Solve unavailable (proxy offline) \\u2014 " + e.message; v.className = "sd-verdict warn"; }
+}
+function sdRenderSolution(sol){
+  const v = document.getElementById("sdVerdict");
+  v.textContent = sol.verdict; v.className = "sd-verdict " + (sol.valid ? "ok" : (sol.raise_cap ? "warn" : ""));
+  const tb = document.querySelector("#sdTable tbody"); tb.innerHTML = "";
+  (sol.funded || []).forEach(r => {
+    const tr = document.createElement("tr"); tr.dataset.cid = r.circle_id;
+    const av = r.avg_home_value ? ("$" + Math.round(r.avg_home_value/1000) + "k") : "\\u2014";
+    tr.innerHTML = "<td>" + r.rank + "</td><td>" + r.circle_id.split("#")[1] + "</td><td>" + av
+      + "</td><td>" + Math.round((r.coverage||0)*100) + "%</td><td>$" + Math.round(r.domination_floor).toLocaleString()
+      + "</td><td><span class='sd-band " + r.band_flag + "'></span>" + Math.round((r.projected_IS||0)*100) + "%</td>";
+    tr.onclick = () => sdPopup(r.circle_id); tb.appendChild(tr);
+  });
+  document.getElementById("sdTable").classList.remove("sd-stale");
+  document.getElementById("sdSend").disabled = !sol.valid;
+  sdRedrawMap(sol);
+}
+function sdRedrawMap(sol){           // map redraw on Solve: snap to the funded set (v1)
+  if(!TMAP || !RANKGRP) return;
+  const funded = new Set(sol.funded_circle_ids || []);
+  // grey non-funded rank badges, highlight funded (reuses the #6 rank pane; v2 = reshape)
+  document.querySelectorAll(".rankbadge").forEach(el => {
+    const m = el.parentElement; el.style.opacity = "1";   // badges are pane markers; v1 leaves heat immutable
+  });
+}
+function sdPopup(cid){
+  const sol = SD_STATE.solution; if(!sol) return;
+  let r = (sol.funded || []).find(x => x.circle_id === cid), dropped = false, status = "Funded \\u00b7 rank #";
+  if(!r){ const d = (sol.deselected || []).find(x => x.circle_id === cid);
+    if(d){ r = d; dropped = true; status = d.reason === "below_floor" ? "Below value floor" : "Deselected \\u2014 over cap"; } }
+  if(!r) return;
+  let pop = document.getElementById("sdPop");
+  if(!pop){ pop = document.createElement("div"); pop.id = "sdPop"; document.body.appendChild(pop); }
+  pop.className = "";
+  const bk = r.value_buckets || {};
+  pop.innerHTML = "<h3>Ring #" + cid.split("#")[1] + "<button class='sd-pop-x'>&#10005;</button></h3>"
+    + "<div class='r'><span>avg / median</span><b>" + (r.avg_home_value ? "$"+r.avg_home_value.toLocaleString() : "\\u2014")
+      + " / " + (r.median_home_value ? "$"+r.median_home_value.toLocaleString() : "\\u2014") + "</b></div>"
+    + "<div class='r'><span>&gt;$300k / &gt;$500k</span><b>" + (bk[">300k"]||0) + " / " + (bk[">500k"]||0) + "</b></div>"
+    + "<div class='r'><span>parcels / squares</span><b>" + (r.parcel_count||0) + " / " + (r.avg_squares||"\\u2014") + "</b></div>"
+    + "<div class='r'><span>coverage</span><b>" + Math.round((r.coverage||0)*100) + "%</b></div>"
+    + "<div class='r'><span>weight raw / cov-adj</span><b>" + (r.conv_value_weight||"\\u2014") + " / " + (r.cov_adj_weight||"\\u2014") + "</b></div>"
+    + "<div class='r'><span>cost-to-win / IS</span><b>$" + Math.round(r.domination_floor||0).toLocaleString()
+      + " / " + (r.projected_IS!=null ? Math.round(r.projected_IS*100)+"%" : "\\u2014") + "</b></div>"
+    + "<div class='sd-status " + (dropped?"dropped":"funded") + "'>" + (dropped?status:(status+(r.rank||"?"))) + "</div>"
+    + ((r.coverage!=null && r.coverage<0.7) ? "<div class='sd-conf'>\\u26a0 low coverage (&lt;70%) \\u2014 value half-modeled</div>" : "");
+  pop.querySelector(".sd-pop-x").onclick = () => pop.classList.add("hidden");
+  pop.style.left = "50%"; pop.style.top = "22%"; pop.style.transform = "translateX(-50%)";
+}
+function sdOpenApprove(){
+  const sol = SD_STATE.solution; if(!sol || !sol.valid) return;
+  let mb = document.getElementById("sdModalBack");
+  if(!mb){ mb = document.createElement("div"); mb.id = "sdModalBack";
+    const m = document.createElement("div"); m.id = "sdModal"; mb.appendChild(m); document.body.appendChild(mb);
+    mb.onclick = e => { if(e.target === mb) mb.classList.add("hidden"); }; }
+  mb.classList.remove("hidden");
+  const room = (CFG.remainingAnnualCapacity != null) ? (CFG.remainingAnnualCapacity - sol.est_jobs) : null;
+  document.getElementById("sdModal").innerHTML =
+    "<h2>Approve &amp; launch</h2><div class='sd-sub'>Single gate \\u00b7 " + getDate() + " \\u00b7 " + sol.area_setting + "</div>"
+    + "<div class='sd-line'><span>Spend</span><b>$" + Math.round(sol.recommended_spend).toLocaleString()
+      + " / $" + Math.round(sol.spend_cap).toLocaleString() + " cap</b></div>"
+    + "<div class='sd-line'><span>Rings funded</span><b>" + (sol.funded||[]).length + "</b></div>"
+    + "<div class='sd-line'><span>Est. jobs</span><b>~" + sol.est_jobs + " (net close " + Math.round((sol.net_close||0)*100) + "%)</b></div>"
+    + (room != null ? "<div class='sd-line'><span>Annual room after</span><b>" + room + " jobs</b></div>" : "")
+    + "<div class='sd-line'><span>Bid</span><b>" + sol.bid_strategy + "</b></div>"
+    + "<div class='sd-mbtns'><button id='sdCancel'>Cancel</button><button id='sdLaunch'>Approve and launch</button></div>";
+  document.getElementById("sdCancel").onclick = () => mb.classList.add("hidden");
+  document.getElementById("sdLaunch").onclick = sdApprove;
+}
+async function sdApprove(){
+  const sol = SD_STATE.solution; const btn = document.getElementById("sdLaunch");
+  btn.disabled = true; btn.textContent = "Launching\\u2026";
+  try {
+    const res = await sdApi("approve", Object.assign(sdReadDials(), { bid_strategy: sol.bid_strategy }));
+    btn.textContent = "Launched \\u2713";
+    setTimeout(() => document.getElementById("sdModalBack").classList.add("hidden"), 900);
+    const v = document.getElementById("sdVerdict");
+    v.textContent = "Campaign live: " + (res.campaign_id||"") + " \\u00b7 $" + Math.round(res.recommended_spend||0).toLocaleString();
+    v.className = "sd-verdict ok";
+  } catch(e){ btn.disabled = false; btn.textContent = "Approve and launch"; alert("Approve failed: " + e.message); }
+}
+
+// ── PWA PUSH subscribe + RE-SUBSCRIBE-ON-OPEN (iOS self-heal). Push is the rich layer;
+//    SMS is the backbone, so push is best-effort. Subscription POSTed every app open so a
+//    stale/evicted sub is replaced server-side. ──
+function _urlB64ToU8(b){ const pad="=".repeat((4-b.length%4)%4);
+  const s=(b+pad).replace(/-/g,"+").replace(/_/g,"/"); const raw=atob(s);
+  return Uint8Array.from(Array.prototype.map.call(raw, c=>c.charCodeAt(0))); }
+async function setupPush(){
+  try{
+    if(!("serviceWorker" in navigator) || !("PushManager" in window)) return;
+    const vapid = CFG.vapidPublicKey; const api = CFG.pushApi;
+    if(!vapid || !api) return;                         // not configured yet (VAPID drops in via config)
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if(!sub){ sub = await reg.pushManager.subscribe({ userVisibleOnly:true,
+      applicationServerKey:_urlB64ToU8(vapid) }); }     // prompts once; reuses granted permission after
+    await fetch(api, { method:"POST", headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({ subscription: sub.toJSON(), operator:"brian" }) });   // re-POST every open
+  }catch(e){ /* push optional — the SMS backbone + email backup still fire */ }
+}
+
+// ── APPROVE DEEP-LINK (?s=TOKEN). SMS/email links open a plain tab; the PWA opens standalone —
+//    this renders the SAME approve modal in BOTH. Validates the storm token server-side. ──
+async function handleApproveDeepLink(){
+  const s = new URLSearchParams(location.search).get("s"); if(!s) return;
+  const api = CFG.approveApi || (API ? API.replace(/\\/api\\/storm$/, "/api/approve") : "");
+  let mb = document.getElementById("sdModalBack");
+  if(!mb){ mb=document.createElement("div"); mb.id="sdModalBack"; const m=document.createElement("div"); m.id="sdModal"; mb.appendChild(m); document.body.appendChild(mb); }
+  mb.classList.remove("hidden");
+  const M = document.getElementById("sdModal");
+  M.innerHTML = "<h2>Approve storm campaign</h2><div class='sd-sub'>Validating link\\u2026</div>";
+  let info;
+  try{
+    const r = await fetch(api + "-validate", { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ s }) });
+    if(!r.ok) throw new Error("HTTP " + r.status); info = await r.json();
+  }catch(e){ M.innerHTML = "<h2>Approve storm campaign</h2><div class='sd-verdict warn'>This approve link is invalid or expired \\u2014 open the portal and use the Spend Dial.</div><div class='sd-mbtns'><button id='sdCancel'>Close</button></div>"; document.getElementById("sdCancel").onclick=()=>mb.classList.add("hidden"); return; }
+  if(!info || !info.valid){ M.innerHTML = "<h2>Approve storm campaign</h2><div class='sd-verdict warn'>Link invalid or expired.</div><div class='sd-mbtns'><button id='sdCancel'>Close</button></div>"; document.getElementById("sdCancel").onclick=()=>mb.classList.add("hidden"); return; }
+  const d = info.default || {};
+  M.innerHTML = "<h2>Approve &amp; launch</h2><div class='sd-sub'>Single gate \\u00b7 storm " + (info.storm_date||"") + " \\u00b7 CORE default</div>"
+    + "<div class='sd-line'><span>Spend</span><b>$" + Math.round(d.recommended_spend||0).toLocaleString() + "</b></div>"
+    + "<div class='sd-line'><span>Rings</span><b>" + (d.rings||0) + "</b></div>"
+    + "<div class='sd-line'><span>Est. jobs</span><b>~" + (d.est_jobs||0) + "</b></div>"
+    + "<div class='sd-sub' style='margin-top:8px'>No tap in 30 min \\u2192 this CORE-only default auto-fires (bounded). Approve now to launch immediately.</div>"
+    + "<div class='sd-mbtns'><button id='sdCancel'>Not now</button><button id='sdLaunch'>Approve and launch</button></div>";
+  document.getElementById("sdCancel").onclick=()=>mb.classList.add("hidden");
+  document.getElementById("sdLaunch").onclick=async function(){
+    const btn=this; btn.disabled=true; btn.textContent="Launching\\u2026";
+    try{ const r=await fetch(api, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ s }) });
+      if(!r.ok) throw new Error("HTTP "+r.status); btn.textContent="Launched \\u2713"; setTimeout(()=>mb.classList.add("hidden"),900);
+    }catch(e){ btn.disabled=false; btn.textContent="Approve and launch"; alert("Approve failed: "+e.message); }
+  };
+}
+
 // ── MOBILE LANE: relocate Layers / Legend / Details into slide-up bottom sheets
 //    opened from a bottom toolbar (all closed by default). Device-detected. ──
 function setupMobile(){
@@ -660,7 +1009,8 @@ function setupMobile(){
   function openSheet(id){ const wasOpen=!sheets[id].classList.contains("hidden"); closeAll();
     if(!wasOpen){ sheets[id].classList.remove("hidden"); bd.classList.remove("hidden");
       tb.querySelector('[data-sheet="'+id+'"]').classList.add("active"); } }
-  [["layers","Layers",".ctlpanel"],["legend","Legend",".legend"],["details","Details","#side"]].forEach(function(def){
+  [["layers","Layers",".ctlpanel"],["legend","Legend",".legend"],["details","Details","#side"],
+   ["spend","$ Spend","#spendPanel"]].forEach(function(def){
     const id=def[0], label=def[1], sel=def[2];
     const btn=document.createElement("button"); btn.dataset.sheet=id; btn.textContent=label; tb.appendChild(btn);
     const sh=document.createElement("div"); sh.id="sheet-"+id; sh.className="msheet hidden";
@@ -1658,6 +2008,7 @@ async function boot(){
   const D = assemble(date, rows||[], geo);
   renderMap(D);
   setBaseStreet();
+  paintRankedTargets(D);   // #6 additive: payout-score rank badges (no-op if no data)
   // Smooth the engine hail swath (the §3 SwathLayer canvas in swathPane) the same way the
   // live radar is smoothed: a zoom-scaled blur softens the per-MESH-cell blocks into a
   // continuous heatmap. DISPLAY ONLY -- the §3 render core, the cell data, and the crisp
@@ -1745,7 +2096,10 @@ async function boot(){
   addPull();                // item 10: on-demand PULL (150mi capture -> secured write endpoint)
   setupBottomDrawers();     // LIVE + Active perils -> bottom slide-up drawers (don't overlay the map; desktop)
   buildOperatorPanel(D, forecast);
+  setupSpendDial();      // spend-dial panel (docks in side on desktop; relocated to a $ Spend sheet on mobile)
   setupMobile();
+  setupPush();           // PWA push subscribe + re-subscribe-on-open (best-effort; SMS is the backbone)
+  handleApproveDeepLink(); // ?s=TOKEN -> the shared approve modal (PWA + plain tab)
   if(banner) showBanner(banner); else hideBanner();
 }
 boot();

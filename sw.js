@@ -38,3 +38,32 @@ self.addEventListener("fetch", e => {
   }
   e.respondWith(fetch(req).catch(() => caches.match(req)));      // same-origin JS/etc: network-first
 });
+
+// ── PUSH (intraday alert, rich tappable layer) ──────────────────────────────
+// iOS-CRITICAL: ALWAYS call showNotification inside event.waitUntil. If a push arrives without
+// a shown notification, iOS cancels the subscription — so we show one even if the payload is empty.
+self.addEventListener("push", e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (_) { d = {}; }
+  const title = d.title || "KCC hail alert";
+  const body = d.body || "A storm hit in-market. Tap to review.";
+  const url = d.url || "./";
+  e.waitUntil(
+    self.registration.showNotification(title, {
+      body, data: { url }, tag: "kcc-intraday", renotify: true,
+      icon: "./icon-192.png", badge: "./icon-192.png", requireInteraction: true
+    })
+  );
+});
+
+// tapping the notification deep-links into the approve screen (focus an open tab, else open one)
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || "./";
+  e.waitUntil(
+    clients.matchAll({ type: "window", includeUncontrolled: true }).then(wins => {
+      for (const w of wins) { if ("focus" in w) { w.navigate && w.navigate(url); return w.focus(); } }
+      return clients.openWindow(url);
+    })
+  );
+});
