@@ -425,6 +425,13 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .sd-claimwarn{margin:0 0 9px;padding:8px 10px;border-radius:7px;font-size:11.5px;font-weight:700;
   background:#fff3cd;border:1px solid #e0a800;color:#7a5b00}
 .sd-stale{opacity:.5;pointer-events:none}
+/* NO QUALIFIED STORM: the dial has nothing to fund -> gray + dead controls. The floatbox
+   chrome (drag/X) and the row-2 button stay active; only #spendPanel's controls disable. */
+#spendPanel.sd-nostorm .sd-row,#spendPanel.sd-nostorm .sd-cap,#spendPanel.sd-nostorm .sd-actions,
+#spendPanel.sd-nostorm #sdVerdict,#spendPanel.sd-nostorm .sd-table{opacity:.4;pointer-events:none;filter:grayscale(1)}
+#spendPanel .sd-nostormmsg{display:none;margin:6px 0 4px;padding:9px 11px;border-radius:7px;
+  background:#eef1f5;border-left:4px solid #9aa3b4;color:#445;font-weight:700;font-size:12px}
+#spendPanel.sd-nostorm .sd-nostormmsg{display:block}
 .sd-table{width:100%;border-collapse:collapse;font-size:11px;margin-top:6px}
 .sd-table th{text-align:right;color:#667;font-weight:700;padding:3px 5px;border-bottom:1px solid #e3e8f0}
 .sd-table th:first-child,.sd-table td:first-child{text-align:left}
@@ -471,6 +478,31 @@ body.mobile .livectl.mobile-live .live-hd::after{content:"\\25b4";margin-left:au
 body.mobile .livectl.mobile-live.lv-expanded{max-height:78vh !important;overflow:auto}
 body.mobile .livectl.mobile-live.lv-expanded .live-hd::after{content:"\\25be"}
 body.mobile #banner{bottom:102px}
+
+/* ── DESKTOP 2ND TOOLBAR ROW (#tbar2) + FLOATING DRAGGABLE PANELS ──
+   Layers / Storm Review / Spend Dial / Active perils / LIVE become draggable, closeable
+   boxes opened from #tbar2 toggle buttons (Weather opens its existing slide-in tool).
+   All CLOSED on load; desktop only (mobile keeps the bottom-sheet lane). No persistence. */
+#tbar2{display:flex;align-items:center;gap:8px;flex-wrap:wrap;background:#0d1626;
+  border-top:1px solid #1d2b46;padding:7px 16px;z-index:1190}
+#tbar2 .fb-btn{background:#1e2b46;color:#cdd8ee;border:1px solid #2c3c5e;border-radius:7px;
+  padding:5px 11px;font-size:12.5px;font-weight:700;cursor:pointer;display:inline-flex;align-items:center;gap:5px;line-height:1}
+#tbar2 .fb-btn:hover{background:#274069}
+#tbar2 .fb-btn.active{background:#2f6fe0;border-color:#2f6fe0;color:#fff}
+body.mobile #tbar2,body.fullmap #tbar2{display:none}
+body:not(.mobile) #wxBtn{display:none}   /* desktop: Weather lives on row 2; mobile keeps the top-bar button */
+.floatbox{position:absolute;z-index:1300;display:none;flex-direction:column;width:340px;max-height:82vh;
+  background:#fff;border:1px solid #2c3c5e;border-radius:11px;box-shadow:0 14px 44px rgba(0,0,0,.5)}
+.floatbox.open{display:flex}
+.floatbox .fb-title{display:flex;align-items:center;gap:8px;cursor:move;user-select:none;
+  background:linear-gradient(90deg,#0b1220,#16223c);color:#e9eef7;padding:8px 12px;
+  border-radius:11px 11px 0 0;font-weight:700;font-size:12px;letter-spacing:.4px}
+.floatbox .fb-title .fb-x{margin-left:auto;background:transparent;border:none;color:#9fb3d9;
+  font-size:19px;line-height:1;cursor:pointer;padding:0 2px}
+.floatbox .fb-title .fb-x:hover{color:#fff}
+.floatbox .fb-body{overflow:auto;padding:9px 11px;border-radius:0 0 11px 11px}
+.floatbox .fb-body>*{position:static !important;width:auto !important;max-width:none !important;
+  max-height:none !important;box-shadow:none !important;border:none !important;margin:0 !important}
 """
 
 SHELL_HEAD = """  <div id="tbar">
@@ -504,6 +536,7 @@ SHELL_HEAD = """  <div id="tbar">
     <button id="pullBtn" title="Pull on-demand storm data for a 150mi circle">&#10515; Pull</button>
     <div class="status" id="connStatus"></div>
   </div>
+  <div id="tbar2"></div>
   <div id="main">
 """
 
@@ -816,7 +849,7 @@ window.tempestMonthsSince = function(dateStr){
   if(now.getUTCDate() < d.getUTCDate()) m -= 1;
   return m;
 };
-function setupSpendDial(){
+function setupSpendDial(D){
   if(document.getElementById("spendPanel")) return;
   const host = (document.getElementById("side") || {}).parentElement || document.getElementById("main") || document.body;
   const p = document.createElement("div"); p.id = "spendPanel";
@@ -837,9 +870,19 @@ function setupSpendDial(){
     + '<div class="sd-verdict" id="sdVerdict">Set the dials and hit Solve.</div>'
     + '<table class="sd-table" id="sdTable"><thead><tr><th>#</th><th>ring</th><th>avg val</th><th>cov</th><th>cost-to-win</th><th>IS</th></tr></thead><tbody></tbody></table>';
   host.appendChild(p);
-  // 12-month MO claim-filing WARNING banner — warn only, NEVER blocks the solve (old dates,
-  // incl. the golden 2024-05-26, stay testable). Date-driven via the shared months-since helper.
-  if(window.tempestMonthsSince(getDate()) > 12){
+  // NO QUALIFIED STORM -> gray the dial: it can only fund ad targets, and there are none
+  // for any peril. SAME condition as Storm Review's "No qualifying storm" verdict (no circles
+  // for hail/wind/tornado), so the two never disagree. Date nav is a full reload, so this is
+  // decided once per render. The floatbox drag/X and the row-2 button stay fully active.
+  const sdHasStorm = !!((D && D.circles && D.circles.length) || (D && D.wind) || (D && D.tornado));
+  if(!sdHasStorm){
+    p.classList.add("sd-nostorm");
+    const msg = document.createElement("div"); msg.className = "sd-nostormmsg";
+    msg.innerHTML = "\\u26d4 No qualified storm on " + getDate() + " \\u2014 no ad targets to fund.";
+    p.insertBefore(msg, p.querySelector(".sd-row.sd-peril"));
+  } else if(window.tempestMonthsSince(getDate()) > 12){
+    // 12-month MO claim-filing WARNING banner — warn only, NEVER blocks the solve (old dates,
+    // incl. the golden 2024-05-26, stay testable). Date-driven via the shared months-since helper.
     const w = document.createElement("div"); w.className = "sd-claimwarn";
     w.innerHTML = "\\u26a0 This storm is past Missouri\\u2019s 12-month claim-filing window \\u2014 these targets aren\\u2019t claimable.";
     p.insertBefore(w, p.querySelector(".sd-row.sd-peril"));
@@ -857,6 +900,7 @@ function setupSpendDial(){
   document.getElementById("sdSend").onclick = sdOpenApprove;
 }
 async function sdSolve(){
+  const sp = document.getElementById("spendPanel"); if(sp && sp.classList.contains("sd-nostorm")) return;   // grayed: nothing to fund
   const v = document.getElementById("sdVerdict"); v.textContent = "Solving\\u2026"; v.className = "sd-verdict";
   try {
     const sol = await sdApi("solve", sdReadDials());
@@ -1490,6 +1534,64 @@ function setupBottomDrawers(){
   if(host.children.length) main.appendChild(host);
 }
 
+// ── DESKTOP FLOATING PANELS: Layers / Storm Review / Spend Dial / Active perils / LIVE
+//    become draggable, closeable boxes opened from the 2nd toolbar row (#tbar2). All
+//    CLOSED on load; drag by the title bar, X to close, click raises to front. Desktop
+//    only — mobile keeps the bottom-sheet lane (setupMobile). No persistence (resets each
+//    load). Moves the panel DOM (keeps wiring), same proven pattern as the mobile sheets.
+//    Weather has no box: its button opens the existing isolated slide-in tool. ──
+let FB_Z=1300;
+function bringFront(box){ box.style.zIndex=(++FB_Z); }
+function setupFloatPanels(){
+  if(!TMAP || document.body.classList.contains("mobile")) return;
+  const bar=document.getElementById("tbar2"), main=document.getElementById("main");
+  if(!bar || !main || bar.dataset.wired) return; bar.dataset.wired="1";
+  const defs=[
+    ["layers","\\u2630 Layers",".ctlpanel",{l:14,t:14,w:248}],
+    ["details","\\ud83d\\udccb Storm Review","#side",{l:288,t:14,w:372}],
+    ["spend","\\ud83d\\udcb0 Spend Dial","#spendPanel",{l:14,t:300,w:372}],
+    ["weather","\\ud83c\\udf27 Weather",null,null],
+    ["perils","\\u26a1 Active Perils",".legend",{l:408,t:300,w:240}],
+    ["live","\\ud83d\\udfe2 LIVE",".livectl",{l:672,t:14,w:262}]
+  ];
+  function makeDraggable(box,handle){
+    let drag=false,sx,sy,ox,oy;
+    handle.addEventListener("mousedown",function(e){
+      if(e.target.closest(".fb-x")) return;                       // X is a click, not a drag
+      drag=true; const r=box.getBoundingClientRect(), pr=main.getBoundingClientRect();
+      ox=r.left-pr.left; oy=r.top-pr.top; sx=e.clientX; sy=e.clientY;
+      box.style.left=ox+"px"; box.style.top=oy+"px"; bringFront(box); e.preventDefault();
+    });
+    document.addEventListener("mousemove",function(e){ if(!drag) return;
+      let nx=ox+(e.clientX-sx), ny=oy+(e.clientY-sy);
+      nx=Math.max(90-box.offsetWidth, Math.min(nx, main.clientWidth-90));   // keep a grab-handle on-screen
+      ny=Math.max(0, Math.min(ny, main.clientHeight-44));
+      box.style.left=nx+"px"; box.style.top=ny+"px";
+    });
+    document.addEventListener("mouseup",function(){ drag=false; });
+  }
+  defs.forEach(function(def){
+    const id=def[0], label=def[1], sel=def[2], pos=def[3];
+    const btn=document.createElement("button"); btn.className="fb-btn"; btn.dataset.fb=id; btn.innerHTML=label;
+    bar.appendChild(btn);
+    if(!sel){ btn.onclick=function(){ if(window.tempestOpenWx) window.tempestOpenWx(); }; return; }   // Weather tool
+    const node=document.querySelector(sel); if(!node){ btn.style.display="none"; return; }
+    const box=document.createElement("div"); box.className="floatbox"; box.id="fb-"+id;
+    if(pos){ box.style.left=pos.l+"px"; box.style.top=pos.t+"px"; if(pos.w) box.style.width=pos.w+"px"; }
+    const ttl=document.createElement("div"); ttl.className="fb-title"; ttl.innerHTML='<span>'+label+'</span>';
+    const x=document.createElement("button"); x.className="fb-x"; x.title="Close"; x.innerHTML="\\u00d7"; ttl.appendChild(x);
+    const body=document.createElement("div"); body.className="fb-body"; body.appendChild(node);   // move DOM in (keeps wiring)
+    box.appendChild(ttl); box.appendChild(body); main.appendChild(box);
+    L.DomEvent.disableClickPropagation(box); L.DomEvent.disableScrollPropagation(box);
+    box.addEventListener("mousedown",function(){ bringFront(box); });
+    makeDraggable(box, ttl);
+    function setOpen(on){ box.classList.toggle("open",on); btn.classList.toggle("active",on); if(on) bringFront(box); }
+    x.onclick=function(){ setOpen(false); };
+    btn.onclick=function(){ setOpen(!box.classList.contains("open")); };
+  });
+  TMAP.invalidateSize(); window.dispatchEvent(new Event("resize"));   // map reflows to full width (side panel moved out)
+}
+
 // ===================== WEATHER TAB — rain forecast for job scheduling =====================
 // ISOLATED tool view. NWS api.weather.gov (public-domain, commercial-safe) for hourly +
 // 7-day precip; Census geocoder via JSONP for typed addresses (no key, no CORS dependency);
@@ -1515,7 +1617,8 @@ function initWeather(){
   function openWx(){ ov.classList.remove("hidden"); bk.classList.remove("hidden"); if(!curLoc) setLoc(HOME); }
   function closeWx(){ ov.classList.add("hidden"); bk.classList.add("hidden"); }
   bk.onclick=closeWx;
-  const wb=document.getElementById("wxBtn"); if(wb) wb.onclick=openWx;
+  const wb=document.getElementById("wxBtn"); if(wb) wb.onclick=openWx;   // mobile top-bar button
+  window.tempestOpenWx=openWx;   // desktop: opened from the #tbar2 "Weather" button (setupFloatPanels)
   ov.querySelector(".wx-x").onclick=closeWx;
 
   const pop=p=>(p&&p.probabilityOfPrecipitation&&p.probabilityOfPrecipitation.value!=null)?p.probabilityOfPrecipitation.value:0;
@@ -2094,9 +2197,9 @@ async function boot(){
   addChaseLayer(D.chase);   // item 8 Step 3 v2: chase TARGETING block at the bottom of the Layers panel (master OFF)
   addMapSearch();           // map location search: City/State + address typeahead (reuses Photon; navigation only)
   addPull();                // item 10: on-demand PULL (150mi capture -> secured write endpoint)
-  setupBottomDrawers();     // LIVE + Active perils -> bottom slide-up drawers (don't overlay the map; desktop)
   buildOperatorPanel(D, forecast);
-  setupSpendDial();      // spend-dial panel (docks in side on desktop; relocated to a $ Spend sheet on mobile)
+  setupSpendDial(D);     // spend-dial panel (grays out when the date has no qualified storm / no ad targets)
+  setupFloatPanels();    // desktop: Layers/Storm Review/Spend Dial/Active perils/LIVE -> draggable floating boxes (#tbar2); all closed on load
   setupMobile();
   setupPush();           // PWA push subscribe + re-subscribe-on-open (best-effort; SMS is the backbone)
   handleApproveDeepLink(); // ?s=TOKEN -> the shared approve modal (PWA + plain tab)
