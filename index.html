@@ -1325,6 +1325,8 @@ function renderCalPick(){ const yr=document.getElementById("cpYr"); if(yr) yr.te
 const SPEND_API = (CFG.spendApi || "").replace(/\/$/, "") ||
                   (API ? API.replace(/\/api\/storm$/, "/api/spend") : "");
 let SD_STATE = { solution: null };
+let SD_CIRCLES = {};          // circle_id -> {lat,lng,r} for the Solve map SNAP (built in setupSpendDial)
+let SD_SNAPGRP = null;        // the funded/deselected highlight layer group (cleared each Solve)
 async function sdApi(action, body){
   if(!SPEND_API) throw new Error("no spend endpoint configured (v2 proxy wiring)");
   const r = await fetch(SPEND_API + "-" + action, { method:"POST",
@@ -1350,6 +1352,11 @@ window.tempestMonthsSince = function(dateStr){
 };
 function setupSpendDial(D){
   if(document.getElementById("spendPanel")) return;
+  // circle_id -> coords for the Solve map SNAP (hail is the only solvable peril). circle_id is
+  // CLUSTER-hail-<date>#<idx>, matching solve()'s funded_circle_ids / deselected[].circle_id.
+  SD_CIRCLES = {}; const _ck = "CLUSTER-hail-" + getDate();
+  ((D && D.circles) || []).forEach((c, i) => { SD_CIRCLES[_ck + "#" + i] =
+    { lat: c.center_lat, lng: c.center_lng, r: c.radius_mi }; });
   const host = (document.getElementById("side") || {}).parentElement || document.getElementById("main") || document.body;
   const p = document.createElement("div"); p.id = "spendPanel";
   p.innerHTML =
@@ -1409,12 +1416,21 @@ async function sdSolve(){
 function sdRenderSolution(sol){
   const v = document.getElementById("sdVerdict");
   v.textContent = sol.verdict; v.className = "sd-verdict " + (sol.valid ? "ok" : (sol.raise_cap ? "warn" : ""));
+  // value floor inactive / coverage n/a when the date has no value rollup (never a fake 100%)
+  let vn = document.getElementById("sdValNote");
+  if(!sol.value_data){
+    if(!vn){ vn = document.createElement("div"); vn.id = "sdValNote"; vn.className = "sd-claimwarn";
+      const t = document.getElementById("sdTable"); t.parentNode.insertBefore(vn, t); }
+    vn.style.display = "block";
+    vn.innerHTML = "\u2139 Value data not computed for this date \u2014 coverage shows n/a and the value floor is inactive.";
+  } else if(vn){ vn.style.display = "none"; }
   const tb = document.querySelector("#sdTable tbody"); tb.innerHTML = "";
   (sol.funded || []).forEach(r => {
     const tr = document.createElement("tr"); tr.dataset.cid = r.circle_id;
     const av = r.avg_home_value ? ("$" + Math.round(r.avg_home_value/1000) + "k") : "\u2014";
+    const cov = r.coverage_known ? (Math.round((r.coverage||0)*100) + "%") : "n/a";
     tr.innerHTML = "<td>" + r.rank + "</td><td>" + r.circle_id.split("#")[1] + "</td><td>" + av
-      + "</td><td>" + Math.round((r.coverage||0)*100) + "%</td><td>$" + Math.round(r.domination_floor).toLocaleString()
+      + "</td><td>" + cov + "</td><td>$" + Math.round(r.domination_floor).toLocaleString()
       + "</td><td><span class='sd-band " + r.band_flag + "'></span>" + Math.round((r.projected_IS||0)*100) + "%</td>";
     tr.onclick = () => sdPopup(r.circle_id); tb.appendChild(tr);
   });
@@ -1422,13 +1438,19 @@ function sdRenderSolution(sol){
   document.getElementById("sdSend").disabled = !sol.valid;
   sdRedrawMap(sol);
 }
-function sdRedrawMap(sol){           // map redraw on Solve: snap to the funded set (v1)
-  if(!TMAP || !RANKGRP) return;
-  const funded = new Set(sol.funded_circle_ids || []);
-  // grey non-funded rank badges, highlight funded (reuses the #6 rank pane; v2 = reshape)
-  document.querySelectorAll(".rankbadge").forEach(el => {
-    const m = el.parentElement; el.style.opacity = "1";   // badges are pane markers; v1 leaves heat immutable
-  });
+function sdRedrawMap(sol){           // v1 SNAP on Solve: highlight funded rings, grey deselected
+  if(!TMAP) return;
+  if(SD_SNAPGRP){ TMAP.removeLayer(SD_SNAPGRP); SD_SNAPGRP = null; }   // clear the prior snap
+  if(!TMAP.getPane("sdSnap")){ const pn = TMAP.createPane("sdSnap"); pn.style.zIndex = 653; }
+  const layers = [];
+  // deselected first (under), funded on top — heat map + value layer stay immutable beneath
+  (sol.deselected || []).forEach(d => { const c = SD_CIRCLES[d.circle_id]; if(!c) return;
+    layers.push(L.circle([c.lat, c.lng], { pane:"sdSnap", radius: c.r*1609.344, color:"#6b7280",
+      weight:1, opacity:.55, fillColor:"#6b7280", fillOpacity:.12 })); });
+  (sol.funded_circle_ids || []).forEach(cid => { const c = SD_CIRCLES[cid]; if(!c) return;
+    layers.push(L.circle([c.lat, c.lng], { pane:"sdSnap", radius: c.r*1609.344, color:"#16a34a",
+      weight:3, opacity:.95, fill:false })); });
+  if(layers.length){ SD_SNAPGRP = L.layerGroup(layers).addTo(TMAP); }
 }
 function sdPopup(cid){
   const sol = SD_STATE.solution; if(!sol) return;
@@ -1444,13 +1466,14 @@ function sdPopup(cid){
     + "<div class='r'><span>avg / median</span><b>" + (r.avg_home_value ? "$"+r.avg_home_value.toLocaleString() : "\u2014")
       + " / " + (r.median_home_value ? "$"+r.median_home_value.toLocaleString() : "\u2014") + "</b></div>"
     + "<div class='r'><span>&gt;$300k / &gt;$500k</span><b>" + (bk[">300k"]||0) + " / " + (bk[">500k"]||0) + "</b></div>"
-    + "<div class='r'><span>parcels / squares</span><b>" + (r.parcel_count||0) + " / " + (r.avg_squares||"\u2014") + "</b></div>"
-    + "<div class='r'><span>coverage</span><b>" + Math.round((r.coverage||0)*100) + "%</b></div>"
+    + "<div class='r'><span>damaged (search base) / parcels</span><b>" + (r.damaged_homes!=null?r.damaged_homes.toLocaleString():"\u2014") + " / " + (r.parcel_count||0).toLocaleString() + "</b></div>"
+    + "<div class='r'><span>squares</span><b>" + (r.avg_squares||"\u2014") + "</b></div>"
+    + "<div class='r'><span>coverage</span><b>" + (r.coverage_known ? (Math.round((r.coverage||0)*100)+"%") : "n/a") + "</b></div>"
     + "<div class='r'><span>weight raw / cov-adj</span><b>" + (r.conv_value_weight||"\u2014") + " / " + (r.cov_adj_weight||"\u2014") + "</b></div>"
     + "<div class='r'><span>cost-to-win / IS</span><b>$" + Math.round(r.domination_floor||0).toLocaleString()
       + " / " + (r.projected_IS!=null ? Math.round(r.projected_IS*100)+"%" : "\u2014") + "</b></div>"
     + "<div class='sd-status " + (dropped?"dropped":"funded") + "'>" + (dropped?status:(status+(r.rank||"?"))) + "</div>"
-    + ((r.coverage!=null && r.coverage<0.7) ? "<div class='sd-conf'>\u26a0 low coverage (&lt;70%) \u2014 value half-modeled</div>" : "");
+    + ((r.coverage_known && r.coverage!=null && r.coverage<0.7) ? "<div class='sd-conf'>\u26a0 low coverage (&lt;70%) \u2014 value half-modeled</div>" : "");
   pop.querySelector(".sd-pop-x").onclick = () => pop.classList.add("hidden");
   pop.style.left = "50%"; pop.style.top = "22%"; pop.style.transform = "translateX(-50%)";
 }
