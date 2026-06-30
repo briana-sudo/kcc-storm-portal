@@ -474,9 +474,7 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 body.mobile .livectl.mobile-live{position:fixed;left:8px;right:8px;bottom:60px;width:auto;max-width:none;
   max-height:34px;overflow:hidden;transition:max-height .26s ease;z-index:1455}
 body.mobile .livectl.mobile-live .live-hd{cursor:pointer;margin-bottom:0}
-body.mobile .livectl.mobile-live .live-hd::after{content:"\\25b4";margin-left:auto;color:#8a93a6;font-size:12px}
 body.mobile .livectl.mobile-live.lv-expanded{max-height:78vh !important;overflow:auto}
-body.mobile .livectl.mobile-live.lv-expanded .live-hd::after{content:"\\25be"}
 body.mobile #banner{bottom:102px}
 
 /* ── DESKTOP 2ND TOOLBAR ROW (#tbar2) + FLOATING DRAGGABLE PANELS ──
@@ -1449,7 +1447,7 @@ function addLiveLayers(){
   if(M) M.addEventListener("change",()=>{ const card=document.querySelector(".livectl"), want=M.checked;
     ["lvRadar","lvWarn","lvTrack"].forEach(id=>{ const cb=document.getElementById(id);
       if(cb && cb.checked!==want){ cb.checked=want; cb.dispatchEvent(new Event("change")); } });
-    if(card){ card.classList.toggle("lv-off", !want); if(card.classList.contains("mobile-live")&&want) card.classList.add("lv-expanded"); } });
+    if(card){ card.classList.toggle("lv-off", !want); } });   // checkbox = LIVE on/off only; never opens the box
 
   // ADD 4: zoom drives level-of-detail + viewport cull for the storm-track layer
   // (re-render from in-memory data on zoom/pan; no re-fetch). Coarse out, full in.
@@ -1465,9 +1463,13 @@ function addLiveLayers(){
   const card=document.querySelector(".livectl"), hd=card&&card.querySelector(".live-hd");
   if(card&&hd&&document.body.classList.contains("mobile")){
     card.classList.add("mobile-live");           // collapsed by default (CSS)
+    // MOBILE tap split: the checkbox is the LIVE power switch (never opens the box); a tap
+    // ANYWHERE else in the header opens/closes the box (and must NOT toggle the checkbox via
+    // its label). Desktop markup is untouched, so desktop's label-toggles-LIVE still works.
     hd.addEventListener("click",e=>{
-      if(e.target.closest(".lv-master")){ card.classList.add("lv-expanded"); return; }  // checkbox handles on/off
-      card.classList.toggle("lv-expanded"); });
+      if(e.target.id==="lvMaster") return;       // tap the checkbox -> LIVE on/off only, no box toggle
+      e.preventDefault();                        // tap the LIVE text / bar -> don't toggle the checkbox-label...
+      card.classList.toggle("lv-expanded"); });  // ...open / close the box instead
   }
 
   // LOCATE button on the map: mobile -> centre on the device location; otherwise (or if

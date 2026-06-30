@@ -517,9 +517,7 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 body.mobile .livectl.mobile-live{position:fixed;left:8px;right:8px;bottom:60px;width:auto;max-width:none;
   max-height:34px;overflow:hidden;transition:max-height .26s ease;z-index:1455}
 body.mobile .livectl.mobile-live .live-hd{cursor:pointer;margin-bottom:0}
-body.mobile .livectl.mobile-live .live-hd::after{content:"\25b4";margin-left:auto;color:#8a93a6;font-size:12px}
 body.mobile .livectl.mobile-live.lv-expanded{max-height:78vh !important;overflow:auto}
-body.mobile .livectl.mobile-live.lv-expanded .live-hd::after{content:"\25be"}
 body.mobile #banner{bottom:102px}
 
 /* ── DESKTOP 2ND TOOLBAR ROW (#tbar2) + FLOATING DRAGGABLE PANELS ──
@@ -762,14 +760,21 @@ D.zips.forEach(z=>{
 //    a faint optional layer OFF by default (P3 still in the CSV). Sits ON the swath. ──
 const circleLayer=L.layerGroup().addTo(map);   // P1+P2 (visible)
 const p3Layer=L.layerGroup();                  // P3 margins (faint, off by default)
-(D.circles||[]).forEach(c=>{
-  const col=TIER_COLOR[c.tier]||'#888';
-  const isP3=c.tier==='P3', dest=isP3?p3Layer:circleLayer;
+(D.circles||[]).forEach((c,i)=>{
+  // FIX #1: bold-route on the SHARED ad-eligibility decision (scored AND has an audience),
+  // read from the persisted payout flag — NOT tier alone. Size-eligible P3 (sub-2" damage hail)
+  // therefore renders BOLD. No payout in the payload (engine viewer) -> fall back to tier (P1/P2).
+  const peril=c.peril||'hail', ps=D.payout&&D.payout[peril], e=ps&&ps[String(i)];
+  // eligible = the persisted ad_eligible flag; on payloads scored before the flag existed, derive
+  // the SAME decision from parcel_count>0; with no payout at all (engine viewer) fall back to tier.
+  const elig = e ? (e.ad_eligible!==undefined ? !!e.ad_eligible : (e.parcel_count||0)>0) : (c.tier!=='P3');
+  const col = (elig && c.tier==='P3') ? '#f7b500' : (TIER_COLOR[c.tier]||'#888');  // size-eligible P3 -> visible amber
+  const dest = elig ? circleLayer : p3Layer;
   const popup=`<b>${c.tier}</b> ad-target circle<br>peak <b>${c.peak_intensity}</b> / avg <b>${c.avg_intensity}</b> intensity`+
     `<br>radius ${c.radius_mi} mi · ${c.cells_covered} cells · max hail ${c.max_hail_size_in}"`+
     (c.served_floor_widened?'<br><i>widened to Google serving floor</i>':'');
   const r=c.radius_mi*1609.344;
-  if(isP3){
+  if(!elig){
     // P3 = semi-opaque WHITE fill that BUILDS density where circles overlap (SVG
     // alpha compositing): single = faint mist, dense overlap = thicker white mass.
     // In p3Pane (below cores) so it never hides P1/P2 red. Off by default; P3 dial scales it.
@@ -1948,7 +1953,7 @@ function addLiveLayers(){
   if(M) M.addEventListener("change",()=>{ const card=document.querySelector(".livectl"), want=M.checked;
     ["lvRadar","lvWarn","lvTrack"].forEach(id=>{ const cb=document.getElementById(id);
       if(cb && cb.checked!==want){ cb.checked=want; cb.dispatchEvent(new Event("change")); } });
-    if(card){ card.classList.toggle("lv-off", !want); if(card.classList.contains("mobile-live")&&want) card.classList.add("lv-expanded"); } });
+    if(card){ card.classList.toggle("lv-off", !want); } });   // checkbox = LIVE on/off only; never opens the box
 
   // ADD 4: zoom drives level-of-detail + viewport cull for the storm-track layer
   // (re-render from in-memory data on zoom/pan; no re-fetch). Coarse out, full in.
@@ -1964,9 +1969,13 @@ function addLiveLayers(){
   const card=document.querySelector(".livectl"), hd=card&&card.querySelector(".live-hd");
   if(card&&hd&&document.body.classList.contains("mobile")){
     card.classList.add("mobile-live");           // collapsed by default (CSS)
+    // MOBILE tap split: the checkbox is the LIVE power switch (never opens the box); a tap
+    // ANYWHERE else in the header opens/closes the box (and must NOT toggle the checkbox via
+    // its label). Desktop markup is untouched, so desktop's label-toggles-LIVE still works.
     hd.addEventListener("click",e=>{
-      if(e.target.closest(".lv-master")){ card.classList.add("lv-expanded"); return; }  // checkbox handles on/off
-      card.classList.toggle("lv-expanded"); });
+      if(e.target.id==="lvMaster") return;       // tap the checkbox -> LIVE on/off only, no box toggle
+      e.preventDefault();                        // tap the LIVE text / bar -> don't toggle the checkbox-label...
+      card.classList.toggle("lv-expanded"); });  // ...open / close the box instead
   }
 
   // LOCATE button on the map: mobile -> centre on the device location; otherwise (or if
