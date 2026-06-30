@@ -885,8 +885,13 @@ if(D.tornado && D.tornado.swath_cells && D.tornado.swath_cells.length){
         ctx.fillStyle=col; ctx.fillRect(a.x-tl.x,a.y-tl.y,Math.max(1,b.x-a.x),Math.max(1,b.y-a.y));}}
   });
   tornadoSwath=new TornadoSwathLayer(D.tornado.swath_cells); tornadoSwath.addTo(map);
-  (D.tornado.circles||[]).forEach(c=>{
-    const col=TORNADO_TIER[c.tier]||'#e11421', dest=c.tier==='P3'?tornadoP3Layer:tornadoCircleLayer;
+  (D.tornado.circles||[]).forEach((c,i)=>{
+    // tornado "Ad targets" bold-routes on the SHARED ad_eligible decision (same as hail FIX #1),
+    // read from the persisted tornado payout flag. Pre-flag payload -> parcel_count>0; no payout
+    // at all (engine viewer) -> tier. NOTE: still priced $0 (valuation is a separate build).
+    const tps=D.payout&&D.payout['tornado'], te=tps&&tps[String(i)];
+    const telig = te ? (te.ad_eligible!==undefined ? !!te.ad_eligible : (te.parcel_count||0)>0) : (c.tier!=='P3');
+    const col=TORNADO_TIER[c.tier]||'#e11421', dest=telig?tornadoCircleLayer:tornadoP3Layer;
     const r=c.radius_mi*1609.344;
     const pop=`<b>${c.tier}</b> TORNADO debris-target<br>rotation <b>${c.max_hail_size_in}</b> · intensity ${c.peak_intensity}/10<br>radius ${c.radius_mi} mi · ${c.cells_covered} cells`;
     L.circle([c.center_lat,c.center_lng],{radius:r,color:'#fff',weight:4,opacity:0.9,fill:false}).addTo(dest);    // white halo (§3)
