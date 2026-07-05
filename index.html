@@ -1361,6 +1361,7 @@ let SD_STATE = { solution: null };
 let SD_CIRCLES = {};          // circle_id -> {lat,lng,r} for the Solve map SNAP (built in setupSpendDial)
 let SD_SNAPGRP = null;        // the funded/deselected highlight layer group (cleared each Solve)
 let SD_SORT = "value";        // readout sort mode (display only): value | cheap | vpd
+let SD_MANUAL_OFF = new Set(); // Part C: rings the operator manually clicked off (recompute cost/jobs)
 async function sdApi(action, body){
   if(!SPEND_API) throw new Error("no spend endpoint configured (v2 proxy wiring)");
   const r = await fetch(SPEND_API + "-" + action, { method:"POST",
@@ -1369,8 +1370,9 @@ async function sdApi(action, body){
   return await r.json();
 }
 function sdReadDials(){
-  const area = document.querySelector("#sdArea button.on").dataset.area;
-  return { date:getDate(), peril:"hail", footprint_source:"canonical", area_setting:area,
+  // hail-size floor replaces Core/Core+/Wide; area is inert server-side (defaults to wide).
+  return { date:getDate(), peril:"hail", footprint_source:"canonical",
+    hail_floor:+document.getElementById("sdHail").value,
     value_floor:+document.getElementById("sdFloor").value,
     spend_cap:+document.getElementById("sdCapR").value,
     target_jobs:(+document.getElementById("sdTargetJobs").value || null) };
@@ -1401,9 +1403,7 @@ function setupSpendDial(D){
     + '<button disabled title="calibrating" data-peril="tornado">Tornado</button></div></div>'
     + '<div class="sd-cap"><span>Annual room: <b id="sdCap">set in config</b></span>'
     + '<span>Target jobs: <input id="sdTargetJobs" type="number" min="0" style="width:54px"></span></div>'
-    + '<div class="sd-row"><label>Area</label><div class="sd-seg" id="sdArea">'
-    + '<button data-area="core">Core</button><button class="on" data-area="core_plus">Core+</button>'
-    + '<button data-area="wide">Wide</button></div></div>'
+    + '<div class="sd-row"><label>Hail floor</label><input id="sdHail" type="range" min="1.80" max="4.00" step="0.05" value="1.80"><span class="val" id="sdHailV">1.80\u2033</span></div>'
     + '<div class="sd-row"><label>Value floor</label><input id="sdFloor" type="range" min="0" max="600000" step="25000" value="0"><span class="val" id="sdFloorV">$0</span></div>'
     + '<div class="sd-row"><label>Spend cap</label><input id="sdCapR" type="range" min="1000" max="100000" step="1000" value="30000"><span class="val" id="sdCapV">$30,000</span></div>'
     + '<div class="sd-actions"><button id="sdSolve">Solve</button><button id="sdSend" disabled>Send &rarr;</button></div>'
@@ -1412,7 +1412,8 @@ function setupSpendDial(D){
     + '<button class="on" data-sort="value">Value</button><button data-sort="cheap">Cheapest</button>'
     + '<button data-sort="vpd">Value/$</button></div></div>'
     + '<div class="sd-sortnote" style="font-size:10.5px;color:#778;margin:0 0 3px;font-style:italic">View order only \u2014 funding stays value-ranked.</div>'
-    + '<table class="sd-table" id="sdTable"><thead><tr><th>rank</th><th>ring ID</th><th>avg val</th><th>cov</th><th>cost-to-win</th><th>IS</th></tr></thead><tbody></tbody></table>';
+    + '<table class="sd-table" id="sdTable"><thead><tr><th>rank</th><th>ring ID</th><th>avg val</th><th>cov</th><th>cost-to-win</th><th title="modeled — target impression share, pending real auction data">IS<sup>*</sup></th></tr></thead><tbody></tbody></table>'
+    + '<div class="sd-modelnote" style="font-size:10px;color:#8a6d3b;margin:3px 0 0;font-style:italic">cost-to-win = real county CPC \u00d7 modeled CTR. <b>*IS % and $/job are modeled</b> (target-IS + funnel), pending real ad data.</div>';
   host.appendChild(p);
   // NO QUALIFIED STORM -> gray the dial: it can only fund ad targets, and there are none
   // for any peril. SAME condition as Storm Review's "No qualifying storm" verdict (no circles
@@ -1434,8 +1435,8 @@ function setupSpendDial(D){
   if(CFG.remainingAnnualCapacity != null) document.getElementById("sdCap").textContent = CFG.remainingAnnualCapacity + " jobs";
   function invalidate(){ SD_STATE.solution = null; document.getElementById("sdSend").disabled = true;
     document.getElementById("sdTable").classList.add("sd-stale"); }
-  p.querySelectorAll("#sdArea button").forEach(b => b.onclick = () => {
-    p.querySelectorAll("#sdArea button").forEach(x => x.classList.remove("on")); b.classList.add("on"); invalidate(); });
+  const hail = document.getElementById("sdHail");
+  hail.oninput = () => { document.getElementById("sdHailV").textContent = (+hail.value).toFixed(2) + "\u2033"; invalidate(); };
   const floor = document.getElementById("sdFloor"), capr = document.getElementById("sdCapR");
   floor.oninput = () => { document.getElementById("sdFloorV").textContent = "$" + (+floor.value).toLocaleString(); invalidate(); };
   capr.oninput = () => { document.getElementById("sdCapV").textContent = "$" + (+capr.value).toLocaleString(); invalidate(); };
@@ -1448,6 +1449,7 @@ async function sdSolve(){
   const v = document.getElementById("sdVerdict"); v.textContent = "Solving\u2026"; v.className = "sd-verdict";
   try {
     const sol = await sdApi("solve", sdReadDials());
+    SD_MANUAL_OFF.clear();                              // fresh Solve = fresh selection
     SD_STATE.solution = sol; sdRenderSolution(sol);
   } catch(e){ v.textContent = "Solve unavailable (proxy offline) \u2014 " + e.message; v.className = "sd-verdict warn"; }
 }
@@ -1468,10 +1470,36 @@ function sdRenderSolution(sol){
     ss.querySelectorAll("button").forEach(b => b.onclick = () => {
       ss.querySelectorAll("button").forEach(x => x.classList.remove("on")); b.classList.add("on");
       SD_SORT = b.dataset.sort; sdRenderRows(); }); }
+  // Part C: value-floor slider max = the funded set's top avg_home_value (per-ring value is only in
+  // the Solve response), re-set each Solve; clamp the current value into the new range.
+  const fl = document.getElementById("sdFloor");
+  if(fl){ const mx = Math.max(0, ...(sol.funded||[]).map(r => r.avg_home_value||0));
+    if(mx > 0){ fl.max = Math.ceil(mx/25000)*25000;
+      if(+fl.value > +fl.max){ fl.value = fl.max;
+        document.getElementById("sdFloorV").textContent = "$" + (+fl.value).toLocaleString(); } } }
   sdRenderRows();
+  sdRenderAdjust();                                   // Part C: manual-deselect recompute line
   document.getElementById("sdTable").classList.remove("sd-stale");
   document.getElementById("sdSend").disabled = !sol.valid;
   sdRedrawMap(sol);
+}
+// Part C: recompute cost/jobs over the funded set MINUS the operator's manual-off rings, using the
+// SAME CTR cost basis (each ring's domination_floor is already CTR-corrected) + the same funnel.
+function sdRenderAdjust(){
+  const sol = SD_STATE.solution; if(!sol) return;
+  let host = document.getElementById("sdAdjust");
+  if(!host){ host = document.createElement("div"); host.id = "sdAdjust";
+    host.style.cssText = "font-size:11px;margin:4px 0 0"; const t = document.getElementById("sdTable");
+    t.parentNode.insertBefore(host, t.nextSibling); }
+  const off = SD_MANUAL_OFF.size;
+  if(!off){ host.style.display = "none"; return; }
+  const kept = (sol.funded||[]).filter(r => !SD_MANUAL_OFF.has(r.circle_id));
+  const spend = kept.reduce((s,r) => s + (r.domination_floor||0), 0);
+  const homes = kept.reduce((s,r) => s + (r.damaged_homes||0), 0);
+  const jobs = Math.round(Math.round(homes*0.02) * (sol.net_close||0.255));
+  host.style.display = "block"; host.style.color = "#8a6d3b";
+  host.innerHTML = "\u270e adjusted (" + off + " ring" + (off>1?"s":"") + " off): <b>$"
+    + Math.round(spend).toLocaleString() + "</b> \u00b7 ~" + jobs + " jobs \u00b7 CTR cost-to-win";
 }
 // readout sort is DISPLAY ONLY — it reorders the view, never the funded set (funding stays the
 // value-rank deselection + cap). VALUE = funding rank; CHEAPEST = domination_floor asc; VALUE/$ =
@@ -1490,13 +1518,25 @@ function sdRenderRows(){
   const tb = document.querySelector("#sdTable tbody"); if(!tb) return; tb.innerHTML = "";
   sdSortedFunded().forEach(r => {
     const tr = document.createElement("tr"); tr.dataset.cid = r.circle_id;
+    const off = SD_MANUAL_OFF.has(r.circle_id);
+    if(off){ tr.style.opacity = "0.4"; tr.style.textDecoration = "line-through"; }
     const av = r.avg_home_value ? ("$" + Math.round(r.avg_home_value/1000) + "k") : "\u2014";
     const cov = r.coverage_known ? (Math.round((r.coverage||0)*100) + "%") : "n/a";
-    tr.innerHTML = "<td>" + r.rank + "</td><td>" + r.circle_id.split("#")[1] + "</td><td>" + av
+    tr.innerHTML = "<td>" + r.rank + "</td><td class='sd-idcell' style='cursor:help;text-decoration:underline dotted'>" + r.circle_id.split("#")[1] + "</td><td>" + av
       + "</td><td>" + cov + "</td><td>$" + Math.round(r.domination_floor).toLocaleString()
       + "</td><td><span class='sd-band " + r.band_flag + "'></span>" + Math.round((r.projected_IS||0)*100) + "%</td>";
-    tr.onclick = () => sdPopup(r.circle_id); tb.appendChild(tr);
+    tr.title = "click row to toggle this ring off (recomputes cost/jobs)";
+    // Part C: row click = manual deselect toggle -> recompute; the ring-ID cell = drill-down popup.
+    tr.onclick = () => sdToggleOff(r.circle_id);
+    const idc = tr.querySelector(".sd-idcell");
+    if(idc) idc.onclick = (e) => { e.stopPropagation(); sdPopup(r.circle_id); };
+    tb.appendChild(tr);
   });
+}
+function sdToggleOff(cid){
+  if(SD_MANUAL_OFF.has(cid)) SD_MANUAL_OFF.delete(cid); else SD_MANUAL_OFF.add(cid);
+  sdRenderRows(); sdRenderAdjust();
+  if(SD_STATE.solution) sdRedrawMap(SD_STATE.solution);   // re-grey the deselected on the map
 }
 function sdRedrawMap(sol){           // v1 SNAP on Solve: highlight funded rings, grey deselected
   if(!TMAP) return;
@@ -1508,8 +1548,10 @@ function sdRedrawMap(sol){           // v1 SNAP on Solve: highlight funded rings
     layers.push(L.circle([c.lat, c.lng], { pane:"sdSnap", radius: c.r*1609.344, color:"#6b7280",
       weight:1, opacity:.55, fillColor:"#6b7280", fillOpacity:.12 })); });
   (sol.funded_circle_ids || []).forEach(cid => { const c = SD_CIRCLES[cid]; if(!c) return;
-    layers.push(L.circle([c.lat, c.lng], { pane:"sdSnap", radius: c.r*1609.344, color:"#16a34a",
-      weight:3, opacity:.95, fill:false })); });
+    const off = SD_MANUAL_OFF.has(cid);                 // Part C: manually-off rings render grey
+    layers.push(L.circle([c.lat, c.lng], { pane:"sdSnap", radius: c.r*1609.344,
+      color: off?"#6b7280":"#16a34a", weight: off?1:3, opacity: off?.55:.95,
+      fill: off, fillColor:"#6b7280", fillOpacity: off?.12:0 })); });
   if(layers.length){ SD_SNAPGRP = L.layerGroup(layers).addTo(TMAP); }
 }
 function sdPopup(cid){
@@ -1551,6 +1593,7 @@ function sdOpenApprove(){
       + " / $" + Math.round(sol.spend_cap).toLocaleString() + " cap</b></div>"
     + "<div class='sd-line'><span>Rings funded</span><b>" + (sol.funded||[]).length + "</b></div>"
     + "<div class='sd-line'><span>Est. jobs</span><b>~" + sol.est_jobs + " (net close " + Math.round((sol.net_close||0)*100) + "%)</b></div>"
+    + "<div class='sd-line' style='color:#8a6d3b;font-style:italic;font-size:11px'><span>$/job</span><b>" + (sol.cost_per_ad_job != null ? ("$" + Math.round(sol.cost_per_ad_job).toLocaleString() + " modeled") : "modeled \u2014 funnel pending") + "</b></div>"
     + (room != null ? "<div class='sd-line'><span>Annual room after</span><b>" + room + " jobs</b></div>" : "")
     + "<div class='sd-line'><span>Bid</span><b>" + sol.bid_strategy + "</b></div>"
     + "<div class='sd-mbtns'><button id='sdCancel'>Cancel</button><button id='sdLaunch'>Approve and launch</button></div>";
