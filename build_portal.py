@@ -83,6 +83,9 @@ body.fullmap #fmExit:hover{background:#1e2b46}
 #tbar #statusBtn{display:flex;align-items:center;gap:7px;background:#1e2b46;color:#e9eef7;border:1px solid #2c3c5e;
   border-radius:6px;padding:5px 10px;font-size:13px;cursor:pointer}
 #tbar #statusBtn:hover{background:#274069}
+#tbar #alertBtn{background:#1e2b46;color:#e9eef7;border:1px solid #2c3c5e;border-radius:6px;padding:5px 10px;font-size:13px;cursor:pointer}
+#tbar #alertBtn:hover{background:#274069}
+#tbar #alertBtn.alerts-on{background:#1c7a3a;border-color:#2ea862;color:#eafff0}
 #statusBtn .hbdot{width:9px;height:9px;border-radius:50%;background:#6b7280;box-shadow:0 0 0 2px rgba(255,255,255,.08)}
 #statusBackdrop{position:fixed;inset:0;z-index:2390;background:transparent}
 #statusBackdrop.hidden,#statusPanel.hidden{display:none}
@@ -532,6 +535,7 @@ SHELL_HEAD = """  <div id="tbar">
     <button id="expandBtn" title="Full-screen radar">&#9974; Full-screen radar</button>
     <button id="statusBtn" title="Service health (is Tempest alive)"><span class="hbdot"></span>Status</button>
     <button id="pullBtn" title="Pull on-demand storm data for a 150mi circle">&#10515; Pull</button>
+    <button id="alertBtn" title="Tap to enable push alerts on this device">&#128276; Enable alerts</button>
     <div class="status" id="connStatus"></div>
   </div>
   <div id="tbar2"></div>
@@ -563,8 +567,17 @@ let TMAP = null;
 const _origLmap = L.map;
 L.map = function(){ const m = _origLmap.apply(this, arguments); TMAP = m; return m; };
 
-function todayUTC(){ return new Date().toISOString().slice(0,10); }
-function getDate(){ return new URLSearchParams(location.search).get("date") || todayUTC(); }
+// STORM-DAY (mirrors engine storm.service.provisional.storm_day_of): the Central convective day runs
+// D 12Z -> D+1 12Z, so a UTC hour < 12 belongs to the PRIOR calendar day (the active storm-day). This is
+// the date the intraday writes its provisional under; the portal defaults here so it stops going blank
+// after 00Z UTC (when the raw UTC calendar rolls ahead of the storm-day).
+function stormDayUTC(){
+  const n=new Date();
+  const d=new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()));
+  if(n.getUTCHours() < 12) d.setUTCDate(d.getUTCDate()-1);
+  return d.toISOString().slice(0,10);
+}
+function getDate(){ return new URLSearchParams(location.search).get("date") || stormDayUTC(); }
 function goDate(d){ location.search = "?date=" + d; }
 function shiftDate(d, n){ const t=new Date(d+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()+n); return t.toISOString().slice(0,10); }
 function fmtDate(d){ const t=new Date(d+"T00:00:00Z"); return t.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"}); }
@@ -764,6 +777,16 @@ async function loadAvailable(){
     AVAIL = {}; av.forEach(x => { AVAIL[x.storm_date] = x.perils || []; });
     sessionStorage.setItem("tempest_avail", JSON.stringify(AVAIL));
   } catch(e){ AVAIL = AVAIL || {}; }
+  // FALLBACK (default view only): if the storm-day has NO cluster yet, land on the MOST-RECENT available
+  // date so the map is never blank when recent data exists. Never overrides an explicit ?date= selection.
+  if(!new URLSearchParams(location.search).get("date")){
+    const sd = stormDayUTC();
+    if(!AVAIL[sd]){
+      const dates = Object.keys(AVAIL).sort();
+      if(dates.length){ const recent = dates[dates.length-1];
+        if(recent !== sd){ location.replace("?date=" + recent); return; } }   // one clean redirect, no history entry
+    }
+  }
   const cur = AVAIL[getDate()];
   if(cur && cur.length) document.getElementById("navPerils").textContent = cur.join("  \\u00b7  ");
   renderCal();
@@ -777,7 +800,7 @@ function renderCal(){
   const days = new Date(Date.UTC(y,m+1,0)).getUTCDate();
   const grid = document.getElementById("calDays"); grid.innerHTML="";
   for(let i=0;i<first;i++){ const b=document.createElement("div"); b.className="cal-day blank"; grid.appendChild(b); }
-  const today = todayUTC();
+  const today = stormDayUTC();
   for(let d=1; d<=days; d++){
     const ds = y+"-"+String(m+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
     const btn = document.createElement("button"); btn.className="cal-day"; btn.dataset.date=ds;
@@ -1042,18 +1065,43 @@ async function sdApprove(){
 function _urlB64ToU8(b){ const pad="=".repeat((4-b.length%4)%4);
   const s=(b+pad).replace(/-/g,"+").replace(/_/g,"/"); const raw=atob(s);
   return Uint8Array.from(Array.prototype.map.call(raw, c=>c.charCodeAt(0))); }
-async function setupPush(){
-  try{
-    if(!("serviceWorker" in navigator) || !("PushManager" in window)) return;
-    const vapid = CFG.vapidPublicKey; const api = CFG.pushApi;
+async function setupPush(){   // RE-SUBSCRIBE-ON-OPEN self-heal — ONLY for an ALREADY-granted device.
+  try{                        // Never prompts on load: iOS silently ignores a non-gesture permission
+    if(!("serviceWorker" in navigator) || !("PushManager" in window)) return;   // request, and we don't
+    const vapid = CFG.vapidPublicKey; const api = CFG.pushApi;                    // want a Chrome load prompt.
     if(!vapid || !api) return;                         // not configured yet (VAPID drops in via config)
+    if(!("Notification" in window) || Notification.permission !== "granted") return;  // GESTURE-gated: enableAlerts()
     const reg = await navigator.serviceWorker.ready;
     let sub = await reg.pushManager.getSubscription();
     if(!sub){ sub = await reg.pushManager.subscribe({ userVisibleOnly:true,
-      applicationServerKey:_urlB64ToU8(vapid) }); }     // prompts once; reuses granted permission after
+      applicationServerKey:_urlB64ToU8(vapid) }); }     // permission already granted -> no prompt
     await fetch(api, { method:"POST", headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ subscription: sub.toJSON(), operator:"brian" }) });   // re-POST every open
+      body: JSON.stringify({ subscription: sub.toJSON(), operator:"brian" }) });   // re-POST every open (multi-device)
   }catch(e){ /* push optional — the SMS backbone + email backup still fire */ }
+  finally{ updateAlertBtn(); }
+}
+
+// ── "Enable alerts" GESTURE path — iOS requires the permission request come from a user TAP. The
+//    toolbar button calls this; setupPush() (on load) only re-subscribes an already-granted device. ──
+async function enableAlerts(){
+  try{
+    if(!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)){
+      alert("This browser doesn't support push notifications."); return; }
+    if(Notification.permission !== "granted"){
+      const perm = await Notification.requestPermission();     // MUST be inside the tap (iOS ignores otherwise)
+      if(perm !== "granted"){ updateAlertBtn(); return; }
+    }
+    await setupPush();                                          // now granted -> subscribe + POST (+ updateAlertBtn)
+  }catch(e){ updateAlertBtn(); }
+}
+
+function updateAlertBtn(){   // reflect permission state on the toolbar button
+  const b = document.getElementById("alertBtn"); if(!b) return;
+  const granted = ("Notification" in window) && Notification.permission === "granted";
+  b.innerHTML = granted ? "&#128276; Alerts on" : "&#128276; Enable alerts";
+  b.classList.toggle("alerts-on", granted);
+  b.title = granted ? "Push alerts enabled on this device"
+                    : "Tap to enable push alerts on this device (iOS: open from the Home-Screen app first)";
 }
 
 // ── APPROVE DEEP-LINK (?s=TOKEN). SMS/email links open a plain tab; the PWA opens standalone —
@@ -2110,7 +2158,7 @@ async function boot(){
   document.getElementById("navDateBtn").onclick = e => { e.stopPropagation(); toggleCal(); };
   document.getElementById("navPrev").onclick  = () => goDate(shiftDate(date, -1));
   document.getElementById("navNext").onclick  = () => goDate(shiftDate(date,  1));
-  document.getElementById("navToday").onclick = () => goDate(todayUTC());
+  document.getElementById("navToday").onclick = () => goDate(stormDayUTC());   // "Today" = storm-day (has the live swath)
   document.getElementById("calPrev").onclick = e => { e.stopPropagation(); closeCalPick(); if(!calView)renderCal(); calView.m--; if(calView.m<0){calView.m=11;calView.y--;} renderCal(); };
   document.getElementById("calNext").onclick = e => { e.stopPropagation(); closeCalPick(); if(!calView)renderCal(); calView.m++; if(calView.m>11){calView.m=0;calView.y++;} renderCal(); };
   document.getElementById("calTitle").onclick = e => { e.stopPropagation(); openCalPick(); };
@@ -2129,6 +2177,7 @@ async function boot(){
     const sp=document.createElement("div"); sp.id="statusPanel"; sp.className="hidden";
     document.body.appendChild(bp); document.body.appendChild(sp); }
   const sb=document.getElementById("statusBtn"); if(sb) sb.onclick=toggleStatus;
+  const ab=document.getElementById("alertBtn"); if(ab) ab.onclick=enableAlerts; updateAlertBtn();
   document.addEventListener("keydown", e=>{ if(e.key==="Escape"){
     if(document.body.classList.contains("fullmap")) setFullmap(false); closeStatus(); } });
   refreshStatus(false);   // color the header heartbeat dot on load (silent-death at a glance)
@@ -2153,7 +2202,7 @@ async function boot(){
   }
   // forecast tie-in (today's view only): current SPC-outlook risk from the heartbeat
   let forecast = null;
-  if(date === todayUTC()){
+  if(date === stormDayUTC()){
     try { const fs = await pquery("storm_forecast_status", {});
       if(fs && fs[0]){ const r=fs[0].current_active_risk;
         forecast = (r && r!=="none") ? r : "No qualifying severe risk in the SPC outlook right now."; } }

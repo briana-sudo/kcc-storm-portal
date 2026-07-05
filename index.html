@@ -1078,8 +1078,17 @@ let TMAP = null;
 const _origLmap = L.map;
 L.map = function(){ const m = _origLmap.apply(this, arguments); TMAP = m; return m; };
 
-function todayUTC(){ return new Date().toISOString().slice(0,10); }
-function getDate(){ return new URLSearchParams(location.search).get("date") || todayUTC(); }
+// STORM-DAY (mirrors engine storm.service.provisional.storm_day_of): the Central convective day runs
+// D 12Z -> D+1 12Z, so a UTC hour < 12 belongs to the PRIOR calendar day (the active storm-day). This is
+// the date the intraday writes its provisional under; the portal defaults here so it stops going blank
+// after 00Z UTC (when the raw UTC calendar rolls ahead of the storm-day).
+function stormDayUTC(){
+  const n=new Date();
+  const d=new Date(Date.UTC(n.getUTCFullYear(), n.getUTCMonth(), n.getUTCDate()));
+  if(n.getUTCHours() < 12) d.setUTCDate(d.getUTCDate()-1);
+  return d.toISOString().slice(0,10);
+}
+function getDate(){ return new URLSearchParams(location.search).get("date") || stormDayUTC(); }
 function goDate(d){ location.search = "?date=" + d; }
 function shiftDate(d, n){ const t=new Date(d+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()+n); return t.toISOString().slice(0,10); }
 function fmtDate(d){ const t=new Date(d+"T00:00:00Z"); return t.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"}); }
@@ -1279,6 +1288,16 @@ async function loadAvailable(){
     AVAIL = {}; av.forEach(x => { AVAIL[x.storm_date] = x.perils || []; });
     sessionStorage.setItem("tempest_avail", JSON.stringify(AVAIL));
   } catch(e){ AVAIL = AVAIL || {}; }
+  // FALLBACK (default view only): if the storm-day has NO cluster yet, land on the MOST-RECENT available
+  // date so the map is never blank when recent data exists. Never overrides an explicit ?date= selection.
+  if(!new URLSearchParams(location.search).get("date")){
+    const sd = stormDayUTC();
+    if(!AVAIL[sd]){
+      const dates = Object.keys(AVAIL).sort();
+      if(dates.length){ const recent = dates[dates.length-1];
+        if(recent !== sd){ location.replace("?date=" + recent); return; } }   // one clean redirect, no history entry
+    }
+  }
   const cur = AVAIL[getDate()];
   if(cur && cur.length) document.getElementById("navPerils").textContent = cur.join("  \u00b7  ");
   renderCal();
@@ -1292,7 +1311,7 @@ function renderCal(){
   const days = new Date(Date.UTC(y,m+1,0)).getUTCDate();
   const grid = document.getElementById("calDays"); grid.innerHTML="";
   for(let i=0;i<first;i++){ const b=document.createElement("div"); b.className="cal-day blank"; grid.appendChild(b); }
-  const today = todayUTC();
+  const today = stormDayUTC();
   for(let d=1; d<=days; d++){
     const ds = y+"-"+String(m+1).padStart(2,"0")+"-"+String(d).padStart(2,"0");
     const btn = document.createElement("button"); btn.className="cal-day"; btn.dataset.date=ds;
@@ -2650,7 +2669,7 @@ async function boot(){
   document.getElementById("navDateBtn").onclick = e => { e.stopPropagation(); toggleCal(); };
   document.getElementById("navPrev").onclick  = () => goDate(shiftDate(date, -1));
   document.getElementById("navNext").onclick  = () => goDate(shiftDate(date,  1));
-  document.getElementById("navToday").onclick = () => goDate(todayUTC());
+  document.getElementById("navToday").onclick = () => goDate(stormDayUTC());   // "Today" = storm-day (has the live swath)
   document.getElementById("calPrev").onclick = e => { e.stopPropagation(); closeCalPick(); if(!calView)renderCal(); calView.m--; if(calView.m<0){calView.m=11;calView.y--;} renderCal(); };
   document.getElementById("calNext").onclick = e => { e.stopPropagation(); closeCalPick(); if(!calView)renderCal(); calView.m++; if(calView.m>11){calView.m=0;calView.y++;} renderCal(); };
   document.getElementById("calTitle").onclick = e => { e.stopPropagation(); openCalPick(); };
@@ -2694,7 +2713,7 @@ async function boot(){
   }
   // forecast tie-in (today's view only): current SPC-outlook risk from the heartbeat
   let forecast = null;
-  if(date === todayUTC()){
+  if(date === stormDayUTC()){
     try { const fs = await pquery("storm_forecast_status", {});
       if(fs && fs[0]){ const r=fs[0].current_active_risk;
         forecast = (r && r!=="none") ? r : "No qualifying severe risk in the SPC outlook right now."; } }
