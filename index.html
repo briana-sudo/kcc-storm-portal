@@ -2749,9 +2749,17 @@ async function boot(){
       priority: {fn:c=>{const it=+c[3]||0; return it>=7?3:it>=4?2:it>0?1:0;}},
     };
     const curHailMode=()=>{ const r=document.querySelector('.ctlpanel input[name="hm"]:checked'); return (r&&HAIL_FILL[r.value])?r.value:"intensity"; };
+    // A SUB-GATE swath (e.g. a live provisional day with only 0.75-1.125" hail -> every cell intensity 0)
+    // makes the INTENSITY heatmap all-zero, so buildHeatmap returns null, HL stays empty, the smooth
+    // machinery is skipped, and the blocky Cells canvas is left visible. Fall back to SIZE (non-zero on
+    // sub-gate cells) so the live/provisional swath still renders SMOOTH/feathered like a registered date.
+    // Gated storms build the intensity heatmap normally -> ZERO change to canonical dates with >=1.125" hail.
+    const hailHeat=()=>{ let h=buildHeatmap(D.swath_cells,HAIL_FILL[curHailMode()].fn,HAIL_RAMP,"hHeatPane",351);
+      if(!h && curHailMode()==="intensity") h=buildHeatmap(D.swath_cells,HAIL_FILL["size"].fn,HAIL_RAMP,"hHeatPane",351);
+      return h; };
     const HL=[];   // {pane,group,peril,op}
     if(D.swath_mode==="per_cell" && D.swath_cells && D.swath_cells.length){
-      const h=buildHeatmap(D.swath_cells,HAIL_FILL[curHailMode()].fn,HAIL_RAMP,"hHeatPane",351);
+      const h=hailHeat();
       if(h) HL.push({pane:"swathPane",group:h,peril:"hail",op:0.6}); }
     if(D.wind && D.wind.swath_cells && D.wind.swath_cells.length){
       const w=buildHeatmap(D.wind.swath_cells,c=>+c[2]||0,WIND_RAMP,"wHeatPane",354); if(w) HL.push({pane:"windPane",group:w,peril:"wind",op:0.55}); }
@@ -2771,7 +2779,7 @@ async function boot(){
       // rebuild the hail heatmap when the §3 fill radio changes (int/size/priority)
       const rebuildHail=()=>{ const o=HL.find(x=>x.peril==="hail"); if(!o)return;
         if(TMAP.hasLayer(o.group)) TMAP.removeLayer(o.group);
-        const g=buildHeatmap(D.swath_cells,HAIL_FILL[curHailMode()].fn,HAIL_RAMP,"hHeatPane",351);
+        const g=hailHeat();   // sub-gate swath -> size fallback so it stays SMOOTH (see hailHeat above)
         if(g){ o.group=g; if(mode==="smooth"&&visOf("hail")){ o.group.addTo(TMAP); setOp(o); } } };
       // DRIVE the smooth swath from the existing §3 Layers panel:
       const panel=document.querySelector(".ctlpanel");
