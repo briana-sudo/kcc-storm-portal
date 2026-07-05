@@ -126,6 +126,9 @@ body.fullmap #fmExit:hover{background:#1e2b46}
 #tbar #statusBtn{display:flex;align-items:center;gap:7px;background:#1e2b46;color:#e9eef7;border:1px solid #2c3c5e;
   border-radius:6px;padding:5px 10px;font-size:13px;cursor:pointer}
 #tbar #statusBtn:hover{background:#274069}
+#tbar #alertBtn{background:#1e2b46;color:#e9eef7;border:1px solid #2c3c5e;border-radius:6px;padding:5px 10px;font-size:13px;cursor:pointer}
+#tbar #alertBtn:hover{background:#274069}
+#tbar #alertBtn.alerts-on{background:#1c7a3a;border-color:#2ea862;color:#eafff0}
 #statusBtn .hbdot{width:9px;height:9px;border-radius:50%;background:#6b7280;box-shadow:0 0 0 2px rgba(255,255,255,.08)}
 #statusBackdrop{position:fixed;inset:0;z-index:2390;background:transparent}
 #statusBackdrop.hidden,#statusPanel.hidden{display:none}
@@ -578,6 +581,7 @@ body:not(.mobile) #wxBtn{display:none}   /* desktop: Weather lives on row 2; mob
     <button id="expandBtn" title="Full-screen radar">&#9974; Full-screen radar</button>
     <button id="statusBtn" title="Service health (is Tempest alive)"><span class="hbdot"></span>Status</button>
     <button id="pullBtn" title="Pull on-demand storm data for a 150mi circle">&#10515; Pull</button>
+    <button id="alertBtn" title="Tap to enable push alerts on this device">&#128276; Enable alerts</button>
     <div class="status" id="connStatus"></div>
   </div>
   <div id="tbar2"></div>
@@ -1553,18 +1557,43 @@ async function sdApprove(){
 function _urlB64ToU8(b){ const pad="=".repeat((4-b.length%4)%4);
   const s=(b+pad).replace(/-/g,"+").replace(/_/g,"/"); const raw=atob(s);
   return Uint8Array.from(Array.prototype.map.call(raw, c=>c.charCodeAt(0))); }
-async function setupPush(){
-  try{
-    if(!("serviceWorker" in navigator) || !("PushManager" in window)) return;
-    const vapid = CFG.vapidPublicKey; const api = CFG.pushApi;
+async function setupPush(){   // RE-SUBSCRIBE-ON-OPEN self-heal — ONLY for an ALREADY-granted device.
+  try{                        // Never prompts on load: iOS silently ignores a non-gesture permission
+    if(!("serviceWorker" in navigator) || !("PushManager" in window)) return;   // request, and we don't
+    const vapid = CFG.vapidPublicKey; const api = CFG.pushApi;                    // want a Chrome load prompt.
     if(!vapid || !api) return;                         // not configured yet (VAPID drops in via config)
+    if(!("Notification" in window) || Notification.permission !== "granted") return;  // GESTURE-gated: enableAlerts()
     const reg = await navigator.serviceWorker.ready;
     let sub = await reg.pushManager.getSubscription();
     if(!sub){ sub = await reg.pushManager.subscribe({ userVisibleOnly:true,
-      applicationServerKey:_urlB64ToU8(vapid) }); }     // prompts once; reuses granted permission after
+      applicationServerKey:_urlB64ToU8(vapid) }); }     // permission already granted -> no prompt
     await fetch(api, { method:"POST", headers:{ "Content-Type":"application/json" },
-      body: JSON.stringify({ subscription: sub.toJSON(), operator:"brian" }) });   // re-POST every open
+      body: JSON.stringify({ subscription: sub.toJSON(), operator:"brian" }) });   // re-POST every open (multi-device)
   }catch(e){ /* push optional — the SMS backbone + email backup still fire */ }
+  finally{ updateAlertBtn(); }
+}
+
+// ── "Enable alerts" GESTURE path — iOS requires the permission request come from a user TAP. The
+//    toolbar button calls this; setupPush() (on load) only re-subscribes an already-granted device. ──
+async function enableAlerts(){
+  try{
+    if(!("serviceWorker" in navigator) || !("PushManager" in window) || !("Notification" in window)){
+      alert("This browser doesn't support push notifications."); return; }
+    if(Notification.permission !== "granted"){
+      const perm = await Notification.requestPermission();     // MUST be inside the tap (iOS ignores otherwise)
+      if(perm !== "granted"){ updateAlertBtn(); return; }
+    }
+    await setupPush();                                          // now granted -> subscribe + POST (+ updateAlertBtn)
+  }catch(e){ updateAlertBtn(); }
+}
+
+function updateAlertBtn(){   // reflect permission state on the toolbar button
+  const b = document.getElementById("alertBtn"); if(!b) return;
+  const granted = ("Notification" in window) && Notification.permission === "granted";
+  b.innerHTML = granted ? "&#128276; Alerts on" : "&#128276; Enable alerts";
+  b.classList.toggle("alerts-on", granted);
+  b.title = granted ? "Push alerts enabled on this device"
+                    : "Tap to enable push alerts on this device (iOS: open from the Home-Screen app first)";
 }
 
 // ── APPROVE DEEP-LINK (?s=TOKEN). SMS/email links open a plain tab; the PWA opens standalone —
@@ -2640,6 +2669,7 @@ async function boot(){
     const sp=document.createElement("div"); sp.id="statusPanel"; sp.className="hidden";
     document.body.appendChild(bp); document.body.appendChild(sp); }
   const sb=document.getElementById("statusBtn"); if(sb) sb.onclick=toggleStatus;
+  const ab=document.getElementById("alertBtn"); if(ab) ab.onclick=enableAlerts; updateAlertBtn();
   document.addEventListener("keydown", e=>{ if(e.key==="Escape"){
     if(document.body.classList.contains("fullmap")) setFullmap(false); closeStatus(); } });
   refreshStatus(false);   // color the header heartbeat dot on load (silent-death at a glance)
