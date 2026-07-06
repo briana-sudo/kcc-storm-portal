@@ -95,6 +95,14 @@ body.mobile #tbar .brand .tlogo{width:32px;height:32px}
 #side .op-verdict{font-size:15px;font-weight:800;margin:8px 0 3px;padding:6px 11px;border-radius:7px;color:#fff;display:inline-block}
 .op-verdict.strong{background:#bd0026}.op-verdict.sig{background:#e8430a}.op-verdict.mod{background:#f97316}
 .op-verdict.weak{background:#8a7d00}.op-verdict.none{background:#6b7280}
+/* dual-core damage-core rows (2026-07-05) */
+#side .op-verdict.op-nocore{display:block;font-size:12.5px;font-weight:700;margin:8px 0}
+#side .op-core2{border-top:1px solid #eee;padding-top:8px}
+#side .op-coresplit{margin-top:4px;font-size:11.5px;color:#445}
+#side .op-coresplit .cbadge{font-size:9.5px;font-weight:800;color:#fff;padding:1px 6px;border-radius:9px;vertical-align:1px}
+#side .op-coresplit .cbadge.c1{background:#bd0026}#side .op-coresplit .cbadge.c2{background:#1a7a4f}
+#side .op-corelegend{font-size:11px;color:#667;margin-top:2px}
+#side .op-corelegend .lg{font-weight:700}#side .op-corelegend .lg.funded{color:#16a34a}#side .op-corelegend .lg.presence{color:#b7791f}
 #side .op-sub{color:#667;font-size:12px;margin:0 0 10px}
 #side .op-maxhail{font-size:13px;margin:6px 0 10px;padding:8px 11px;background:#fff4e6;border-left:4px solid #e8430a;border-radius:5px}
 #side .op-maxhail b{font-size:21px;color:#bd0026;vertical-align:-2px}
@@ -441,6 +449,13 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .rankbadge.t1{background:#bd0026}        /* P1 core */
 .rankbadge.t2{background:#e8430a}        /* P2 */
 .rankbadge.muted{background:#6b7280;border-style:dashed;opacity:.78}
+/* dual-core label reconcile: FUNDED = combined damaged>0 (solid, green halo); PRESENCE-ONLY =
+   ad-eligible but damaged==0 (hollow, amber dashed). Tier color stays as the fill for funded. */
+.rankbadge.funded{border-color:#28d17c;box-shadow:0 0 0 2px rgba(40,209,124,.55),0 1px 4px rgba(0,0,0,.5)}
+.rankbadge.presence{background:transparent;color:#5a3a1a;border:1.5px dashed #f0a020;box-shadow:none}
+.rankbadge.presence .rs{border-left-color:rgba(90,58,26,.4)}
+.cprov{font:800 8px/1 system-ui,sans-serif;margin-left:3px;padding:1px 4px;border-radius:8px;color:#fff}
+.cprov.c1{background:#bd0026}.cprov.c2{background:#1a7a4f}.cprov.both{background:#7a4fd6}
 .rankctl a.on{background:#bd0026;color:#fff}
 .rankctl a{font-weight:800}
 /* ── SPEND-DIAL PANEL (operator decision surface; single-gate portal approval) ──
@@ -1169,6 +1184,12 @@ function assemble(date, rows, geo){
       tornado: parseScores(inmkt.tornado && inmkt.tornado.payout_scores_json),
     },
     list_core_count: (h && h.list_core_count != null) ? +h.list_core_count : null,
+    // dual-core (2026-07-05): combined damage core = intensity>=8.5 (Core 1) OR size>=2.0"+contiguity
+    // (Core 2), parcels credited once. Graceful: absent (older cache) -> rows hidden, verdict unchanged.
+    core2_count: (h && h.core2_count != null) ? +h.core2_count : null,
+    combined_core_count: (h && h.combined_core_count != null) ? +h.combined_core_count : null,
+    core2_size_floor: (h && h.core2_size_floor != null) ? +h.core2_size_floor : null,
+    core2_min_contig: (h && h.core2_min_contig != null) ? +h.core2_min_contig : null,
   };
   // Initial framing uses in-market targeting only — the chase toggle never moves the
   // map (Part 3), and the unified swath renders to 150mi regardless of view.
@@ -1220,14 +1241,36 @@ function buildOperatorPanel(D, forecast){
   if(forecast) h+='<div class="op-forecast"><b>Forecast (today):</b> '+forecast+'</div>';
   // #6 targeting brain: ranked ad-circle count + the separate door/call list-core (>=8.5)
   if(D.payout){
-    let nranked=0, nmuted=0;
+    let nranked=0, nmuted=0, nfund=0, npres=0;
     ["hail","wind","tornado"].forEach(pk=>{ const ps=D.payout[pk]; if(!ps) return;
-      Object.keys(ps).forEach(k=>{ nranked++; if(!ps[k].floor_pass) nmuted++; }); });
-    if(nranked) h+='<div class="op-row"><b>Ranked ad targets:</b> '+nranked+
+      Object.keys(ps).forEach(k=>{ nranked++; if(!ps[k].floor_pass) nmuted++;
+        if((ps[k].damaged_homes||0)>0) nfund++; else npres++; }); });
+    if(nranked){ h+='<div class="op-row"><b>Ad targets:</b> '+nranked+
       ' <span class="muted">('+(nranked-nmuted)+' above floor \u00b7 '+nmuted+' muted)</span></div>';
+      // legend: funded core (solid green) vs presence-only (hollow amber) — the label reconcile
+      h+='<div class="op-row op-corelegend"><span class="lg funded">\u25cf funded core</span> '+nfund+
+        ' &nbsp;\u00b7&nbsp; <span class="lg presence">\u25cb presence only</span> '+npres+'</div>';
+    }
+  }
+  // ── DUAL-CORE damage core (2026-07-05): combined = intensity\u22658.5 (Core 1) OR size\u22652.0"
+  //    +contiguity (Core 2), credited once. Presence-only banner mirrors the Solve verdict. ──
+  const hailPeril = perils.some(p=>p.k==="hail");
+  if(hailPeril && D.combined_core_count!=null){
+    const c1=D.list_core_count||0, c2=D.core2_count||0, comb=D.combined_core_count;
+    const flr=(D.core2_size_floor!=null?D.core2_size_floor:2.0).toFixed(1);
+    if(comb>0){
+      h+='<div class="op-row op-core2"><b>Damage core (combined):</b> '+comb.toLocaleString()+
+        ' parcels <span class="muted">funds search spend</span>'+
+        '<div class="op-coresplit"><span class="cbadge c1">C1 \u22658.5 intensity</span> '+c1.toLocaleString()+
+        ' &nbsp;\u00b7&nbsp; <span class="cbadge c2">C2 \u2265'+flr+'" size</span> '+c2.toLocaleString()+
+        ' <span class="muted">(overlap credited once)</span></div></div>';
+    } else {
+      h+='<div class="op-verdict none op-nocore">Presence only \u2014 no damage core '+
+        '(intensity \u22658.5 or \u2265'+flr+'" size); campaign = $0</div>';
+    }
   }
   if(D.list_core_count!=null) h+='<div class="op-row"><b>List core (\u22658.5):</b> '+
-    D.list_core_count.toLocaleString()+' parcels <span class="muted">door/call</span></div>';
+    D.list_core_count.toLocaleString()+' parcels <span class="muted">door/call \u00b7 Core 1 only</span></div>';
   h+='<div class="op-row op-adspend"><b>Ad spend:</b> <span class="muted">pending CPC \u00b7 targets ranked by payout_score</span></div>';
   h+='<div id="detail" class="op-row"><span class="muted">Click a target circle for lead detail.</span></div>';
   side.innerHTML=h;
@@ -1243,14 +1286,21 @@ function paintRankedTargets(D){
   const perils = [["hail", D.circles], ["wind", D.wind && D.wind.circles],
                   ["tornado", D.tornado && D.tornado.circles]];
   if(!TMAP.getPane("rankPane")){ const p=TMAP.createPane("rankPane"); p.style.zIndex=655; p.style.pointerEvents="none"; }
-  const markers=[]; let scored=0, muted=0;
+  const markers=[]; let scored=0, muted=0, funded=0, presence=0;
   perils.forEach(([pk, circles])=>{
     const ps = D.payout[pk]; if(!ps || !circles) return;
     circles.forEach((c, i)=>{
       const s = ps[String(i)]; if(!s) return;          // only in-geofence P1/P2 scored
       scored++; if(!s.floor_pass) muted++;
-      const html='<div class="rankbadge t'+(c.tier||"").slice(1)+(s.floor_pass?"":" muted")+'">'
-        +'<b>#'+s.rank+'</b><span class="rs">'+Math.round(s.payout_score)+'</span></div>';
+      if((s.damaged_homes||0)>0) funded++; else presence++;
+      // dual-core label reconcile: combined damaged>0 => FUNDED (solid green); ad-eligible but
+      // damaged==0 => PRESENCE-ONLY (hollow amber). Provenance chip = which core(s) fired.
+      const dmg = s.damaged_homes||0, dc1 = s.core1_damaged||0, dc2 = s.core2_damaged||0;
+      const status = dmg>0 ? "funded" : "presence";
+      let prov="", pc=""; if(dmg>0){ if(dc1>0&&dc2>0){prov="C1+C2";pc="both";} else if(dc2>0){prov="C2";pc="c2";} else {prov="C1";pc="c1";} }
+      const html='<div class="rankbadge t'+(c.tier||"").slice(1)+' '+status+(s.floor_pass?"":" muted")+'">'
+        +'<b>#'+s.rank+'</b><span class="rs">'+Math.round(s.payout_score)+'</span>'
+        +(prov?'<span class="cprov '+pc+'">'+prov+'</span>':'')+'</div>';
       markers.push(L.marker([c.center_lat, c.center_lng], {pane:"rankPane", interactive:false,
         icon:L.divIcon({className:"rankwrap", html, iconSize:[0,0]})}));
     });
@@ -1273,7 +1323,8 @@ function paintRankedTargets(D){
     const a=document.getElementById("rankToggle"); if(a && RANKON) a.classList.add("on");
   }
   const cs=document.getElementById("connStatus");
-  if(cs && scored) cs.textContent = scored+" ranked targets"+(muted?(" \u00b7 "+muted+" below floor"):"");
+  if(cs && scored) cs.textContent = scored+" ranked targets \u00b7 "+funded+" funded core \u00b7 "+
+    presence+" presence-only"+(muted?(" \u00b7 "+muted+" below floor"):"");
 }
 
 // ── storm-aware calendar: dates with data get peril dots (one cached query) ──
@@ -1569,6 +1620,10 @@ function sdPopup(cid){
       + " / " + (r.median_home_value ? "$"+r.median_home_value.toLocaleString() : "\u2014") + "</b></div>"
     + "<div class='r'><span>&gt;$300k / &gt;$500k</span><b>" + (bk[">300k"]||0) + " / " + (bk[">500k"]||0) + "</b></div>"
     + "<div class='r'><span>damaged (search base) / parcels</span><b>" + (r.damaged_homes!=null?r.damaged_homes.toLocaleString():"\u2014") + " / " + (r.parcel_count||0).toLocaleString() + "</b></div>"
+    + (function(){ var d1=r.core1_damaged||0, d2=r.core2_damaged||0, dm=r.damaged_homes||0;
+        var tag = dm<=0 ? "<span class='cprov presence'>presence only</span>"
+          : (d1>0&&d2>0 ? "<span class='cprov both'>C1+C2</span>" : (d2>0 ? "<span class='cprov c2'>C2 \u22652.0\u0022 size</span>" : "<span class='cprov c1'>C1 \u22658.5 intensity</span>"));
+        return "<div class='r'><span>damage core</span><b>" + tag + "</b></div>"; })()
     + "<div class='r'><span>squares</span><b>" + (r.avg_squares||"\u2014") + "</b></div>"
     + "<div class='r'><span>coverage</span><b>" + (r.coverage_known ? (Math.round((r.coverage||0)*100)+"%") : "n/a") + "</b></div>"
     + "<div class='r'><span>weight raw / cov-adj</span><b>" + (r.conv_value_weight||"\u2014") + " / " + (r.cov_adj_weight||"\u2014") + "</b></div>"
