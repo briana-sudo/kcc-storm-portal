@@ -592,8 +592,23 @@ function stormDayUTC(){
   if(n.getUTCHours() < 12) d.setUTCDate(d.getUTCDate()-1);
   return d.toISOString().slice(0,10);
 }
-function getDate(){ return new URLSearchParams(location.search).get("date") || stormDayUTC(); }
-function goDate(d){ location.search = "?date=" + d; }
+// ── date resolution (fixes "opens on yesterday — always have to hit Today") ─────────────────────
+// ?date is a PURELY INTERNAL navigation artifact (external links use ?s=). Browsers restore the last
+// URL on reopen, so a bare goDate() URL used to PIN the app to the day you last viewed. Resolve ONCE
+// per load: honor ?date only for the single load an in-app goDate() just triggered (a one-shot
+// sessionStorage marker); every other cold/restored open falls back to today's storm-day. A stale
+// ?date is scrubbed from the URL (replaceState — no reload) so the bar/bookmark stay consistent.
+let _EFFDATE;
+function getDate(){
+  if(_EFFDATE!==undefined) return _EFFDATE;
+  const p = new URLSearchParams(location.search).get("date");
+  let go=null; try{ go=sessionStorage.getItem("tempest_go"); if(go!==null) sessionStorage.removeItem("tempest_go"); }catch(e){}
+  _EFFDATE = (p && go===p) ? p : stormDayUTC();
+  if(p && _EFFDATE!==p){ try{ const u=new URL(location.href); u.searchParams.delete("date");
+    history.replaceState(null,"",u.pathname+u.search+u.hash); }catch(e){} }
+  return _EFFDATE;
+}
+function goDate(d){ try{ sessionStorage.setItem("tempest_go", d); }catch(e){} location.search = "?date=" + d; }
 function shiftDate(d, n){ const t=new Date(d+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()+n); return t.toISOString().slice(0,10); }
 function fmtDate(d){ const t=new Date(d+"T00:00:00Z"); return t.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric",timeZone:"UTC"}); }
 function parseJSON(s){ try{ return JSON.parse(s||"[]"); }catch(e){ return []; } }
@@ -828,16 +843,10 @@ async function loadAvailable(){
     AVAIL = {}; av.forEach(x => { AVAIL[x.storm_date] = x.perils || []; });
     sessionStorage.setItem("tempest_avail", JSON.stringify(AVAIL));
   } catch(e){ AVAIL = AVAIL || {}; }
-  // FALLBACK (default view only): if the storm-day has NO cluster yet, land on the MOST-RECENT available
-  // date so the map is never blank when recent data exists. Never overrides an explicit ?date= selection.
-  if(!new URLSearchParams(location.search).get("date")){
-    const sd = stormDayUTC();
-    if(!AVAIL[sd]){
-      const dates = Object.keys(AVAIL).sort();
-      if(dates.length){ const recent = dates[dates.length-1];
-        if(recent !== sd){ location.replace("?date=" + recent); return; } }   // one clean redirect, no history entry
-    }
-  }
+  // NOTE (2026-07-06): the old "jump to the MOST-RECENT available storm on a bare open" redirect was
+  // removed — it made the portal open on a PAST storm day instead of today (the operator always had to
+  // hit Today). The default is now always today's storm-day (getDate()); the calendar dots still show
+  // where recent storms are, one click away. A quiet-day map is intentionally today, not last week.
   const cur = AVAIL[getDate()];
   if(cur && cur.length) document.getElementById("navPerils").textContent = cur.join("  \\u00b7  ");
   renderCal();
