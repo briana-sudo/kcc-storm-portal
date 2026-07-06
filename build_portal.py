@@ -458,6 +458,26 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .sd-band{display:inline-block;width:9px;height:9px;border-radius:50%;vertical-align:-1px}
 .sd-band.in_band{background:#1a7a4f}.sd-band.red_low{background:#d9a600}.sd-band.red_high{background:#bd0026}
 .sd-table tr.dropped td{opacity:.5;font-style:italic}
+/* ── SOLVE-GEOMETRY LAYER (live dial) — visually DISTINCT (teal) from the frozen base cluster so the
+   operator always knows which world the readout prices. Base = frozen ad-cluster; Solve = live dial. */
+#solvePanel{font-size:12.5px;color:#0b3b3b;margin-top:13px;border-top:2px solid #14b8a6;padding-top:9px}
+#solvePanel h2{font-size:13px;margin:2px 0 5px;display:flex;align-items:center;gap:7px;color:#0f766e}
+#solvePanel h2 .pk{margin-left:auto;font-size:9.5px;font-weight:800;letter-spacing:.5px;color:#fff;background:#0d9488;padding:2px 7px;border-radius:10px}
+#solvePanel .sg-sub{font-size:10.5px;color:#5a7a75;margin:0 0 6px}
+#solvePanel .sd-actions button{background:#0d9488}
+.sg-work{font-size:11.5px;color:#0f766e;background:#effcf9;border-left:4px solid #14b8a6;border-radius:6px;padding:7px 9px;margin:6px 0;font-weight:600}
+.sg-work .warm{color:#b7791f;font-weight:700}
+.sg-range{display:flex;gap:7px;flex-wrap:wrap;font-size:11px;margin:6px 0}
+.sg-range .k{background:#f0f4f8;border-radius:6px;padding:5px 8px;color:#445}.sg-range .k b{color:#0b3b3b}
+.sg-toggle{display:flex;align-items:center;gap:6px;font-size:11.5px;color:#445;margin:7px 0 3px}
+.sg-toggle .ghost{display:inline-block;width:16px;border-top:2px dashed #64748b;vertical-align:middle}
+#sgTable{width:100%;border-collapse:collapse;font-size:11.5px;margin-top:4px}
+#sgTable th{text-align:right;color:#667;font-weight:700;padding:3px 5px;border-bottom:1px solid #d7e3ee}
+#sgTable th:first-child,#sgTable td:first-child{text-align:left}
+#sgTable td{text-align:right;padding:3px 5px;border-bottom:1px solid #eef2f6;font-variant-numeric:tabular-nums}
+.sg-band{display:inline-block;font:800 8.5px/1 system-ui,sans-serif;color:#fff;padding:1px 4px;border-radius:7px;margin-right:2px}
+.sg-band.b0{background:#94a3b8}.sg-band.b1{background:#f59e0b}.sg-band.b2{background:#ef6c00}.sg-band.b3{background:#bd0026}
+.sg-note{font-size:10px;color:#5a7a75;font-style:italic;margin-top:4px}
 /* circle popup (rebuilt drill-down) */
 #sdPop{position:fixed;z-index:2700;max-width:320px;background:#fff;border:1px solid #c9d2dd;border-radius:10px;
   box-shadow:0 14px 36px rgba(0,0,0,.5);padding:11px 13px;font-size:12px;color:#13203c}
@@ -935,6 +955,97 @@ window.tempestMonthsSince = function(dateStr){
   if(now.getUTCDate() < d.getUTCDate()) m -= 1;
   return m;
 };
+// ── SOLVE-GEOMETRY LAYER (Stage 1): fresh circles over the dialed field, cell-based (floor-invariant)
+//    cost, audience-priced range. ADDITIVE + clearly-labeled beside the frozen base spend-dial — the
+//    operator sees BOTH worlds (frozen base ad-cluster vs live solve) and the readout says which it
+//    prices. Talks to /api/solve-geometry (KCCSolveEngine warm; cold solvegeom fallback). ──
+const SOLVE_API = (CFG.solveApi || "").replace(/\\/$/, "") ||
+                  (API ? API.replace(/\\/api\\/storm$/, "/api/solve-geometry") : "");
+let SG_STATE = { sol: null }, SG_GRP = null, SG_BASEGRP = null;
+const SG_BANDS = [["1.125-1.5", "b0"], ["1.5-1.8", "b1"], ["1.8-2.0", "b2"], ["2.0+", "b3"]];
+async function sgApi(body){
+  if(!SOLVE_API) throw new Error("no solve-geometry endpoint configured");
+  const r = await fetch(SOLVE_API, { method:"POST", headers:{ "Content-Type":"application/json" },
+    body: JSON.stringify(body) });
+  if(!r.ok) throw new Error("HTTP " + r.status);
+  return await r.json();
+}
+function setupSolveLayer(D){
+  if(document.getElementById("solvePanel")) return;
+  const host = document.getElementById("spendPanel"); if(!host) return;   // sits BELOW the base dial
+  const p = document.createElement("div"); p.id = "solvePanel";
+  p.innerHTML =
+    '<h2>Solve Geometry <span class="pk">LIVE DIAL</span></h2>'
+    + '<div class="sg-sub">Fresh circles tiling the dialed \\u2265floor field \\u2014 <b>this readout prices the SOLVE layer</b>. The frozen base ad-cluster is a separate, toggleable reference.</div>'
+    + '<div class="sd-actions"><button id="sgSolve">Dial Solve</button></div>'
+    + '<div class="sg-work" id="sgWork" style="display:none"></div>'
+    + '<div class="sg-range" id="sgRange" style="display:none"></div>'
+    + '<label class="sg-toggle"><input type="checkbox" id="sgBaseToggle"> <span class="ghost"></span> Show frozen base cluster (dashed grey)</label>'
+    + '<div class="sg-note">Damage / spend / jobs are pinned to the cores; dialing DOWN widens audience &amp; worst-case only.</div>'
+    + '<table id="sgTable"><thead><tr><th>ring</th><th>audience</th><th>damaged</th><th>bands (% cells)</th><th>search $</th></tr></thead><tbody></tbody></table>';
+  host.parentNode.insertBefore(p, host.nextSibling);
+  document.getElementById("sgSolve").onclick = sgSolve;
+  document.getElementById("sgBaseToggle").onchange = e => sgDrawBase(e.target.checked, D);
+}
+async function sgSolve(){
+  const w = document.getElementById("sgWork"); w.style.display = "block";
+  w.textContent = "Solving\\u2026 (warming the parcel index if cold \\u2014 first solve of a date is slow)";
+  try {
+    const sol = await sgApi({ date:getDate(), hail_floor:+document.getElementById("sdHail").value,
+      spend_cap:+document.getElementById("sdCapR").value });
+    SG_STATE.sol = sol; sgRender(sol);
+  } catch(e){ w.textContent = "Solve layer unavailable \\u2014 " + e.message; }
+}
+function sgRender(sol){
+  const p = sol.push_cost || {};
+  const w = document.getElementById("sgWork");
+  w.innerHTML = "floor " + (+sol.floor).toFixed(3) + "\\u2033: <b>" + sol.n_circles + "</b> circles \\u00b7 audience <b>"
+    + (sol.audience_parcels||0).toLocaleString() + "</b> parcels \\u00b7 damaged <b>" + (sol.damaged||0).toLocaleString()
+    + "</b> \\u00b7 search <b>$" + Math.round(sol.recommended_spend||0).toLocaleString() + "</b> (worst case $"
+    + Math.round(sol.search_cost_ceiling||0).toLocaleString() + ") \\u00b7 push est $" + Math.round(p.mail||0).toLocaleString() + " mail"
+    + (sol.index_warming ? ' <span class="warm">\\u00b7 index warming (cold path)</span>' : "");
+  w.style.display = "block";
+  const rng = document.getElementById("sgRange"); rng.style.display = "flex";
+  rng.innerHTML = '<span class="k">recommended <b>$' + Math.round(sol.recommended_spend||0).toLocaleString() + '</b></span>'
+    + '<span class="k">worst case <b>$' + Math.round(sol.search_cost_ceiling||0).toLocaleString() + '</b></span>'
+    + '<span class="k">est jobs <b>' + (sol.est_jobs||0) + '</b></span>'
+    + '<span class="k">push mail $' + Math.round(p.mail||0).toLocaleString() + ' \\u00b7 skip $' + Math.round(p.skiptrace||0).toLocaleString()
+    + ' \\u00b7 sms $' + Math.round(p.sms||0).toLocaleString() + '</span>';
+  sgRows(sol); sgDraw(sol);
+}
+function sgRows(sol){
+  const tb = document.querySelector("#sgTable tbody"); if(!tb) return; tb.innerHTML = "";
+  (sol.circles||[]).slice().sort((a,b) => (b.damaged||0) - (a.damaged||0)).slice(0, 60).forEach(c => {
+    let chips = ""; SG_BANDS.forEach(([k,cls]) => { const r = (c.band_ratio && c.band_ratio[k]) || 0;
+      if(r > 0) chips += '<span class="sg-band ' + cls + '" title="' + k + '\\u2033 hail">' + Math.round(r*100) + '</span>'; });
+    const tr = document.createElement("tr");
+    tr.innerHTML = "<td>#" + c.idx + "</td><td>" + (c.parcel_count||0).toLocaleString() + "</td><td>"
+      + (c.damaged||0).toLocaleString() + "</td><td style='text-align:left'>" + (chips||"\\u2014")
+      + "</td><td>$" + Math.round(c.search_cost_floor||0).toLocaleString() + "</td>";
+    tb.appendChild(tr);
+  });
+}
+function sgDraw(sol){
+  if(!TMAP) return;
+  if(!TMAP.getPane("solveCirc")){ const pn = TMAP.createPane("solveCirc"); pn.style.zIndex = 656; }
+  if(SG_GRP){ TMAP.removeLayer(SG_GRP); SG_GRP = null; }
+  const layers = [];
+  (sol.circles||[]).forEach(c => { const funded = (c.damaged||0) > 0;   // funded core = solid teal; presence = hollow
+    layers.push(L.circle([c.center_lat, c.center_lng], { pane:"solveCirc", radius:(c.radius_mi||1)*1609.344,
+      color:"#0d9488", weight: funded?2.5:1.5, opacity:.95, dashArray: funded?null:"5,4",
+      fill: funded, fillColor:"#14b8a6", fillOpacity: funded?.13:0 })); });
+  SG_GRP = L.layerGroup(layers).addTo(TMAP);
+}
+function sgDrawBase(on, D){                     // frozen base cluster as a dashed-grey ghost overlay
+  if(!TMAP) return;
+  if(!TMAP.getPane("baseGhost")){ const pn = TMAP.createPane("baseGhost"); pn.style.zIndex = 651; }
+  if(SG_BASEGRP){ TMAP.removeLayer(SG_BASEGRP); SG_BASEGRP = null; }
+  if(!on) return;
+  const layers = [];
+  ((D && D.circles) || []).forEach(c => layers.push(L.circle([c.center_lat, c.center_lng],
+    { pane:"baseGhost", radius:(c.radius_mi||1)*1609.344, color:"#64748b", weight:1, opacity:.7, dashArray:"3,4", fill:false })));
+  SG_BASEGRP = L.layerGroup(layers).addTo(TMAP);
+}
 function setupSpendDial(D){
   if(document.getElementById("spendPanel")) return;
   // circle_id -> coords for the Solve map SNAP (hail is the only solvable peril). circle_id is
@@ -2416,6 +2527,7 @@ async function boot(){
   addPull();                // item 10: on-demand PULL (150mi capture -> secured write endpoint)
   buildOperatorPanel(D, forecast);
   setupSpendDial(D);     // spend-dial panel (grays out when the date has no qualified storm / no ad targets)
+  setupSolveLayer(D);    // Stage-1 solve-geometry layer (live dial) — additive, distinct teal, base toggle
   setupFloatPanels();    // desktop: Layers/Storm Review/Spend Dial/Active perils/LIVE -> draggable floating boxes (#tbar2); all closed on load
   setupMobile();
   setupPush();           // PWA push subscribe + re-subscribe-on-open (best-effort; SMS is the backbone)
