@@ -994,14 +994,18 @@ async function sgSolveFresh(){   // hail floor / date -> FRESH geometry from the
     if(v){ v.textContent="Solve unavailable \\u2014 "+e.message; v.className="sd-verdict warn"; } }
 }
 function sgSelected(sol){ return (sol.circles||[]).filter(c => !SG_OFF.has(c.idx)); }
-function sgApplyDials(){          // spend cap + target jobs -> deselect rings over the limit (+ keep manual)
+function sgApplyDials(){          // value floor + spend cap + target jobs -> deselect rings (+ keep manual)
   const sol=SG_STATE.sol; if(!sol) return;
   SG_OFF = new Set(SG_MANUAL);
+  const vf=+document.getElementById("sdFloor").value;
   const cap=+document.getElementById("sdCapR").value, tj=(+document.getElementById("sdTargetJobs").value||null);
   const net=(sol.net_close||0.255);
+  // VALUE FLOOR: grey a ring whose KNOWN avg home value is below the floor. Value-blind rings
+  // (avg_home_value == null, a value-blind county) are EXEMPT — value-unknown, not value-low.
+  (sol.circles||[]).forEach(c=>{ if(vf>0 && c.avg_home_value!=null && c.avg_home_value<vf) SG_OFF.add(c.idx); });
   let cum=0, jobs=0;
   (sol.circles||[]).slice().sort((a,b)=>(b.damaged||0)-(a.damaged||0)).forEach(c=>{
-    if(SG_MANUAL.has(c.idx)) return;
+    if(SG_OFF.has(c.idx)) return;                          // already off (manual or value floor)
     const cost=c.search_cost_floor||0;
     if(((cum+cost)>cap+1e-6 && cost>0) || (tj!=null && jobs>=tj)){ SG_OFF.add(c.idx); }
     else { cum+=cost; jobs+=Math.round(Math.round((c.damaged||0)*0.02)*net); }
@@ -1037,9 +1041,10 @@ function sgTable(sol){
     let chips=""; SG_BANDS.forEach(([k,cls])=>{ const r=(c.band_ratio&&c.band_ratio[k])||0;
       if(r>0) chips+='<span class="sg-band '+cls+'" title="'+k+'\\u2033">'+Math.round(r*100)+'</span>'; });
     const off=SG_OFF.has(c.idx), tr=document.createElement("tr"); tr.className=off?"dropped":""; tr.dataset.idx=c.idx;
+    const val=(c.avg_home_value!=null)?("$"+Math.round(c.avg_home_value/1000)+"k"):"\\u2014";   // — = value-blind (floor-exempt)
     tr.innerHTML="<td>#"+c.idx+"</td><td>"+(c.parcel_count||0).toLocaleString()+"</td><td>"+(c.damaged||0).toLocaleString()
       +"</td><td style='text-align:left'>"+(chips||"\\u2014")+"</td><td>$"+Math.round(c.search_cost_floor||0).toLocaleString()
-      +"\\u2013$"+Math.round(c.search_cost_ceiling||0).toLocaleString()+"</td><td>$"+Math.round((c.parcel_count||0)*0.75).toLocaleString()
+      +"\\u2013$"+Math.round(c.search_cost_ceiling||0).toLocaleString()+"</td><td>"+val+"</td><td>$"+Math.round((c.parcel_count||0)*0.75).toLocaleString()
       +"</td><td>70%</td>";
     tr.onclick=()=>{ if(SG_MANUAL.has(c.idx)) SG_MANUAL.delete(c.idx); else SG_MANUAL.add(c.idx); sgApplyDials(); sgRenderAll(); };
     tb.appendChild(tr);
@@ -1143,8 +1148,9 @@ function setupSpendDial(D){
     + '<label class="sg-toggle"><input type="checkbox" id="sgBaseToggle"> <span class="ghost"></span> Show frozen base cluster (dashed grey ghost)</label>'
     + '<table class="sd-table" id="sdTable"><thead><tr><th>ring</th><th>aud</th><th>dmg</th><th>bands</th>'
     + '<th title="min = core cost-to-win \\u00b7 max = full-audience ceiling (both modeled)">search $ min\\u2013max</th>'
+    + '<th title="avg home value \\u00b7 \\u2014 = value-blind county (floor-exempt)">val</th>'
     + '<th>push</th><th title="modeled target impression share">IS*</th></tr></thead><tbody></tbody></table>'
-    + '<div class="sd-modelnote" style="font-size:10px;color:#8a6d3b;margin:3px 0 0;font-style:italic">One panel, one loop: any dial re-prices THIS table. search min = damage core cost-to-win; max = whole-audience worst case (both modeled CTR \\u00d7 real county CPC). Damage/min pinned to cores; audience/max grow as you widen. Value floor needs per-ring value (Stage 2).</div>';
+    + '<div class="sd-modelnote" style="font-size:10px;color:#8a6d3b;margin:3px 0 0;font-style:italic">One panel, one loop: any dial re-prices THIS table. search min = damage core cost-to-win; max = whole-audience worst case (both modeled CTR \\u00d7 real county CPC). Damage/min pinned to cores; audience/max grow as you widen. Value floor greys rings below the $ threshold; value-blind counties (val \\u2014) are floor-exempt.</div>';
   host.appendChild(p);
   // NO QUALIFIED STORM -> gray the dial: it can only fund ad targets, and there are none
   // for any peril. SAME condition as Storm Review's "No qualifying storm" verdict (no circles
@@ -1171,8 +1177,7 @@ function setupSpendDial(D){
   hail.oninput  = () => { document.getElementById("sdHailV").textContent = (+hail.value).toFixed(2) + "\\u2033"; };
   hail.onchange = () => sgSolveFresh();                       // floor changes the FIELD -> fresh tiling
   const floor = document.getElementById("sdFloor"), capr = document.getElementById("sdCapR");
-  floor.oninput = () => { document.getElementById("sdFloorV").textContent = "$" + (+floor.value).toLocaleString();
-    const v=document.getElementById("sdVerdict"); if(v && SG_STATE.sol){ v.textContent="Value floor needs per-ring value (Stage 2) \\u2014 use spend cap / target jobs / click a ring to trim."; v.className="sd-verdict warn"; } };
+  floor.oninput = () => { document.getElementById("sdFloorV").textContent = "$" + (+floor.value).toLocaleString(); _recompute(); };
   capr.oninput  = () => { document.getElementById("sdCapV").textContent = "$" + (+capr.value).toLocaleString(); _recompute(); };
   document.getElementById("sdTargetJobs").oninput = _recompute;
   document.getElementById("sdSolve").onclick = () => sgSolveFresh();
