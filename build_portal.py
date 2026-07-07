@@ -478,6 +478,11 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .sg-band{display:inline-block;font:800 8.5px/1 system-ui,sans-serif;color:#fff;padding:1px 4px;border-radius:7px;margin-right:2px}
 .sg-band.b0{background:#94a3b8}.sg-band.b1{background:#f59e0b}.sg-band.b2{background:#ef6c00}.sg-band.b3{background:#bd0026}
 .sg-note{font-size:10px;color:#5a7a75;font-style:italic;margin-top:4px}
+.sg-snaps{font-size:10.5px;color:#445;margin:7px 0 2px;line-height:1.9}
+.sg-snap{font:700 10px/1 system-ui,sans-serif;border:1px solid #cbd5e1;background:#f8fafc;color:#334;border-radius:6px;padding:3px 6px;margin:0 3px 0 0;cursor:pointer}
+.sg-snap.cur{border-color:#0d9488;background:#effcf9;color:#0f766e}
+.sg-snap.cmp{border-color:#f59e0b;background:#fff7ed;color:#b45309}
+.sg-compare{font-size:11px;color:#334;background:#f8fafc;border:1px solid #e3e8f0;border-radius:6px;padding:6px 8px;margin:4px 0}
 /* circle popup (rebuilt drill-down) */
 #sdPop{position:fixed;z-index:2700;max-width:320px;background:#fff;border:1px solid #c9d2dd;border-radius:10px;
   box-shadow:0 14px 36px rgba(0,0,0,.5);padding:11px 13px;font-size:12px;color:#13203c}
@@ -970,60 +975,122 @@ async function sgApi(body){
   if(!r.ok) throw new Error("HTTP " + r.status);
   return await r.json();
 }
-function setupSolveLayer(D){
-  if(document.getElementById("solvePanel")) return;
-  const host = document.getElementById("spendPanel"); if(!host) return;   // sits BELOW the base dial
-  const p = document.createElement("div"); p.id = "solvePanel";
-  p.innerHTML =
-    '<h2>Solve Geometry <span class="pk">LIVE DIAL</span></h2>'
-    + '<div class="sg-sub">Fresh circles tiling the dialed \\u2265floor field \\u2014 <b>this readout prices the SOLVE layer</b>. The frozen base ad-cluster is a separate, toggleable reference.</div>'
-    + '<div class="sd-actions"><button id="sgSolve">Dial Solve</button></div>'
-    + '<div class="sg-work" id="sgWork" style="display:none"></div>'
-    + '<div class="sg-range" id="sgRange" style="display:none"></div>'
-    + '<label class="sg-toggle"><input type="checkbox" id="sgBaseToggle"> <span class="ghost"></span> Show frozen base cluster (dashed grey)</label>'
-    + '<div class="sg-note">Damage / spend / jobs are pinned to the cores; dialing DOWN widens audience &amp; worst-case only.</div>'
-    + '<table id="sgTable"><thead><tr><th>ring</th><th>audience</th><th>damaged</th><th>bands (% cells)</th><th>search $</th></tr></thead><tbody></tbody></table>';
-  host.parentNode.insertBefore(p, host.nextSibling);
-  document.getElementById("sgSolve").onclick = sgSolve;
-  document.getElementById("sgBaseToggle").onchange = e => sgDrawBase(e.target.checked, D);
-}
-async function sgSolve(){
-  const w = document.getElementById("sgWork"); w.style.display = "block";
-  w.textContent = "Solving\\u2026 (warming the parcel index if cold \\u2014 first solve of a date is slow)";
+// ── MERGED SOLVE-LAYER engine: ONE panel, one loop. Any dial re-prices the sdTable; solves persist as
+//    snapshots (Stage-3 compare precondition). SG_OFF = deselected ring idxs (manual + cap/jobs). ──
+let SG_OFF = new Set();          // deselected ring idx (greyed): manual clicks + cap/jobs over-limit
+let SG_MANUAL = new Set();       // rings the operator explicitly clicked off (survive cap/jobs recompute)
+let SG_SNAPS = [];               // persistent session solve snapshots (>=5 kept) — Stage-3 rides on these
+let SG_CMP = null, SG_CMPGRP = null;
+async function sgSolveFresh(){   // hail floor / date -> FRESH geometry from the engine (the only re-solve)
+  const w = document.getElementById("sgWork"), v = document.getElementById("sdVerdict");
+  if(w){ w.style.display="block"; w.innerHTML="Solving\\u2026 <span class='warm'>(warming index if cold \\u2014 first solve of a date is slow)</span>"; }
+  if(v){ v.textContent="Solving\\u2026"; v.className="sd-verdict"; }
   try {
     const sol = await sgApi({ date:getDate(), hail_floor:+document.getElementById("sdHail").value,
       spend_cap:+document.getElementById("sdCapR").value });
-    SG_STATE.sol = sol; sgRender(sol);
-  } catch(e){ w.textContent = "Solve layer unavailable \\u2014 " + e.message; }
+    SG_STATE.sol = sol; SG_MANUAL = new Set();
+    sgApplyDials(); sgSnapPush(sol); sgRenderAll();
+  } catch(e){ if(w) w.textContent="Solve unavailable \\u2014 "+e.message;
+    if(v){ v.textContent="Solve unavailable \\u2014 "+e.message; v.className="sd-verdict warn"; } }
 }
-function sgRender(sol){
-  const p = sol.push_cost || {};
-  const w = document.getElementById("sgWork");
-  w.innerHTML = "floor " + (+sol.floor).toFixed(3) + "\\u2033: <b>" + sol.n_circles + "</b> circles \\u00b7 audience <b>"
-    + (sol.audience_parcels||0).toLocaleString() + "</b> parcels \\u00b7 damaged <b>" + (sol.damaged||0).toLocaleString()
-    + "</b> \\u00b7 search <b>$" + Math.round(sol.recommended_spend||0).toLocaleString() + "</b> (worst case $"
-    + Math.round(sol.search_cost_ceiling||0).toLocaleString() + ") \\u00b7 push est $" + Math.round(p.mail||0).toLocaleString() + " mail"
-    + (sol.index_warming ? ' <span class="warm">\\u00b7 index warming (cold path)</span>' : "");
-  w.style.display = "block";
-  const rng = document.getElementById("sgRange"); rng.style.display = "flex";
-  rng.innerHTML = '<span class="k">recommended <b>$' + Math.round(sol.recommended_spend||0).toLocaleString() + '</b></span>'
-    + '<span class="k">worst case <b>$' + Math.round(sol.search_cost_ceiling||0).toLocaleString() + '</b></span>'
-    + '<span class="k">est jobs <b>' + (sol.est_jobs||0) + '</b></span>'
-    + '<span class="k">push mail $' + Math.round(p.mail||0).toLocaleString() + ' \\u00b7 skip $' + Math.round(p.skiptrace||0).toLocaleString()
-    + ' \\u00b7 sms $' + Math.round(p.sms||0).toLocaleString() + '</span>';
-  sgRows(sol); sgDraw(sol);
+function sgSelected(sol){ return (sol.circles||[]).filter(c => !SG_OFF.has(c.idx)); }
+function sgApplyDials(){          // spend cap + target jobs -> deselect rings over the limit (+ keep manual)
+  const sol=SG_STATE.sol; if(!sol) return;
+  SG_OFF = new Set(SG_MANUAL);
+  const cap=+document.getElementById("sdCapR").value, tj=(+document.getElementById("sdTargetJobs").value||null);
+  const net=(sol.net_close||0.255);
+  let cum=0, jobs=0;
+  (sol.circles||[]).slice().sort((a,b)=>(b.damaged||0)-(a.damaged||0)).forEach(c=>{
+    if(SG_MANUAL.has(c.idx)) return;
+    const cost=c.search_cost_floor||0;
+    if(((cum+cost)>cap+1e-6 && cost>0) || (tj!=null && jobs>=tj)){ SG_OFF.add(c.idx); }
+    else { cum+=cost; jobs+=Math.round(Math.round((c.damaged||0)*0.02)*net); }
+  });
 }
-function sgRows(sol){
-  const tb = document.querySelector("#sgTable tbody"); if(!tb) return; tb.innerHTML = "";
-  (sol.circles||[]).slice().sort((a,b) => (b.damaged||0) - (a.damaged||0)).slice(0, 60).forEach(c => {
-    let chips = ""; SG_BANDS.forEach(([k,cls]) => { const r = (c.band_ratio && c.band_ratio[k]) || 0;
-      if(r > 0) chips += '<span class="sg-band ' + cls + '" title="' + k + '\\u2033 hail">' + Math.round(r*100) + '</span>'; });
-    const tr = document.createElement("tr");
-    tr.innerHTML = "<td>#" + c.idx + "</td><td>" + (c.parcel_count||0).toLocaleString() + "</td><td>"
-      + (c.damaged||0).toLocaleString() + "</td><td style='text-align:left'>" + (chips||"\\u2014")
-      + "</td><td>$" + Math.round(c.search_cost_floor||0).toLocaleString() + "</td>";
+function sgSums(sol){
+  const sel=sgSelected(sol);
+  return { n:sel.length, aud:sel.reduce((s,c)=>s+(c.parcel_count||0),0), dmg:sel.reduce((s,c)=>s+(c.damaged||0),0),
+    smin:sel.reduce((s,c)=>s+(c.search_cost_floor||0),0), smax:sel.reduce((s,c)=>s+(c.search_cost_ceiling||0),0),
+    push:sel.reduce((s,c)=>s+(c.parcel_count||0)*0.75,0),
+    jobs:Math.round(Math.round(sel.reduce((s,c)=>s+(c.damaged||0),0)*0.02)*(sol.net_close||0.255)) };
+}
+function sgRenderAll(){
+  const sol=SG_STATE.sol; if(!sol) return;
+  sgHeadline(sol); sgTable(sol); sgDrawSel(sol); sgSnapBar(); sgCompare();
+  const v=document.getElementById("sdVerdict"), s=sgSums(sol);
+  if(v){ v.textContent = s.dmg>0 ? ("Solved \\u00b7 "+s.n+" rings \\u00b7 $"+Math.round(s.smin).toLocaleString()+"\\u2013$"+Math.round(s.smax).toLocaleString())
+      : "Presence only \\u2014 no damage core; recommended $0";
+    v.className="sd-verdict "+(s.dmg>0?"ok":""); }
+  document.getElementById("sdSend").disabled=false;
+}
+function sgHeadline(sol){
+  const w=document.getElementById("sgWork"); if(!w) return; const s=sgSums(sol);
+  w.innerHTML="floor <b>"+(+sol.floor).toFixed(3)+"\\u2033</b> \\u00b7 <b>"+s.n+"</b> rings \\u00b7 audience <b>"+s.aud.toLocaleString()
+    +"</b> \\u00b7 damaged <b>"+s.dmg.toLocaleString()+"</b> \\u00b7 search <b>$"+Math.round(s.smin).toLocaleString()+"\\u2013$"+Math.round(s.smax).toLocaleString()
+    +"</b> \\u00b7 push <b>$"+Math.round(s.push).toLocaleString()+"</b> mail \\u00b7 ~"+s.jobs+" jobs"
+    +(sol.index_warming?' <span class="warm">\\u00b7 index warming (cold path)</span>':"");
+  w.style.display="block";
+}
+function sgTable(sol){
+  const tb=document.querySelector("#sdTable tbody"); if(!tb) return; tb.innerHTML="";
+  (sol.circles||[]).slice().sort((a,b)=>(b.damaged||0)-(a.damaged||0)).slice(0,80).forEach(c=>{
+    let chips=""; SG_BANDS.forEach(([k,cls])=>{ const r=(c.band_ratio&&c.band_ratio[k])||0;
+      if(r>0) chips+='<span class="sg-band '+cls+'" title="'+k+'\\u2033">'+Math.round(r*100)+'</span>'; });
+    const off=SG_OFF.has(c.idx), tr=document.createElement("tr"); tr.className=off?"dropped":""; tr.dataset.idx=c.idx;
+    tr.innerHTML="<td>#"+c.idx+"</td><td>"+(c.parcel_count||0).toLocaleString()+"</td><td>"+(c.damaged||0).toLocaleString()
+      +"</td><td style='text-align:left'>"+(chips||"\\u2014")+"</td><td>$"+Math.round(c.search_cost_floor||0).toLocaleString()
+      +"\\u2013$"+Math.round(c.search_cost_ceiling||0).toLocaleString()+"</td><td>$"+Math.round((c.parcel_count||0)*0.75).toLocaleString()
+      +"</td><td>70%</td>";
+    tr.onclick=()=>{ if(SG_MANUAL.has(c.idx)) SG_MANUAL.delete(c.idx); else SG_MANUAL.add(c.idx); sgApplyDials(); sgRenderAll(); };
     tb.appendChild(tr);
   });
+}
+function sgDrawSel(sol){          // teal solve circles; greyed = deselected (cap/jobs/manual)
+  if(!TMAP) return;
+  if(!TMAP.getPane("solveCirc")){ const pn=TMAP.createPane("solveCirc"); pn.style.zIndex=656; }
+  if(SG_GRP){ TMAP.removeLayer(SG_GRP); SG_GRP=null; }
+  const layers=[];
+  (sol.circles||[]).forEach(c=>{ const funded=(c.damaged||0)>0, off=SG_OFF.has(c.idx);
+    layers.push(L.circle([c.center_lat,c.center_lng],{pane:"solveCirc",radius:(c.radius_mi||1)*1609.344,
+      color: off?"#94a3b8":"#0d9488", weight:(funded&&!off)?2.5:1.5, opacity: off?.5:.95,
+      dashArray:(funded&&!off)?null:"5,4", fill:(funded&&!off), fillColor:"#14b8a6", fillOpacity:(funded&&!off)?.13:0 })); });
+  SG_GRP=L.layerGroup(layers).addTo(TMAP);
+}
+function sgSnapPush(sol){         // persist a snapshot: floor + dial state + timestamp
+  const dials="vf $"+((+document.getElementById("sdFloor").value/1000)|0)+"K \\u00b7 cap $"+((+document.getElementById("sdCapR").value/1000)|0)+"K";
+  const t=new Date(), hh=String(t.getHours()).padStart(2,"0")+":"+String(t.getMinutes()).padStart(2,"0");
+  SG_SNAPS.unshift({ label:(+sol.floor).toFixed(2)+"\\u2033 \\u00b7 "+dials+" \\u00b7 "+hh, sol, sums:sgSums(sol) });
+  if(SG_SNAPS.length>6) SG_SNAPS.pop(); SG_CMP=null;
+}
+function sgSnapBar(){
+  const host=document.getElementById("sgSnaps"); if(!host) return;
+  if(!SG_SNAPS.length){ host.style.display="none"; return; }
+  host.style.display="block";
+  host.innerHTML="<b>solves:</b> "+SG_SNAPS.map((s,i)=>'<button class="sg-snap'+(i===0?" cur":"")+(SG_CMP===i?" cmp":"")+'" data-snap="'+i+'">'+s.label+'</button>').join(" ");
+  host.querySelectorAll("button[data-snap]").forEach(b=>b.onclick=()=>{ const i=+b.dataset.snap;
+    SG_CMP=(i===0)?null:((SG_CMP===i)?null:i);
+    if(SG_CMP!=null){ sgDrawCompare(SG_SNAPS[SG_CMP].sol); } else if(SG_CMPGRP){ TMAP.removeLayer(SG_CMPGRP); SG_CMPGRP=null; }
+    sgSnapBar(); sgCompare(); });
+}
+function sgCompare(){             // current vs selected snapshot: Δ circles/audience/damaged/search/push
+  const host=document.getElementById("sgCompare"); if(!host) return;
+  if(SG_CMP==null || !SG_SNAPS[SG_CMP] || !SG_SNAPS[0]){ host.style.display="none"; return; }
+  const cur=SG_SNAPS[0].sums, cmp=SG_SNAPS[SG_CMP].sums;
+  const d=(a,b)=>{ const x=Math.round(a-b); return (x>=0?"+":"")+x.toLocaleString(); };
+  host.style.display="block";
+  host.innerHTML="<b>current vs "+SG_SNAPS[SG_CMP].label+":</b> \\u0394circles "+d(cur.n,cmp.n)+" \\u00b7 \\u0394audience "+d(cur.aud,cmp.aud)
+    +" \\u00b7 <b>\\u0394damaged "+d(cur.dmg,cmp.dmg)+"</b>"+(cur.dmg===cmp.dmg?' <span style="color:#16a34a">(pinned \\u2713)</span>':"")
+    +" \\u00b7 \\u0394search $"+d(cur.smin,cmp.smin)+"/$"+d(cur.smax,cmp.smax)+" \\u00b7 \\u0394push $"+d(cur.push,cmp.push);
+}
+function sgDrawCompare(sol){      // compared snapshot in a SECOND style (amber dashed); current stays teal
+  if(!TMAP) return;
+  if(!TMAP.getPane("solveCmp")){ const pn=TMAP.createPane("solveCmp"); pn.style.zIndex=655; }
+  if(SG_CMPGRP){ TMAP.removeLayer(SG_CMPGRP); SG_CMPGRP=null; }
+  const layers=[];
+  (sol.circles||[]).forEach(c=>{ if((c.damaged||0)<=0) return;
+    layers.push(L.circle([c.center_lat,c.center_lng],{pane:"solveCmp",radius:(c.radius_mi||1)*1609.344,
+      color:"#f59e0b",weight:2,opacity:.9,dashArray:"6,4",fill:false})); });
+  SG_CMPGRP=L.layerGroup(layers).addTo(TMAP);
 }
 function sgDraw(sol){
   if(!TMAP) return;
@@ -1067,14 +1134,17 @@ function setupSpendDial(D){
     + '<div class="sd-floornote" style="font-size:10px;color:#778;margin:-2px 0 3px;font-style:italic">Audience width only \\u2014 funding comes from the damage cores (\\u22658.5 intensity or \\u22652.0\\u2033 size). Dialing below 1.80\\u2033 widens the ad field around funded damage; it never changes damaged homes or spend.</div>'
     + '<div class="sd-row"><label>Value floor</label><input id="sdFloor" type="range" min="0" max="600000" step="25000" value="0"><span class="val" id="sdFloorV">$0</span></div>'
     + '<div class="sd-row"><label>Spend cap</label><input id="sdCapR" type="range" min="1000" max="100000" step="1000" value="30000"><span class="val" id="sdCapV">$30,000</span></div>'
-    + '<div class="sd-actions"><button id="sdSolve">Solve</button><button id="sdSend" disabled>Send &rarr;</button></div>'
-    + '<div class="sd-verdict" id="sdVerdict">Set the dials and hit Solve.</div>'
-    + '<div class="sd-row" style="margin:6px 0 1px"><label>Sort</label><div class="sd-seg" id="sdSort">'
-    + '<button class="on" data-sort="value">Value</button><button data-sort="cheap">Cheapest</button>'
-    + '<button data-sort="vpd">Value/$</button></div></div>'
-    + '<div class="sd-sortnote" style="font-size:10.5px;color:#778;margin:0 0 3px;font-style:italic">View order only \\u2014 funding stays value-ranked.</div>'
-    + '<table class="sd-table" id="sdTable"><thead><tr><th>rank</th><th>ring ID</th><th>avg val</th><th>cov</th><th>cost-to-win</th><th title="modeled — target impression share, pending real auction data">IS<sup>*</sup></th></tr></thead><tbody></tbody></table>'
-    + '<div class="sd-modelnote" style="font-size:10px;color:#8a6d3b;margin:3px 0 0;font-style:italic">cost-to-win = real county CPC \\u00d7 modeled CTR. <b>*IS % and $/job are modeled</b> (target-IS + funnel), pending real ad data.</div>';
+    + '<div class="sd-actions"><button id="sdSolve">Solve</button>'
+    + '<button id="sdSend" disabled title="Sends the BASE-geometry campaign (solve promotion = Stage 2)">Send base &rarr;</button></div>'
+    + '<div class="sd-verdict" id="sdVerdict">Move a dial and hit Solve \\u2014 the table below prices the live solve geometry.</div>'
+    + '<div class="sg-work" id="sgWork" style="display:none"></div>'          // headline strip = column sums
+    + '<div id="sgSnaps" class="sg-snaps" style="display:none"></div>'         // persistent solve snapshots
+    + '<div id="sgCompare" class="sg-compare" style="display:none"></div>'     // current vs selected snapshot Δ
+    + '<label class="sg-toggle"><input type="checkbox" id="sgBaseToggle"> <span class="ghost"></span> Show frozen base cluster (dashed grey ghost)</label>'
+    + '<table class="sd-table" id="sdTable"><thead><tr><th>ring</th><th>aud</th><th>dmg</th><th>bands</th>'
+    + '<th title="min = core cost-to-win \\u00b7 max = full-audience ceiling (both modeled)">search $ min\\u2013max</th>'
+    + '<th>push</th><th title="modeled target impression share">IS*</th></tr></thead><tbody></tbody></table>'
+    + '<div class="sd-modelnote" style="font-size:10px;color:#8a6d3b;margin:3px 0 0;font-style:italic">One panel, one loop: any dial re-prices THIS table. search min = damage core cost-to-win; max = whole-audience worst case (both modeled CTR \\u00d7 real county CPC). Damage/min pinned to cores; audience/max grow as you widen. Value floor needs per-ring value (Stage 2).</div>';
   host.appendChild(p);
   // NO QUALIFIED STORM -> gray the dial: it can only fund ad targets, and there are none
   // for any peril. SAME condition as Storm Review's "No qualifying storm" verdict (no circles
@@ -1094,16 +1164,21 @@ function setupSpendDial(D){
     p.insertBefore(w, p.querySelector(".sd-row.sd-peril"));
   }
   if(CFG.remainingAnnualCapacity != null) document.getElementById("sdCap").textContent = CFG.remainingAnnualCapacity + " jobs";
-  function invalidate(){ SD_STATE.solution = null; document.getElementById("sdSend").disabled = true;
-    document.getElementById("sdTable").classList.add("sd-stale"); }
+  // ── MERGED LOOP wiring: hail floor -> RE-SOLVE (fresh geometry); cap/target-jobs -> RECOMPUTE over the
+  //    current solve (no re-solve); value floor -> visibly states why it's inactive (per-ring value = Stage 2).
+  const _recompute = () => { if(SG_STATE.sol){ sgApplyDials(); sgRenderAll(); } };
   const hail = document.getElementById("sdHail");
-  hail.oninput = () => { document.getElementById("sdHailV").textContent = (+hail.value).toFixed(2) + "\\u2033"; invalidate(); };
+  hail.oninput  = () => { document.getElementById("sdHailV").textContent = (+hail.value).toFixed(2) + "\\u2033"; };
+  hail.onchange = () => sgSolveFresh();                       // floor changes the FIELD -> fresh tiling
   const floor = document.getElementById("sdFloor"), capr = document.getElementById("sdCapR");
-  floor.oninput = () => { document.getElementById("sdFloorV").textContent = "$" + (+floor.value).toLocaleString(); invalidate(); };
-  capr.oninput = () => { document.getElementById("sdCapV").textContent = "$" + (+capr.value).toLocaleString(); invalidate(); };
-  document.getElementById("sdTargetJobs").oninput = invalidate;
-  document.getElementById("sdSolve").onclick = sdSolve;
-  document.getElementById("sdSend").onclick = sdOpenApprove;
+  floor.oninput = () => { document.getElementById("sdFloorV").textContent = "$" + (+floor.value).toLocaleString();
+    const v=document.getElementById("sdVerdict"); if(v && SG_STATE.sol){ v.textContent="Value floor needs per-ring value (Stage 2) \\u2014 use spend cap / target jobs / click a ring to trim."; v.className="sd-verdict warn"; } };
+  capr.oninput  = () => { document.getElementById("sdCapV").textContent = "$" + (+capr.value).toLocaleString(); _recompute(); };
+  document.getElementById("sdTargetJobs").oninput = _recompute;
+  document.getElementById("sdSolve").onclick = () => sgSolveFresh();
+  document.getElementById("sdSend").onclick = sdOpenApprove;   // base-geometry campaign (Stage 2 promotes solves)
+  const bt = document.getElementById("sgBaseToggle");
+  if(bt) bt.onchange = e => sgDrawBase(e.target.checked, D);
 }
 async function sdSolve(){
   const sp = document.getElementById("spendPanel"); if(sp && sp.classList.contains("sd-nostorm")) return;   // grayed: nothing to fund
@@ -1244,16 +1319,26 @@ function sdPopup(cid){
   pop.querySelector(".sd-pop-x").onclick = () => pop.classList.add("hidden");
   pop.style.left = "50%"; pop.style.top = "22%"; pop.style.transform = "translateX(-50%)";
 }
-function sdOpenApprove(){
-  const sol = SD_STATE.solution; if(!sol || !sol.valid) return;
+async function sdOpenApprove(){
+  // Send is wired to BASE geometry (Stage 2 promotes the dialed solve). Fetch a fresh base solve for the
+  // modal numbers — independent of the solve-layer table shown in the panel.
   let mb = document.getElementById("sdModalBack");
   if(!mb){ mb = document.createElement("div"); mb.id = "sdModalBack";
     const m = document.createElement("div"); m.id = "sdModal"; mb.appendChild(m); document.body.appendChild(mb);
     mb.onclick = e => { if(e.target === mb) mb.classList.add("hidden"); }; }
   mb.classList.remove("hidden");
+  document.getElementById("sdModal").innerHTML = "<h2>Approve &amp; launch</h2><div class='sd-sub'>Solving base geometry\\u2026</div>";
+  let sol; try { sol = await sdApi("solve", sdReadDials()); } catch(e){
+    document.getElementById("sdModal").innerHTML = "<h2>Approve</h2><div class='sd-verdict warn'>Base solve failed \\u2014 " + e.message + "</div><div class='sd-mbtns'><button id='sdCancel'>Close</button></div>";
+    document.getElementById("sdCancel").onclick = () => mb.classList.add("hidden"); return; }
+  SD_STATE.solution = sol;
+  if(!sol || !sol.valid){
+    document.getElementById("sdModal").innerHTML = "<h2>Approve</h2><div class='sd-verdict warn'>" + (sol && sol.verdict ? sol.verdict : "No fundable base campaign for these dials.") + "</div><div class='sd-mbtns'><button id='sdCancel'>Close</button></div>";
+    document.getElementById("sdCancel").onclick = () => mb.classList.add("hidden"); return; }
   const room = (CFG.remainingAnnualCapacity != null) ? (CFG.remainingAnnualCapacity - sol.est_jobs) : null;
   document.getElementById("sdModal").innerHTML =
-    "<h2>Approve &amp; launch</h2><div class='sd-sub'>Single gate \\u00b7 " + getDate() + " \\u00b7 " + sol.area_setting + "</div>"
+    "<h2>Approve &amp; launch <span style='font-size:10px;font-weight:800;color:#fff;background:#64748b;padding:2px 6px;border-radius:9px;vertical-align:2px'>BASE GEOMETRY</span></h2>"
+    + "<div class='sd-sub'>Single gate \\u00b7 " + getDate() + " \\u00b7 " + sol.area_setting + " \\u00b7 solve promotion = Stage 2</div>"
     + "<div class='sd-line'><span>Spend</span><b>$" + Math.round(sol.recommended_spend).toLocaleString()
       + " / $" + Math.round(sol.spend_cap).toLocaleString() + " cap</b></div>"
     + "<div class='sd-line'><span>Rings funded</span><b>" + (sol.funded||[]).length + "</b></div>"
@@ -2527,7 +2612,6 @@ async function boot(){
   addPull();                // item 10: on-demand PULL (150mi capture -> secured write endpoint)
   buildOperatorPanel(D, forecast);
   setupSpendDial(D);     // spend-dial panel (grays out when the date has no qualified storm / no ad targets)
-  setupSolveLayer(D);    // Stage-1 solve-geometry layer (live dial) — additive, distinct teal, base toggle
   setupFloatPanels();    // desktop: Layers/Storm Review/Spend Dial/Active perils/LIVE -> draggable floating boxes (#tbar2); all closed on load
   setupMobile();
   setupPush();           // PWA push subscribe + re-subscribe-on-open (best-effort; SMS is the backbone)
