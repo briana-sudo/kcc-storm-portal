@@ -1015,7 +1015,6 @@ function sgSums(sol){
   const sel=sgSelected(sol);
   return { n:sel.length, aud:sel.reduce((s,c)=>s+(c.parcel_count||0),0), dmg:sel.reduce((s,c)=>s+(c.damaged||0),0),
     smin:sel.reduce((s,c)=>s+(c.search_cost_floor||0),0), smax:sel.reduce((s,c)=>s+(c.search_cost_ceiling||0),0),
-    push:sel.reduce((s,c)=>s+(c.parcel_count||0)*0.75,0),
     jobs:Math.round(Math.round(sel.reduce((s,c)=>s+(c.damaged||0),0)*0.02)*(sol.net_close||0.255)) };
 }
 function sgRenderAll(){
@@ -1031,7 +1030,7 @@ function sgHeadline(sol){
   const w=document.getElementById("sgWork"); if(!w) return; const s=sgSums(sol);
   w.innerHTML="floor <b>"+(+sol.floor).toFixed(3)+"\\u2033</b> \\u00b7 <b>"+s.n+"</b> rings \\u00b7 audience <b>"+s.aud.toLocaleString()
     +"</b> \\u00b7 damaged <b>"+s.dmg.toLocaleString()+"</b> \\u00b7 search <b>$"+Math.round(s.smin).toLocaleString()+"\\u2013$"+Math.round(s.smax).toLocaleString()
-    +"</b> \\u00b7 push <b>$"+Math.round(s.push).toLocaleString()+"</b> mail \\u00b7 ~"+s.jobs+" jobs"
+    +"</b> \\u00b7 <span title='Core jobs = search yield from the damage cores (\\u22658.5 intensity / \\u22652.0\\u2033). Insurance-approvable hail extends below core thresholds (1\\u2033, 6+ hits/square); band conversion is unmeasured until live-campaign learning. Treat core jobs as the floor.'>~<b>"+s.jobs+"</b> core jobs \\u00b7 <span class='warm'>band upside unmodeled (learning)</span></span>"
     +(sol.index_warming?' <span class="warm">\\u00b7 index warming (cold path)</span>':"");
   w.style.display="block";
 }
@@ -1044,8 +1043,7 @@ function sgTable(sol){
     const val=(c.avg_home_value!=null)?("$"+Math.round(c.avg_home_value/1000)+"k"):"\\u2014";   // — = value-blind (floor-exempt)
     tr.innerHTML="<td>#"+c.idx+"</td><td>"+(c.parcel_count||0).toLocaleString()+"</td><td>"+(c.damaged||0).toLocaleString()
       +"</td><td style='text-align:left'>"+(chips||"\\u2014")+"</td><td>$"+Math.round(c.search_cost_floor||0).toLocaleString()
-      +"\\u2013$"+Math.round(c.search_cost_ceiling||0).toLocaleString()+"</td><td>"+val+"</td><td>$"+Math.round((c.parcel_count||0)*0.75).toLocaleString()
-      +"</td><td>70%</td>";
+      +"\\u2013$"+Math.round(c.search_cost_ceiling||0).toLocaleString()+"</td><td>"+val+"</td><td>70%</td>";
     tr.onclick=()=>{ if(SG_MANUAL.has(c.idx)) SG_MANUAL.delete(c.idx); else SG_MANUAL.add(c.idx); sgApplyDials(); sgRenderAll(); };
     tb.appendChild(tr);
   });
@@ -1085,7 +1083,7 @@ function sgCompare(){             // current vs selected snapshot: Δ circles/au
   host.style.display="block";
   host.innerHTML="<b>current vs "+SG_SNAPS[SG_CMP].label+":</b> \\u0394circles "+d(cur.n,cmp.n)+" \\u00b7 \\u0394audience "+d(cur.aud,cmp.aud)
     +" \\u00b7 <b>\\u0394damaged "+d(cur.dmg,cmp.dmg)+"</b>"+(cur.dmg===cmp.dmg?' <span style="color:#16a34a">(pinned \\u2713)</span>':"")
-    +" \\u00b7 \\u0394search $"+d(cur.smin,cmp.smin)+"/$"+d(cur.smax,cmp.smax)+" \\u00b7 \\u0394push $"+d(cur.push,cmp.push);
+    +" \\u00b7 \\u0394search $"+d(cur.smin,cmp.smin)+"/$"+d(cur.smax,cmp.smax);
 }
 function sgDrawCompare(sol){      // compared snapshot in a SECOND style (amber dashed); current stays teal
   if(!TMAP) return;
@@ -1149,7 +1147,7 @@ function setupSpendDial(D){
     + '<table class="sd-table" id="sdTable"><thead><tr><th>ring</th><th>aud</th><th>dmg</th><th>bands</th>'
     + '<th title="min = core cost-to-win \\u00b7 max = full-audience ceiling (both modeled)">search $ min\\u2013max</th>'
     + '<th title="avg home value \\u00b7 \\u2014 = value-blind county (floor-exempt)">val</th>'
-    + '<th>push</th><th title="modeled target impression share">IS*</th></tr></thead><tbody></tbody></table>'
+    + '<th title="modeled target impression share">IS*</th></tr></thead><tbody></tbody></table>'
     + '<div class="sd-modelnote" style="font-size:10px;color:#8a6d3b;margin:3px 0 0;font-style:italic">One panel, one loop: any dial re-prices THIS table. search min = damage core cost-to-win; max = whole-audience worst case (both modeled CTR \\u00d7 real county CPC). Damage/min pinned to cores; audience/max grow as you widen. Value floor greys rings below the $ threshold; value-blind counties (val \\u2014) are floor-exempt.</div>';
   host.appendChild(p);
   // NO QUALIFIED STORM -> gray the dial: it can only fund ad targets, and there are none
