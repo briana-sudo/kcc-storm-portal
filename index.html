@@ -436,6 +436,12 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .swathrender .st-btns{display:flex;gap:4px}
 .swathrender button{border:1px solid #c7d2e0;background:#f3f6fb;color:#26344d;border-radius:6px;padding:2px 9px;font-size:11px;font-weight:700;cursor:pointer}
 .swathrender button.on{background:#2f6fe0;border-color:#2f6fe0;color:#fff}
+.swath-hover-tip{background:#0d1526;color:#eaf1ff;border:1px solid #2b3d5f;border-radius:6px;padding:5px 8px;font-size:11px;line-height:1.35;font-weight:600;box-shadow:0 2px 10px rgba(0,0,0,.4)}
+.swath-hover-tip b{color:#7fb2ff}
+.swath-hover-tip:before{border-top-color:#0d1526}
+.swathbadge{position:absolute;left:10px;bottom:26px;z-index:640;pointer-events:none;font:600 11px/1.3 system-ui,-apple-system,sans-serif;padding:5px 9px;border-radius:7px;box-shadow:0 2px 8px rgba(0,0,0,.35);letter-spacing:.02em}
+.swathbadge.subgate{background:#223247;color:#b9c8dd;border:1px solid #33465f}
+.swathbadge.gated{background:#3a1414;color:#ffd9cf;border:1px solid #7a2a20}
 .leaflet-image-layer.hailheat{image-rendering:auto}
 /* ── #6 RANKED-TARGETS badges (payout_score): additive label pane over the §3
    ad circles. P1 deep-red / P2 orange to echo the locked ring colors; floor-muted
@@ -1117,6 +1123,64 @@ let calView = null;    // {y,m} currently-viewed calendar month
 let TMAP = null;
 const _origLmap = L.map;
 L.map = function(){ const m = _origLmap.apply(this, arguments); TMAP = m; return m; };
+
+// ── LIVE-SWATH HOVER READOUT (Part C): hail size / scan-time-of-max / scan-persistence ──
+// The live 30-min watch writes 7-wide cells [lat,lng,size,intensity,dur,flag,maxTs]. Hover
+// hit-tests the underlying cell GRID at the cursor lat/lng, so it reads IDENTICALLY in both
+// render modes — Cells (per-cell rects) and Smooth (the imageOverlay raster is dumb). Gated to
+// 7-wide cells so it only lights up on the live provisional swath, not historical dates.
+let _HOVER = {idx:null, step:0.01, tip:null, wired:false};
+function _hoverKey(la, lo, st){ return (Math.round(la/st)*st).toFixed(3)+","+(Math.round(lo/st)*st).toFixed(3); }
+function _fmtScanTs(ts){
+  const m=/^(\d{4})(\d{2})(\d{2})-(\d{2})Z?$/.exec(String(ts||"")); if(!m) return String(ts||"\u2014");
+  try{ return new Intl.DateTimeFormat("en-US",{month:"numeric",day:"numeric",hour:"numeric",hour12:true,
+       timeZone:"America/Chicago"}).format(new Date(Date.UTC(+m[1],+m[2]-1,+m[3],+m[4]))); }catch(e){ return String(ts); }
+}
+function initSwathHover(cells){
+  const live = (cells && cells.length && cells[0].length>=7) ? cells : null;  // 7-wide == live provisional
+  _HOVER.idx = null;
+  if(live){
+    const lats=[...new Set(live.map(c=>+c[0]))].sort((a,b)=>a-b);
+    let st=0.01; for(let i=1;i<lats.length;i++){ const d=lats[i]-lats[i-1]; if(d>1e-6 && d<st) st=d; }
+    _HOVER.step = st||0.01;
+    const m=new Map(); for(const c of live) m.set(_hoverKey(+c[0],+c[1],_HOVER.step), c); _HOVER.idx=m;
+  }
+  if(!TMAP || _HOVER.wired) return;
+  _HOVER.wired=true;
+  _HOVER.tip=L.tooltip({sticky:true, direction:"top", opacity:0.95, className:"swath-hover-tip"});
+  TMAP.on("mousemove", e=>{
+    const c=_HOVER.idx && _HOVER.idx.get(_hoverKey(e.latlng.lat, e.latlng.lng, _HOVER.step));
+    if(!c){ TMAP.closeTooltip(_HOVER.tip); return; }
+    const size=(+c[2]||0).toFixed(2), pers=(+c[4]||0);
+    _HOVER.tip.setLatLng(e.latlng).setContent(
+      '<b>'+size+'\u2033 hail</b><br>max @ '+_fmtScanTs(c[6])+'<br>'+pers+' scan'+(pers===1?'':'s')+' with hail');
+    TMAP.openTooltip(_HOVER.tip);
+  });
+  TMAP.on("mouseout", ()=>{ if(_HOVER.tip) TMAP.closeTooltip(_HOVER.tip); });
+}
+
+// ── LIVE-SWATH GLANCE BADGE: the corner truth (companion to the point-truth hover). ──
+// Sub-gate:  "sub-gate · max 0.84" · 0 fundable cells · cumulative since 17Z"  (grey-blue, muted)
+// Gated:     "max X" · N gated cells"                                          (warm/red)
+// Values are LIVE from the swath payload (size c[2] in inches; gate 1.125"; earliest scan c[6]).
+let _SWATHBADGE = null;
+function _fmtSinceHr(ts){ const m=/-(\d{2})Z?$/.exec(String(ts||"")); return m ? m[1]+"Z" : null; }
+function updateSwathBadge(cells){
+  const host=document.getElementById("map"); if(!host) return;
+  if(!_SWATHBADGE){ _SWATHBADGE=document.createElement("div"); _SWATHBADGE.className="swathbadge"; host.appendChild(_SWATHBADGE); }
+  const b=_SWATHBADGE;
+  if(!cells || !cells.length){ b.style.display="none"; return; }
+  let mx=0, gated=0, since=null;
+  for(const c of cells){ const s=+c[2]||0; if(s>mx) mx=s; if(s>=1.125) gated++;
+    if(c.length>=7 && c[6] && (since===null || c[6]<since)) since=c[6]; }
+  const live=(cells[0].length>=7);
+  if(gated>0){ b.className="swathbadge gated";
+    b.textContent='max '+mx.toFixed(2)+'\u2033 \u00b7 '+gated+' gated cell'+(gated===1?'':'s'); }
+  else { b.className="swathbadge subgate";
+    b.textContent='sub-gate \u00b7 max '+mx.toFixed(2)+'\u2033 \u00b7 0 fundable cells'
+      + ((live && _fmtSinceHr(since)) ? ' \u00b7 cumulative since '+_fmtSinceHr(since) : ''); }
+  b.style.display="";
+}
 
 // STORM-DAY (mirrors engine storm.service.provisional.storm_day_of): the Central convective day runs
 // D 12Z -> D+1 12Z, so a UTC hour < 12 belongs to the PRIOR calendar day (the active storm-day). This is
@@ -2870,11 +2934,37 @@ const TORN_RAMP=[[61,0,0],[138,10,10],[204,20,23],[255,59,48],[255,138,128],[255
 function rampRGB(ramp,t){ t=Math.max(0,Math.min(1,t)); const x=t*(ramp.length-1), i=Math.floor(x), f=x-i;
   const a=ramp[i], b=ramp[Math.min(ramp.length-1,i+1)];
   return [Math.round(a[0]+(b[0]-a[0])*f),Math.round(a[1]+(b[1]-a[1])*f),Math.round(a[2]+(b[2]-a[2])*f)]; }
+// ABSOLUTE hail-size ramp (inches) — honest thresholds, NOT the relative p5/p90 auto-fit (2026-07-09
+// fix: 15 sub-1" cells with max 0.84" were painted like a 2" cluster). Anchor -> color/alpha mapping:
+//   < 1.125"  faint cool grey-blue, NO opacity floor (sub-gate = barely there)
+//   = 1.125"  HARD STEP to green, strong opacity (the fundable gate is unmistakable)
+//   1.5-1.8"  yellow -> orange   ·   >= 2.0"  red HOT   ·   >= 3.0" deep magenta-red
+// A 0.84" cell can NEVER wear the color a 2" cell wears. Same anchors drive the smooth hail swath in
+// BOTH fill modes (it always colors by absolute size); the §3 Cells mode + ad-circles are untouched.
+const HAIL_ABS=[
+  {v:0.50, c:[74,96,120],  a:0.06},
+  {v:1.10, c:[96,124,158], a:0.16},
+  {v:1.125,c:[40,150,96],  a:0.55},   // <- the gate step
+  {v:1.50, c:[214,196,44], a:0.68},
+  {v:1.80, c:[238,132,32], a:0.80},
+  {v:2.00, c:[214,44,32],  a:0.90},
+  {v:3.00, c:[150,12,64],  a:0.96},
+];
+function hailAbsColor(v){
+  const A=HAIL_ABS;
+  if(v<A[0].v) return null;                                   // below the faint floor -> transparent
+  for(let i=A.length-1;i>=0;i--){ if(v>=A[i].v){
+    if(i===A.length-1) return {c:A[i].c.slice(), a:A[i].a};
+    const lo=A[i], hi=A[i+1], f=(v-lo.v)/(hi.v-lo.v);
+    return {c:[Math.round(lo.c[0]+(hi.c[0]-lo.c[0])*f),Math.round(lo.c[1]+(hi.c[1]-lo.c[1])*f),Math.round(lo.c[2]+(hi.c[2]-lo.c[2])*f)],
+            a:lo.a+(hi.a-lo.a)*f}; } }
+  return null;
+}
 // CONTINUOUS heatmap for ANY peril swath (fades between every level -> effectively infinite
 // levels): build the value grid (vIdx = which cell field), smooth it, paint with the ramp +
 // a value-scaled alpha (low fainter but still dark, high solid), and scale the image smoothly
 // over its bbox. Display-only; the §3 cell data + ad-circles are untouched.
-function buildHeatmap(cells, valFn, ramp, paneName, paneZ){
+function buildHeatmap(cells, valFn, ramp, paneName, paneZ, absColorFn){
   if(!TMAP || !cells || !cells.length) return null;
   const lats=cells.map(c=>c[0]), lons=cells.map(c=>c[1]);
   const latMin=Math.min.apply(null,lats), latMax=Math.max.apply(null,lats);
@@ -2910,22 +3000,36 @@ function buildHeatmap(cells, valFn, ramp, paneName, paneZ){
   // = 4% of peak, excluding the faint blurred fringe; vlo/vhi = p5/p90 of the in-swath values.
   let gmax=0; for(let i=0;i<G.length;i++) if(G[i]>gmax) gmax=G[i];
   if(gmax<=0) return null;
-  const gate=gmax*0.04, vals=[];
-  for(let i=0;i<G.length;i++) if(G[i]>gate) vals.push(G[i]);
-  if(!vals.length) return null;
-  vals.sort((a,b)=>a-b);
-  const vlo=vals[Math.floor(0.05*vals.length)], vhi=Math.max(vlo+1e-6, vals[Math.floor(0.90*vals.length)]);
-  const span=vhi-vlo, fLoEnd=gate+0.15*span, aFloor=0.42, aTop=0.92;
   const cv=document.createElement("canvas"); cv.width=W; cv.height=H;
   const ctx=cv.getContext("2d"), img=ctx.createImageData(W,H);
-  for(let y=0;y<H;y++)for(let x=0;x<W;x++){ const v=G[y*W+x];
-    const row=H-1-y, idx=(row*W+x)*4;                                  // flip so canvas top = north
-    if(v<gate){ img.data[idx+3]=0; continue; }                        // outside swath -> transparent
-    const t=Math.max(0,Math.min(1,(v-vlo)/span)), rgb=rampRGB(ramp,t);
-    img.data[idx]=rgb[0]; img.data[idx+1]=rgb[1]; img.data[idx+2]=rgb[2];
-    let a=aFloor+(aTop-aFloor)*t;                                      // brighter/more opaque with value
-    if(v<fLoEnd) a*=(v-gate)/(fLoEnd-gate);                           // feather the fringe to transparent
-    img.data[idx+3]=Math.round(255*Math.max(0,Math.min(aTop,a))); }
+  if(absColorFn){
+    // ABSOLUTE mode (hail): the blur dilutes values, so rescale the blurred grid so its PEAK maps
+    // back to the true peak (max valFn over the RAW cells) -> honest absolute coloring, smooth
+    // gradient preserved. Sub-gate cells stay faint; nothing sub-1.125" can wear a gated color.
+    let trueMax=0; for(const c of cells){ const v=+valFn(c)||0; if(v>trueMax) trueMax=v; }
+    const scale=trueMax>0 ? trueMax/gmax : 0;
+    for(let y=0;y<H;y++)for(let x=0;x<W;x++){ const vAbs=G[y*W+x]*scale;
+      const row=H-1-y, idx=(row*W+x)*4;                                // flip so canvas top = north
+      const col=absColorFn(vAbs);
+      if(!col){ img.data[idx+3]=0; continue; }                        // below the faint floor -> transparent
+      img.data[idx]=col.c[0]; img.data[idx+1]=col.c[1]; img.data[idx+2]=col.c[2];
+      let a=col.a; if(vAbs<0.65) a*=Math.max(0,(vAbs-0.50)/0.15);      // feather the faint fringe to nothing
+      img.data[idx+3]=Math.round(255*Math.max(0,Math.min(0.96,a))); }
+  } else {
+    const gate=gmax*0.04, vals=[];
+    for(let i=0;i<G.length;i++) if(G[i]>gate) vals.push(G[i]);
+    if(!vals.length) return null;
+    vals.sort((a,b)=>a-b);
+    const vlo=vals[Math.floor(0.05*vals.length)], vhi=Math.max(vlo+1e-6, vals[Math.floor(0.90*vals.length)]);
+    const span=vhi-vlo, fLoEnd=gate+0.15*span, aFloor=0.42, aTop=0.92;
+    for(let y=0;y<H;y++)for(let x=0;x<W;x++){ const v=G[y*W+x];
+      const row=H-1-y, idx=(row*W+x)*4;                                // flip so canvas top = north
+      if(v<gate){ img.data[idx+3]=0; continue; }                      // outside swath -> transparent
+      const t=Math.max(0,Math.min(1,(v-vlo)/span)), rgb=rampRGB(ramp,t);
+      img.data[idx]=rgb[0]; img.data[idx+1]=rgb[1]; img.data[idx+2]=rgb[2];
+      let a=aFloor+(aTop-aFloor)*t;                                    // brighter/more opaque with value
+      if(v<fLoEnd) a*=(v-gate)/(fLoEnd-gate);                         // feather the fringe to transparent
+      img.data[idx+3]=Math.round(255*Math.max(0,Math.min(aTop,a))); } }
   ctx.putImageData(img,0,0);
   if(!TMAP.getPane(paneName)){ TMAP.createPane(paneName);
     const p=TMAP.getPane(paneName); p.style.zIndex=paneZ; p.style.pointerEvents="none"; }
@@ -3061,9 +3165,11 @@ async function boot(){
     // machinery is skipped, and the blocky Cells canvas is left visible. Fall back to SIZE (non-zero on
     // sub-gate cells) so the live/provisional swath still renders SMOOTH/feathered like a registered date.
     // Gated storms build the intensity heatmap normally -> ZERO change to canonical dates with >=1.125" hail.
-    const hailHeat=()=>{ let h=buildHeatmap(D.swath_cells,HAIL_FILL[curHailMode()].fn,HAIL_RAMP,"hHeatPane",351);
-      if(!h && curHailMode()==="intensity") h=buildHeatmap(D.swath_cells,HAIL_FILL["size"].fn,HAIL_RAMP,"hHeatPane",351);
-      return h; };
+    // The SMOOTH hail swath always colors by ABSOLUTE size (c[2] inches) via HAIL_ABS anchors — the
+    // honest truth in both fill modes. A sub-gate day (all sizes < 1.125") now renders faint cool
+    // presence-only (no more intensity->size fallback painting sub-gate at full color); the badge
+    // states the numbers. §3 Cells mode still honors the intensity/size/priority radio (untouched).
+    const hailHeat=()=>buildHeatmap(D.swath_cells,c=>+c[2]||0,HAIL_RAMP,"hHeatPane",351,hailAbsColor);
     const HL=[];   // {pane,group,peril,op}
     if(D.swath_mode==="per_cell" && D.swath_cells && D.swath_cells.length){
       const h=hailHeat();
@@ -3072,6 +3178,8 @@ async function boot(){
       const w=buildHeatmap(D.wind.swath_cells,c=>+c[2]||0,WIND_RAMP,"wHeatPane",354); if(w) HL.push({pane:"windPane",group:w,peril:"wind",op:0.55}); }
     if(D.tornado && D.tornado.swath_cells && D.tornado.swath_cells.length){
       const t=buildHeatmap(D.tornado.swath_cells,c=>+c[2]||0,TORN_RAMP,"tHeatPane",355); if(t) HL.push({pane:"tornadoPane",group:t,peril:"tornado",op:0.55}); }
+    try{ initSwathHover(D.swath_cells); }catch(e){}   // Part C: live-swath hover (size/scan-time/persistence)
+    try{ updateSwathBadge(D.swath_cells); }catch(e){} // render-truth: sub-gate/gated glance badge
     if(HL.length){ let mode="smooth";
       const setOp=o=>o.group.eachLayer(im=>im.setOpacity(o.op));
       const chk=sel=>{ const e=document.querySelector(sel); return !e || e.checked; };
