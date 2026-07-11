@@ -52,6 +52,10 @@ body.mobile #tbar .brand .tlogo{width:32px;height:32px}
 #side .op-verdict{font-size:15px;font-weight:800;margin:8px 0 3px;padding:6px 11px;border-radius:7px;color:#fff;display:inline-block}
 .op-verdict.strong{background:#bd0026}.op-verdict.sig{background:#e8430a}.op-verdict.mod{background:#f97316}
 .op-verdict.weak{background:#8a7d00}.op-verdict.none{background:#6b7280}
+/* classification truth note (sub-gate / out-of-market chase) — states numbers, never a near-miss */
+#side .op-classnote{display:block;font-size:12.5px;line-height:1.4;margin:2px 0 8px;padding:7px 10px;border-radius:6px;background:#f4f6fa;border-left:4px solid #6b7280;color:#33415a}
+#side .op-classnote.weak{border-left-color:#8a7d00;background:#fbf8e8}
+#side .op-verdict .op-live{font-size:10px;font-weight:800;letter-spacing:.4px;background:rgba(255,255,255,.22);padding:1px 6px;border-radius:9px;margin-left:6px;vertical-align:1px}
 /* dual-core damage-core rows (2026-07-05) */
 #side .op-verdict.op-nocore{display:block;font-size:12.5px;font-weight:700;margin:8px 0}
 #side .op-core2{border-top:1px solid #eee;padding-top:8px}
@@ -284,7 +288,15 @@ body.tz-arming::after{content:"Click the map to set the timezone";position:fixed
 .cal-dots i.t3.hail{border-color:#f7b600}
 .cal-dots i.t3.wind{border-color:#6bafd7}
 .cal-dots i.t3.torn{border-color:#e11421}
-.cal-legend{display:flex;gap:12px;margin-top:7px;color:#9fb3d9;font-size:10px}
+/* CLASS fill-state (truth pass): solid = in-market fundable · dim = in-market sub-gate · hollow = out-of-market chase */
+.cal-dots i.cls-sub{opacity:.42}
+.cal-dots i.cls-chase{background:transparent!important;opacity:.9}
+.cal-dots i.cls-chase.hail{border-color:#f7b600}
+.cal-dots i.cls-live{box-shadow:0 0 0 2px rgba(91,140,255,.85)}   /* provisional = LIVE convention (blue ring) */
+.cal-legend{display:flex;gap:12px;margin-top:7px;color:#9fb3d9;font-size:10px;flex-wrap:wrap}
+.cal-legend .fs{width:9px;height:9px;border-radius:50%;background:#9fb3d9;border:1.5px solid #9fb3d9;box-sizing:border-box}
+.cal-legend .fs.sub{opacity:.42}
+.cal-legend .fs.chase{background:transparent}
 .cal-legend span{display:flex;align-items:center;gap:4px}
 .cal-legend .dot{width:7px;height:7px;border-radius:50%}
 /* non-blocking bottom banner (replaces the old center "no data" modal) */
@@ -400,6 +412,11 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .swathbadge.subgate{background:#223247;color:#b9c8dd;border:1px solid #33465f}
 .swathbadge.gated{background:#3a1414;color:#ffd9cf;border:1px solid #7a2a20}
 .leaflet-image-layer.hailheat{image-rendering:auto}
+/* OUT-OF-MARKET chase swath label (truth pass) — persistent, subordinate slate, its own numbers */
+.chaseoom{position:absolute;right:10px;bottom:26px;z-index:640;pointer-events:none;font:800 10.5px/1.3 system-ui,-apple-system,sans-serif;
+  letter-spacing:.06em;text-transform:uppercase;padding:5px 10px;border-radius:7px;background:rgba(38,46,60,.92);color:#cfd7e4;
+  border:1px dashed #7c869a;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+.chaseoom span{display:block;text-transform:none;letter-spacing:.02em;font-weight:600;color:#9fb0c6;margin-top:1px}
 /* ── #6 RANKED-TARGETS badges (payout_score): additive label pane over the §3
    ad circles. P1 deep-red / P2 orange to echo the locked ring colors; floor-muted
    circles get a greyed, dashed badge (flagged, not deleted). Toggle = the # button. */
@@ -441,8 +458,18 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .sd-actions{display:flex;gap:8px;margin:10px 0 4px}
 .sd-actions button{flex:1;border:none;border-radius:8px;padding:9px 0;font-size:13px;font-weight:800;cursor:pointer}
 #sdSolve{background:#1e2b46;color:#fff}#sdSolve:hover{background:#274069}
+#sdApprove{background:#7a4f19;color:#fff}#sdApprove:hover{background:#94611f}
+#sdApprove:disabled{background:#c3b29f;cursor:default}
 #sdSend{background:#1a7a4f;color:#fff}#sdSend:hover{background:#1f9160}
 #sdSend:disabled{background:#9fb3a8;cursor:default}
+.sd-promo{margin:7px 0 0;padding:7px 10px;border-radius:7px;font-size:11.5px;font-weight:700;line-height:1.35}
+.sd-promo.none{background:#f4f5f7;border-left:4px solid #9fb3a8;color:#4a5a52}
+.sd-promo.live{background:#eef3ff;border-left:4px solid #2b5cc6;color:#1e2b46}
+.sd-promo .badge{display:inline-block;background:#2b5cc6;color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:9px;margin-right:6px;vertical-align:1px}
+.sd-promo .cx{display:block;margin-top:4px;font-weight:700;color:#8a6d3b;font-style:italic}
+.sd-promo .cfm{display:flex;gap:6px;margin-top:6px}
+.sd-promo .cfm button{flex:1;border:none;border-radius:6px;padding:6px 0;font-size:11.5px;font-weight:800;cursor:pointer}
+.sd-promo .cfm .go{background:#7a4f19;color:#fff}.sd-promo .cfm .no{background:#e5e7eb;color:#333}
 .sd-verdict{margin:8px 0;padding:8px 10px;border-radius:7px;font-size:12px;font-weight:600;background:#fff4e6;border-left:4px solid #e8430a;color:#5a3a1a}
 .sd-verdict.ok{background:#eaf7ef;border-left-color:#1a7a4f;color:#1c4a32}
 .sd-verdict.warn{background:#fdeaea;border-left-color:#bd0026;color:#7a1620}
@@ -569,6 +596,7 @@ SHELL_HEAD = """  <div id="tbar">
           <div class="cp-months" id="cpMonths"></div>
         </div>
         <div class="cal-legend"><span><i class="dot hail"></i>hail</span><span><i class="dot wind"></i>wind</span><span><i class="dot torn"></i>tornado</span><span style="margin-left:auto;color:#7e90b3">&#9679;core &#9675;margin</span></div>
+        <div class="cal-legend"><span><i class="fs"></i>fundable</span><span><i class="fs sub"></i>sub-gate</span><span><i class="fs chase"></i>chase (out of market)</span></div>
       </div>
     </div>
     <div class="hdr-search">
@@ -718,6 +746,38 @@ function setBaseStreet(){
   if(s && s.value!=='street'){ s.value='street'; s.dispatchEvent(new Event('change',{bubbles:true})); }
 }
 
+// ── CLASSIFICATION: the ONE market/fundability verdict every surface reads. Mirrors the engine's
+//    storm.classify (parity-tested against the same anchors). FUNDABLE vs SUB_GATE is the engine's
+//    FUNDING gate — >=1 P1/P2 ad-circle, the 1.80"/Core scoring behind A-day alerts / campaign
+//    eligibility (read straight off the engine-scored circles_json tiers) — NOT the 1.125" swath/
+//    badge gate, which is audience-width presentation only. No surface computes its own verdict:
+//    badge, calendar, Storm Review, and the swath/chase layers all read classifyHailRows().
+const CLS = { FUND:"IN_MARKET_FUNDABLE", SUB:"IN_MARKET_SUB_GATE", CHASE:"OUT_OF_MARKET_CHASE", NONE:"NO_HAIL" };
+const CLS_RANK = { IN_MARKET_FUNDABLE:3, IN_MARKET_SUB_GATE:2, OUT_OF_MARKET_CHASE:1, NO_HAIL:0 };
+const LIVE_QUALIFIER = "LIVE \\u2014 pending 12:00Z finalization";
+function _fundableFromCircles(circles){ return (circles||[]).some(c=>c && (c.tier==="P1"||c.tier==="P2")); }
+// max size / gated-cell count (>1.125") / gated sq mi from swath cells (size = c[2] inches).
+function swathNums(cells){ let mx=0,g=0; (cells||[]).forEach(c=>{ const s=+c[2]||0; if(s>mx)mx=s; if(s>1.125)g++; });
+  return { max:mx, gated:g, sqmi:+(g*CELL_AREA).toFixed(1), cells:(cells||[]).length }; }
+// Classify a date's raw storm_date_layers ROWS into ONE hail verdict. In-market FUNDABLE beats
+// in-market SUB_GATE beats out-of-market CHASE beats NO_HAIL — a real in-market hit is never hidden
+// behind chase, and a blank in-market day still surfaces the chase truth instead of "No qualifying storm".
+function classifyHailRows(rows){
+  const im = (rows||[]).find(r=>r && r.peril==="hail" && r.coverage_zone!=="chase");
+  const chaseRows = (rows||[]).filter(r=>r && r.peril==="hail" && r.coverage_zone==="chase");
+  const imCells = im ? parseJSON(im.swath_json) : [];
+  const imCircles = im ? parseJSON(im.circles_json) : [];
+  const chaseCells = [].concat.apply([], chaseRows.map(r=>parseJSON(r.swath_json)));
+  const provisional = !!(imCells.length && imCells[0] && imCells[0].length>=7);   // 7-wide cells == live provisional
+  let cls;
+  if(imCells.length && _fundableFromCircles(imCircles)) cls=CLS.FUND;
+  else if(imCells.length) cls=CLS.SUB;
+  else if(chaseCells.length) cls=CLS.CHASE;
+  else cls=CLS.NONE;
+  return { cls, provisional, imCells, imCircles, chaseCells,
+           inNums: swathNums(imCells), chaseNums: swathNums(chaseCells) };
+}
+
 function assemble(date, rows, geo){
   // COLLAPSE FIX (item 8 Step 3): key by peril AND zone so an in-market hail row
   // and a chase hail row no longer overwrite each other. In-market ALWAYS renders
@@ -750,25 +810,35 @@ function assemble(date, rows, geo){
   const chaseSwath = [].concat.apply([], chaseHail.map(r => parseJSON(r.swath_json)));
   const chaseCircles = [].concat.apply([], chaseHail.map(r => parseJSON(r.circles_json)));
   const chaseEvidence = [].concat.apply([], chaseHail.map(r => parseJSON(r.evidence_json)));
-  const unifiedSwath = (h ? parseJSON(h.swath_json) : []).concat(chaseSwath);
-  const hasSwath = unifiedSwath.length > 0;
+  // IN-MARKET SWATH ONLY (2026-07-11 truth pass): chase is NO LONGER folded in here. The old unified
+  // merge painted OUT-OF-MARKET chase (e.g. 07-09: 216 sq mi) as if it were in-market hail, unlabeled
+  // — that is dead. In-market cells drive renderMap's §3 SwathLayer + the badge + spend math; chase
+  // renders as its own subordinate, labeled layer (addChaseSwathLayer) and NEVER touches the in-market ramp.
+  const inSwath = h ? parseJSON(h.swath_json) : [];
+  const hasSwath = inSwath.length > 0;
   const D = {
     storm_date: date,
-    summary: { events: 0, swath_cells: unifiedSwath.length,
+    // ONE market/fundability verdict, read by badge + calendar + Storm Review + swath/chase layers.
+    classification: classifyHailRows(rows),
+    // FAIL-LOUD (2026-07-11): an in-market hail cluster with in_geofence NULL would be SILENTLY dropped
+    // by the fail-closed ads gate. Surface it, never swallow it. (Backfilled to 0; guards new ones.)
+    geofence_fault: !!(h && h.in_geofence===null),
+    summary: { events: 0, swath_cells: inSwath.length,
                swath_mode: hasSwath ? "per_cell" : "none", evidence_points: evIn.length,
                circles: h ? h.circle_count : 0, qualifying: 0, priority: 0, in_area: 0, buffer: 0 },
     center: [38.63, -90.2], events: [], zips: [],
     evidence_points: evIn,
-    swath_cells: unifiedSwath,
+    swath_cells: inSwath,
     swath_mode: hasSwath ? "per_cell" : "none",
     geo_ref: geo || { boundaries: [], cities: [] },
     circles: h ? parseJSON(h.circles_json) : [],
     overlay: null,
     wind: layer(inmkt.wind),
     tornado: layer(inmkt.tornado),
-    // CHASE = TARGETING ONLY (merged circles + evidence from chase-fill + pulls); the
-    // chase swath is folded into the unified hail swath above (always available).
-    chase: chaseHail.length ? { circles: chaseCircles, evidence: chaseEvidence } : null,
+    // CHASE (item 8 Step 3 v2 + 07-11 truth pass): its OWN subordinate layer — targeting circles +
+    // evidence AND the chase swath cells, rendered dimmed/hatched + labeled OUT OF MARKET. Never merged
+    // into the in-market swath, never in the in-market ramp/badge/spend.
+    chase: chaseHail.length ? { circles: chaseCircles, evidence: chaseEvidence, swath_cells: chaseSwath } : null,
     // #6 PAYOUT TARGETING BRAIN: per-peril {idx -> {payout_score, rank, floor_pass,...}}
     // additive AdCluster prop. Graceful: absent (proxy query w/o the field) -> no ranks.
     payout: {
@@ -807,16 +877,37 @@ function buildOperatorPanel(D, forecast){
   if(D.wind) perils.push({k:"wind",label:"WIND",circles:D.wind.circles,swath:D.wind.swath_cells,ev:D.wind.evidence});
   if(D.tornado) perils.push({k:"tornado",label:"TORNADO",circles:D.tornado.circles,swath:D.tornado.swath_cells,ev:D.tornado.evidence});
   let P1=0,P2=0,P3=0; perils.forEach(p=>{const t=tierCounts(p.circles);P1+=t.P1;P2+=t.P2;P3+=t.P3;});
-  let verdict,vc;
-  if(!perils.length){ verdict="No qualifying storm"; vc="none"; }
-  else if(P1>=10){ verdict="Strong, widespread event"; vc="strong"; }
-  else if(P1>=1){ verdict="Significant \\u2014 strong localized core"; vc="sig"; }
-  else if(P2>=15){ verdict="Moderate event"; vc="mod"; }
-  else if(P2>=1){ verdict="Weak \\u2014 mostly margin"; vc="weak"; }
-  else { verdict="Marginal \\u2014 margin only"; vc="weak"; }
+  // ── CLASSIFICATION-DRIVEN VERDICT (2026-07-11 truth pass). ONE source = D.classification.
+  //    "No qualifying storm" is BANNED except NO_HAIL; every other class STATES what happened + why,
+  //    with the numbers. Sub-gate never reads as a near-miss to act on; chase states OUT OF MARKET. ──
+  const K = D.classification || { cls:CLS.NONE, provisional:false, inNums:swathNums([]), chaseNums:swathNums([]) };
+  const hailCls = K.cls, hailActive = (hailCls===CLS.FUND||hailCls===CLS.SUB||hailCls===CLS.CHASE);
+  let verdict, vc, verdictNote="";
+  if(hailCls===CLS.FUND){
+    if(P1>=10){ verdict="Strong, widespread event"; vc="strong"; }
+    else if(P1>=1){ verdict="Significant \\u2014 strong localized core"; vc="sig"; }
+    else if(P2>=15){ verdict="Moderate event"; vc="mod"; }
+    else { verdict="Fundable \\u2014 localized core"; vc="sig"; }
+  } else if(hailCls===CLS.SUB){
+    const n=K.inNums; verdict="Sub-gate \\u2014 below funding gate"; vc="weak";
+    verdictNote='Hail detected, below funding gate (max '+n.max.toFixed(2)+'\\u2033 \\u00b7 '+n.gated+' gated cell'+(n.gated===1?'':'s')+' \\u00b7 '+n.sqmi+' sq mi) \\u2014 no claimable damage expected.';
+  } else if(hailCls===CLS.CHASE){
+    const n=K.chaseNums; verdict="Out of market \\u2014 chase"; vc="none";
+    verdictNote=n.max.toFixed(2)+'\\u2033 hail \\u00b7 '+n.gated+' gated cells \\u00b7 '+n.sqmi+' sq mi \\u2014 OUT OF MARKET (Ring 2 chase territory). No in-market fundable damage.';
+  } else if(perils.length){                                   // wind/tornado only (no hail)
+    if(P1>=1){ verdict="Significant \\u2014 strong localized core"; vc="sig"; }
+    else if(P2>=1){ verdict="Weak \\u2014 mostly margin"; vc="weak"; }
+    else { verdict="Marginal \\u2014 margin only"; vc="weak"; }
+  } else { verdict="No qualifying storm"; vc="none"; }         // NO_HAIL + no wind/tornado = the ONLY allowed use
   let h='<h1>Storm Review <span class="muted">'+D.storm_date+'</span></h1>';
-  h+='<div class="op-verdict '+vc+'">'+verdict+'</div>';
-  h+='<div class="op-sub">'+(perils.length ? ('P1 '+P1+' \\u00b7 P2 '+P2+' \\u00b7 P3 '+P3+' across '+perils.map(p=>p.k).join(", ")) : 'nothing processed for this date')+'</div>';
+  h+='<div class="op-verdict '+vc+'">'+verdict+
+     (K.provisional && hailActive ? ' <span class="op-live">'+LIVE_QUALIFIER+'</span>' : '')+'</div>';
+  if(verdictNote) h+='<div class="op-classnote '+vc+'">'+verdictNote+'</div>';
+  const _persum = perils.length ? ('P1 '+P1+' \\u00b7 P2 '+P2+' \\u00b7 P3 '+P3+' across '+perils.map(p=>p.k).join(", "))
+                 : (hailCls===CLS.CHASE ? 'chase targeting only \\u2014 not in the ad market'
+                 :  hailCls===CLS.SUB ? 'in-market hail below the funding gate'
+                 :  'nothing processed for this date');
+  h+='<div class="op-sub">'+_persum+'</div>';
   const hail=perils.find(p=>p.k==="hail");
   if(hail) h+='<div class="op-maxhail">Max hail <b>'+maxMetric(hail.circles).toFixed(2)+'"</b></div>';
   perils.forEach(p=>{
@@ -965,8 +1056,17 @@ function renderCal(){
       btn.classList.add("storm");
       const tt = TIERS[ds] || {};
       per.forEach(p=>{ const i=document.createElement("i"); const cls=(p==="hail"?"hail":p==="wind"?"wind":"torn");
-        const tier=tt[p]; const tcl=(tier==="P1"?" t1":tier==="P3"?" t3":"");   // P2 = base solid dot
-        i.className=cls+tcl; dots.appendChild(i); });
+        if(p==="hail"){
+          // ONE fill-state axis, existing peril color: solid = fundable · dim = sub-gate · hollow = chase-only
+          const kc=(CLASSC[ds]||{}).cls;
+          const fill=(kc===CLS.FUND?" cls-fund":kc===CLS.SUB?" cls-sub":kc===CLS.CHASE?" cls-chase":"");
+          i.className=cls+fill;
+          if((CLASSC[ds]||{}).prov) i.classList.add("cls-live");   // provisional reuses the LIVE convention
+        } else {
+          const tier=tt[p]; const tcl=(tier==="P1"?" t1":tier==="P3"?" t3":"");   // P2 = base solid dot
+          i.className=cls+tcl;
+        }
+        dots.appendChild(i); });
     }
     btn.onclick = ()=>goDate(ds);
     grid.appendChild(btn);
@@ -1088,7 +1188,9 @@ function sgRenderAll(){
   if(v){ v.textContent = s.dmg>0 ? ("Solved \\u00b7 "+s.n+" rings \\u00b7 $"+Math.round(s.smin).toLocaleString()+"\\u2013$"+Math.round(s.smax).toLocaleString())
       : "Presence only \\u2014 no damage core; recommended $0";
     v.className="sd-verdict "+(s.dmg>0?"ok":""); }
-  document.getElementById("sdSend").disabled=false;
+  // STAGE 2: Approve enables on a FUNDABLE solve (something to promote). Send is gated on an ACTIVE
+  // PROMOTION only (never on a fresh solve) — sgRefreshPromotion owns sdSend.disabled + the badge.
+  const ap=document.getElementById("sdApprove"); if(ap) ap.disabled = !(s.dmg>0);
 }
 function sgHeadline(sol){
   const w=document.getElementById("sgWork"); if(!w) return; const s=sgSums(sol);
@@ -1202,7 +1304,9 @@ function setupSpendDial(D){
     + '<div class="sd-row"><label>Value floor</label><input id="sdFloor" type="range" min="0" max="600000" step="25000" value="0"><span class="val" id="sdFloorV">$0</span></div>'
     + '<div class="sd-row"><label>Spend cap</label><input id="sdCapR" type="range" min="1000" max="100000" step="1000" value="30000"><span class="val" id="sdCapV">$30,000</span></div>'
     + '<div class="sd-actions"><button id="sdSolve">Solve</button>'
-    + '<button id="sdSend" disabled title="Sends the BASE-geometry campaign (solve promotion = Stage 2)">Send base &rarr;</button></div>'
+    + '<button id="sdApprove" disabled title="Promote the dialed solve to this storm\\u2019s active campaign geometry (graph only \\u2014 never touches Google)">Approve</button>'
+    + '<button id="sdSend" disabled title="Feeds the ACTIVE PROMOTED geometry to the push lane. Approve a snapshot first.">Send promoted &rarr;</button></div>'
+    + '<div class="sd-promo" id="sdPromo" style="display:none"></div>'          // inline promotion state / badge (no popups)
     + '<div class="sd-verdict" id="sdVerdict">Move a dial and hit Solve \\u2014 the table below prices the live solve geometry.</div>'
     + '<div class="sg-work" id="sgWork" style="display:none"></div>'          // headline strip = column sums
     + '<div id="sgSnaps" class="sg-snaps" style="display:none"></div>'         // persistent solve snapshots
@@ -1243,9 +1347,11 @@ function setupSpendDial(D){
   capr.oninput  = () => { document.getElementById("sdCapV").textContent = "$" + (+capr.value).toLocaleString(); _recompute(); };
   document.getElementById("sdTargetJobs").oninput = _recompute;
   document.getElementById("sdSolve").onclick = () => sgSolveFresh();
-  document.getElementById("sdSend").onclick = sdOpenApprove;   // base-geometry campaign (Stage 2 promotes solves)
+  document.getElementById("sdApprove").onclick = sgApproveInline;   // promote the dialed solve (inline, no popup)
+  document.getElementById("sdSend").onclick = sgSendPromoted;       // feed the ACTIVE promoted geometry to push
   const bt = document.getElementById("sgBaseToggle");
   if(bt) bt.onchange = e => sgDrawBase(e.target.checked, D);
+  sgRefreshPromotion();                                             // set Approve/Send state from the graph
 }
 async function sdSolve(){
   const sp = document.getElementById("spendPanel"); if(sp && sp.classList.contains("sd-nostorm")) return;   // grayed: nothing to fund
@@ -1386,48 +1492,69 @@ function sdPopup(cid){
   pop.querySelector(".sd-pop-x").onclick = () => pop.classList.add("hidden");
   pop.style.left = "50%"; pop.style.top = "22%"; pop.style.transform = "translateX(-50%)";
 }
-async function sdOpenApprove(){
-  // Send is wired to BASE geometry (Stage 2 promotes the dialed solve). Fetch a fresh base solve for the
-  // modal numbers — independent of the solve-layer table shown in the panel.
-  let mb = document.getElementById("sdModalBack");
-  if(!mb){ mb = document.createElement("div"); mb.id = "sdModalBack";
-    const m = document.createElement("div"); m.id = "sdModal"; mb.appendChild(m); document.body.appendChild(mb);
-    mb.onclick = e => { if(e.target === mb) mb.classList.add("hidden"); }; }
-  mb.classList.remove("hidden");
-  document.getElementById("sdModal").innerHTML = "<h2>Approve &amp; launch</h2><div class='sd-sub'>Solving base geometry\\u2026</div>";
-  let sol; try { sol = await sdApi("solve", sdReadDials()); } catch(e){
-    document.getElementById("sdModal").innerHTML = "<h2>Approve</h2><div class='sd-verdict warn'>Base solve failed \\u2014 " + e.message + "</div><div class='sd-mbtns'><button id='sdCancel'>Close</button></div>";
-    document.getElementById("sdCancel").onclick = () => mb.classList.add("hidden"); return; }
-  SD_STATE.solution = sol;
-  if(!sol || !sol.valid){
-    document.getElementById("sdModal").innerHTML = "<h2>Approve</h2><div class='sd-verdict warn'>" + (sol && sol.verdict ? sol.verdict : "No fundable base campaign for these dials.") + "</div><div class='sd-mbtns'><button id='sdCancel'>Close</button></div>";
-    document.getElementById("sdCancel").onclick = () => mb.classList.add("hidden"); return; }
-  const room = (CFG.remainingAnnualCapacity != null) ? (CFG.remainingAnnualCapacity - sol.est_jobs) : null;
-  document.getElementById("sdModal").innerHTML =
-    "<h2>Approve &amp; launch <span style='font-size:10px;font-weight:800;color:#fff;background:#64748b;padding:2px 6px;border-radius:9px;vertical-align:2px'>BASE GEOMETRY</span></h2>"
-    + "<div class='sd-sub'>Single gate \\u00b7 " + getDate() + " \\u00b7 " + sol.area_setting + " \\u00b7 solve promotion = Stage 2</div>"
-    + "<div class='sd-line'><span>Spend</span><b>$" + Math.round(sol.recommended_spend).toLocaleString()
-      + " / $" + Math.round(sol.spend_cap).toLocaleString() + " cap</b></div>"
-    + "<div class='sd-line'><span>Rings funded</span><b>" + (sol.funded||[]).length + "</b></div>"
-    + "<div class='sd-line'><span>Est. jobs</span><b>~" + sol.est_jobs + " (net close " + Math.round((sol.net_close||0)*100) + "%)</b></div>"
-    + "<div class='sd-line' style='color:#8a6d3b;font-style:italic;font-size:11px'><span>$/job</span><b>" + (sol.cost_per_ad_job != null ? ("$" + Math.round(sol.cost_per_ad_job).toLocaleString() + " modeled") : "modeled \\u2014 funnel pending") + "</b></div>"
-    + (room != null ? "<div class='sd-line'><span>Annual room after</span><b>" + room + " jobs</b></div>" : "")
-    + "<div class='sd-line'><span>Bid</span><b>" + sol.bid_strategy + "</b></div>"
-    + "<div class='sd-mbtns'><button id='sdCancel'>Cancel</button><button id='sdLaunch'>Approve and launch</button></div>";
-  document.getElementById("sdCancel").onclick = () => mb.classList.add("hidden");
-  document.getElementById("sdLaunch").onclick = sdApprove;
+// ── STAGE 2 promotion (INLINE — no popups). Approve promotes the dialed solve to this storm's ONE
+//    active campaign geometry (graph only, never Google). Send feeds that promoted geometry to push.
+//    #sdPromo is the inline strip: promotion badge, campaign-exists warning, and the Approve confirm. ──
+function sgPromoDials(){ return { date:getDate(), peril:"hail",
+  hail_floor:+document.getElementById("sdHail").value, spend_cap:+document.getElementById("sdCapR").value }; }
+
+async function sgRefreshPromotion(){
+  // Read the storm's active promotion and set Send state + badge from it (never from a fresh solve).
+  const send=document.getElementById("sdSend"), pr=document.getElementById("sdPromo"); if(!send||!pr) return;
+  let info; try { info = await sdApi("active-promotion", { date:getDate(), peril:"hail" }); }
+  catch(e){ send.disabled=true; send.title="Promotion state unavailable \\u2014 "+e.message; return; }
+  if(info && info.promoted){
+    send.disabled=false;
+    send.title="Feeds the active promoted geometry (v"+info.promotion_version+") to the push lane.";
+    pr.style.display="block"; pr.className="sd-promo live";
+    pr.innerHTML="<span class='badge'>PROMOTED \\u00b7 v"+info.promotion_version+" \\u00b7 "+(info.promoted_at||"")+"</span>"
+      +"active geometry \\u00b7 "+info.n_circles+" rings \\u00b7 recommended $"+Math.round(info.recommended_spend||0).toLocaleString()
+      +(info.campaign_record_exists ? "<span class='cx'>\\u26a0 campaign exists \\u2014 re-promotion changes NOTHING at Google; mid-flight re-pointing is Stage 3</span>" : "");
+  } else {
+    send.disabled=true;
+    send.title="No promoted solve \\u2014 Approve a snapshot first.";
+    pr.style.display="block"; pr.className="sd-promo none";
+    pr.innerHTML="<b>Send disabled</b> \\u2014 "+((info&&info.states_why)||"no promoted solve \\u2014 Approve a snapshot first")+".";
+  }
 }
-async function sdApprove(){
-  const sol = SD_STATE.solution; const btn = document.getElementById("sdLaunch");
-  btn.disabled = true; btn.textContent = "Launching\\u2026";
+
+function sgApproveInline(){
+  // INLINE confirm in #sdPromo (no modal). Promoting the DIALED solve makes it this storm's active
+  // campaign geometry. Numbers shown are the live solve-layer table sums the operator already sees.
+  const sol=SG_STATE.sol, pr=document.getElementById("sdPromo"); if(!sol||!pr) return;
+  const s=sgSums(sol);
+  pr.style.display="block"; pr.className="sd-promo none";
+  pr.innerHTML="<b>Promote this solve?</b> floor "+(+sol.floor).toFixed(3)+"\\u2033 \\u00b7 "+s.n+" rings \\u00b7 damaged "
+    +s.dmg.toLocaleString()+" \\u00b7 recommended $"+Math.round(s.smin).toLocaleString()
+    +". This becomes the storm\\u2019s active campaign geometry (graph only \\u2014 never touches Google)."
+    +"<span class='cfm'><button class='go' id='sgPromoGo'>Promote</button><button class='no' id='sgPromoNo'>Cancel</button></span>";
+  document.getElementById("sgPromoNo").onclick = () => sgRefreshPromotion();
+  document.getElementById("sgPromoGo").onclick = async () => {
+    const go=document.getElementById("sgPromoGo"); go.disabled=true; go.textContent="Promoting\\u2026";
+    try {
+      const res = await sdApi("promote-solve", sgPromoDials());
+      const v=document.getElementById("sdVerdict");
+      v.textContent="Promoted \\u00b7 v"+res.promotion_version+" \\u2014 active campaign geometry for "+getDate();
+      v.className="sd-verdict ok";
+      await sgRefreshPromotion();                              // flips Send on + shows the badge
+    } catch(e){ go.disabled=false; go.textContent="Promote";
+      pr.className="sd-promo none"; pr.innerHTML="<b>Promote failed</b> \\u2014 "+e.message; }
+  };
+}
+
+async function sgSendPromoted(){
+  // Feed the ACTIVE PROMOTED geometry to the push lane. Gated: sgRefreshPromotion only enables this
+  // button when a promotion exists, so there is no base fallback from the panel.
+  const send=document.getElementById("sdSend"); if(send.disabled) return;
+  send.disabled=true; const t=send.textContent; send.textContent="Sending\\u2026";
   try {
-    const res = await sdApi("approve", Object.assign(sdReadDials(), { bid_strategy: sol.bid_strategy }));
-    btn.textContent = "Launched \\u2713";
-    setTimeout(() => document.getElementById("sdModalBack").classList.add("hidden"), 900);
-    const v = document.getElementById("sdVerdict");
-    v.textContent = "Campaign live: " + (res.campaign_id||"") + " \\u00b7 $" + Math.round(res.recommended_spend||0).toLocaleString();
-    v.className = "sd-verdict ok";
-  } catch(e){ btn.disabled = false; btn.textContent = "Approve and launch"; alert("Approve failed: " + e.message); }
+    const res = await sdApi("send-promoted", { date:getDate(), peril:"hail" });
+    const v=document.getElementById("sdVerdict");
+    v.textContent="Sent promoted geometry to push \\u00b7 "+getDate()+(res && res.status?(" \\u00b7 "+res.status):"");
+    v.className="sd-verdict ok";
+  } catch(e){ const v=document.getElementById("sdVerdict");
+    v.textContent="Send failed \\u2014 "+e.message; v.className="sd-verdict warn"; }
+  finally { send.textContent=t; sgRefreshPromotion(); }
 }
 
 // ── PWA PUSH subscribe + RE-SUBSCRIBE-ON-OPEN (iOS self-heal). Push is the rich layer;
@@ -1631,22 +1758,28 @@ function toggleStatus(){ const p=document.getElementById("statusPanel");
 //    storm date via the existing storm_date_layers read, cached. Read-only. ──
 let TIERS = {};
 try { TIERS = JSON.parse(sessionStorage.getItem("tempest_tiers")||"{}"); } catch(e){ TIERS={}; }
+// per-date HAIL CLASS cache (fill-state axis on the calendar): fundable / sub-gate / chase / none.
+// Computed from the SAME classifyHailRows() every surface reads — no independent calendar verdict.
+let CLASSC = {};
+try { CLASSC = JSON.parse(sessionStorage.getItem("tempest_classc")||"{}"); } catch(e){ CLASSC={}; }
 function topTier(circles){ let p1=0,p2=0,p3=0; (circles||[]).forEach(c=>{ if(c.tier==="P1")p1++; else if(c.tier==="P2")p2++; else if(c.tier==="P3")p3++; });
   return p1?"P1":p2?"P2":p3?"P3":null; }
 async function enrichVisibleTiers(){
   if(!calView) return;
   const y=calView.y, m=calView.m;
   const targets=Object.keys(AVAIL).filter(ds=>{ const t=new Date(ds+"T00:00:00Z");
-    return t.getUTCFullYear()===y && t.getUTCMonth()===m && !TIERS[ds]; });
+    return t.getUTCFullYear()===y && t.getUTCMonth()===m && (!TIERS[ds] || !CLASSC[ds]); });
   if(!targets.length) return;
   for(const ds of targets){
     try{ const rows=await pquery("storm_date_layers",{date:ds}); const tt={};
       rows.forEach(r=>{ try{ tt[r.peril]=topTier(JSON.parse(r.circles_json||"[]")); }catch(e){} });
       TIERS[ds]=tt;
-    }catch(e){ TIERS[ds]=TIERS[ds]||{}; }
+      const K=classifyHailRows(rows); CLASSC[ds]={cls:K.cls, prov:K.provisional};   // ONE-source class
+    }catch(e){ TIERS[ds]=TIERS[ds]||{}; CLASSC[ds]=CLASSC[ds]||{cls:"NO_HAIL",prov:false}; }
   }
-  try{ sessionStorage.setItem("tempest_tiers", JSON.stringify(TIERS)); }catch(e){}
-  renderCal();   // repaint with tier treatment (targets now cached -> no re-loop)
+  try{ sessionStorage.setItem("tempest_tiers", JSON.stringify(TIERS));
+       sessionStorage.setItem("tempest_classc", JSON.stringify(CLASSC)); }catch(e){}
+  renderCal();   // repaint with class fill-state (targets now cached -> no re-loop)
 }
 
 // ── NATIONAL RADAR (item 7): add IEM NEXRAD N0Q base-reflectivity as a toggleable
@@ -1976,6 +2109,70 @@ function addChaseLayer(chase){
   blk.addEventListener("input",ev=>{ if(ev.target.dataset.cdial!=null) setChaseOpacity(ev.target.value/100); });
   setChaseOpacity(0.90);
   apply();   // master off -> nothing renders; rows dimmed
+}
+
+// ── OUT-OF-MARKET CHASE SWATH (2026-07-11 truth pass): the chase swath is its OWN subordinate layer,
+//    PRESENT by default (216 sq mi of 2" hail must never render as a blank map again) but visually
+//    subordinate — DESATURATED grey fill (never an in-market/fundable color), dimmed, with a dashed
+//    convex-hull boundary + a persistent "OUT OF MARKET — chase" label. Display-only; never touches the
+//    in-market ramp/badge/spend math; never moves the map. Distinct from the opt-in CHASE FILL targeting. ──
+let CHASE_SWATH_LAYER=null;
+function _convexHull(pts){                                     // pts [[lat,lng]...] -> hull [[lat,lng]...]
+  const P=pts.map(p=>[p[1],p[0]]).sort((a,b)=>a[0]-b[0]||a[1]-b[1]);   // work in [x=lng,y=lat]
+  if(P.length<3) return pts.slice();
+  const cross=(o,a,b)=>(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0]);
+  const lo=[]; for(const p of P){ while(lo.length>=2 && cross(lo[lo.length-2],lo[lo.length-1],p)<=0) lo.pop(); lo.push(p); }
+  const up=[]; for(let i=P.length-1;i>=0;i--){ const p=P[i]; while(up.length>=2 && cross(up[up.length-2],up[up.length-1],p)<=0) up.pop(); up.push(p); }
+  lo.pop(); up.pop(); return lo.concat(up).map(p=>[p[1],p[0]]);        // back to [lat,lng]
+}
+function addChaseSwathLayer(D){
+  if(CHASE_SWATH_LAYER){ if(TMAP&&TMAP.hasLayer(CHASE_SWATH_LAYER)) TMAP.removeLayer(CHASE_SWATH_LAYER); CHASE_SWATH_LAYER=null; }
+  const ex=document.querySelector(".chaseoom"); if(ex) ex.remove();
+  if(!TMAP || !D.chase || !D.chase.swath_cells || !D.chase.swath_cells.length) return;
+  const cells=D.chase.swath_cells;
+  const GREY_RAMP=[[74,82,98],[104,113,130],[136,146,164],[168,178,194],[198,206,220],[222,228,238]]; // desaturated slate
+  if(!TMAP.getPane("chaseSwathPane")){ TMAP.createPane("chaseSwathPane");
+    const p=TMAP.getPane("chaseSwathPane"); p.style.zIndex=345; p.style.pointerEvents="none"; }  // BELOW in-market swath (z351)
+  const layers=[];
+  const grp=buildHeatmap(cells, c=>+c[2]||0, GREY_RAMP, "chaseSwathPane", 345, null);            // relative grey ramp = never a hail color
+  if(grp){ grp.eachLayer(im=>im.setOpacity(0.5)); layers.push(grp); }                            // dimmed = subordinate
+  const hull=_convexHull(cells.map(c=>[c[0],c[1]]));
+  if(hull.length>=3) layers.push(L.polygon(hull,{pane:"chaseSwathPane",color:"#7c869a",weight:1.6,
+    dashArray:"7,6",fill:false,interactive:false}));                                             // dashed boundary
+  if(layers.length){ CHASE_SWATH_LAYER=L.layerGroup(layers).addTo(TMAP); }
+  const host=document.getElementById("map");
+  if(host){ const b=document.createElement("div"); b.className="chaseoom";
+    const n=swathNums(cells);
+    b.innerHTML='OUT OF MARKET \\u2014 chase <span>'+n.max.toFixed(2)+'\\u2033 \\u00b7 '+n.gated+' gated \\u00b7 '+n.sqmi+' sq mi</span>';
+    host.appendChild(b); }
+}
+
+// ── PART 3 — SMALL IN-MARKET SWATH VISIBILITY FLOOR (2026-07-11): a real in-market gated swath,
+//    however small (07-03/07-10/06-24 are ~2-4 sq mi = a few pixels at metro zoom), must be
+//    unmissable. Add a minimum-footprint marker at the gated centroid, shown ONLY when zoomed out
+//    (the honest heatmap geometry stands on its own once you zoom in). Presentation floor, NOT a data
+//    change — the absolute-ramp swath is untouched; large swaths (>25 sq mi) never get a floor marker. ──
+let SWATH_FLOOR_MARKER=null, SWATH_FLOOR_UPD=null;
+function addSwathVisibilityFloor(D){
+  if(SWATH_FLOOR_MARKER && TMAP){ if(SWATH_FLOOR_UPD) TMAP.off("zoomend",SWATH_FLOOR_UPD);
+    if(TMAP.hasLayer(SWATH_FLOOR_MARKER)) TMAP.removeLayer(SWATH_FLOOR_MARKER); SWATH_FLOOR_MARKER=null; }
+  if(!TMAP || !D.swath_cells || !D.swath_cells.length) return;
+  const cells=D.swath_cells, n=swathNums(cells);
+  if(!(n.gated>0) || n.sqmi>25) return;                        // only small, real gated swaths get a floor
+  const gc=cells.filter(c=>(+c[2]||0)>1.125), use=gc.length?gc:cells;
+  const lat=use.reduce((a,c)=>a+c[0],0)/use.length, lng=use.reduce((a,c)=>a+c[1],0)/use.length;
+  const col=hailAbsColor(n.max)||{c:[136,146,164]};
+  const rgb='rgb('+col.c[0]+','+col.c[1]+','+col.c[2]+')';
+  const sub=(D.classification&&D.classification.cls===CLS.SUB);
+  if(!TMAP.getPane("swathFloorPane")){ TMAP.createPane("swathFloorPane"); TMAP.getPane("swathFloorPane").style.zIndex=353; }
+  SWATH_FLOOR_MARKER=L.circleMarker([lat,lng],{pane:"swathFloorPane",radius:9,color:"#fff",weight:2,
+    fillColor:rgb,fillOpacity:0.92})
+    .bindTooltip((sub?'Sub-gate hail':'Hail')+' \\u00b7 max '+n.max.toFixed(2)+'\\u2033 \\u00b7 '+n.gated+
+      ' gated cell'+(n.gated===1?'':'s')+' \\u00b7 '+n.sqmi+' sq mi',{direction:"top"});
+  const FLOOR_ZOOM=11;
+  SWATH_FLOOR_UPD=()=>{ if(TMAP.getZoom()<=FLOOR_ZOOM){ if(!TMAP.hasLayer(SWATH_FLOOR_MARKER)) SWATH_FLOOR_MARKER.addTo(TMAP); }
+    else if(TMAP.hasLayer(SWATH_FLOOR_MARKER)) TMAP.removeLayer(SWATH_FLOOR_MARKER); };
+  SWATH_FLOOR_UPD(); TMAP.on("zoomend",SWATH_FLOOR_UPD);
 }
 
 // ── BOTTOM DRAWERS: relocate LIVE (.livectl) and Active perils (.legend) into two
@@ -2719,6 +2916,8 @@ async function boot(){
   addLiveLayers();      // item 7 ext: live NEXRAD loop + NWS warnings + storm-track cones (display-only, all off by default)
   initWeather();        // weather tab: rain forecast for job scheduling (isolated tool view; NWS + Census, no graph/engine)
   addChaseLayer(D.chase);   // item 8 Step 3 v2: chase TARGETING block at the bottom of the Layers panel (master OFF)
+  addChaseSwathLayer(D);    // truth pass: OUT-OF-MARKET chase SWATH — subordinate, labeled, PRESENT by default
+  addSwathVisibilityFloor(D); // truth pass Part 3: min footprint so a small in-market gated swath is unmissable
   addMapSearch();           // map location search: City/State + address typeahead (reuses Photon; navigation only)
   addPull();                // item 10: on-demand PULL (150mi capture -> secured write endpoint)
   buildOperatorPanel(D, forecast);
@@ -2727,6 +2926,12 @@ async function boot(){
   setupMobile();
   setupPush();           // PWA push subscribe + re-subscribe-on-open (best-effort; SMS is the backbone)
   handleApproveDeepLink(); // ?s=TOKEN -> the shared approve modal (PWA + plain tab)
+  if(D.geofence_fault){                                       // fail-loud: never a silent ads-gate exclusion
+    console.warn("in_geofence UNSET on in-market hail cluster "+D.storm_date+
+      " \\u2014 the fail-closed ads gate would silently exclude it (data fault).");
+    banner = (banner ? banner+"  \\u00b7  " : "") +
+      "\\u26a0 in_geofence unset on this in-market storm \\u2014 ads gate would silently skip it (data fault).";
+  }
   if(banner) showBanner(banner); else hideBanner();
 }
 boot();
