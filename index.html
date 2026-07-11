@@ -510,6 +510,9 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .sd-promo.live{background:#eef3ff;border-left:4px solid #2b5cc6;color:#1e2b46}
 .sd-promo .badge{display:inline-block;background:#2b5cc6;color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:9px;margin-right:6px;vertical-align:1px}
 .sd-promo .cx{display:block;margin-top:4px;font-weight:700;color:#8a6d3b;font-style:italic}
+.sd-promo.provisional{border-left-color:#c77d0a;background:#fff7ec}
+.sd-promo .prov{display:inline-block;background:#c77d0a;color:#fff;font-size:9.5px;font-weight:800;letter-spacing:.4px;padding:2px 7px;border-radius:9px;margin-right:6px;vertical-align:1px}
+.sd-promo .mc{display:block;margin-top:4px;font-weight:800;color:#fff;background:#b3341a;padding:4px 8px;border-radius:6px}
 .sd-promo .cfm{display:flex;gap:6px;margin-top:6px}
 .sd-promo .cfm button{flex:1;border:none;border-radius:6px;padding:6px 0;font-size:11.5px;font-weight:800;cursor:pointer}
 .sd-promo .cfm .go{background:#7a4f19;color:#fff}.sd-promo .cfm .no{background:#e5e7eb;color:#333}
@@ -2014,18 +2017,22 @@ async function sgRefreshPromotion(){
   const send=document.getElementById("sdSend"), pr=document.getElementById("sdPromo"); if(!send||!pr) return;
   let info; try { info = await sdApi("active-promotion", { date:getDate(), peril:"hail" }); }
   catch(e){ send.disabled=true; send.title="Promotion state unavailable \u2014 "+e.message; return; }
+  const _pi = (info && info.passes_incomplete)   // Part 1 warning chip: pricing passes failed at finalization
+    ? "<span class='mc'>\u26a0 PRICING INCOMPLETE \u2014 pass chain failed; costs may be stale/fallback (best-effort-then-fix)</span>" : "";
   if(info && info.promoted){
     send.disabled=false;
     send.title="Feeds the active promoted geometry (v"+info.promotion_version+") to the push lane.";
-    pr.style.display="block"; pr.className="sd-promo live";
+    pr.style.display="block"; pr.className="sd-promo live"+(info.provisional?" provisional":"");
     pr.innerHTML="<span class='badge'>PROMOTED \u00b7 v"+info.promotion_version+" \u00b7 "+(info.promoted_at||"")+"</span>"
+      +(info.provisional ? "<span class='prov'>PROVISIONAL \u2014 pre-12:00Z detection</span>" : "")
       +"active geometry \u00b7 "+info.n_circles+" rings \u00b7 recommended $"+Math.round(info.recommended_spend||0).toLocaleString()
-      +(info.campaign_record_exists ? "<span class='cx'>\u26a0 campaign exists \u2014 re-promotion changes NOTHING at Google; mid-flight re-pointing is Stage 3</span>" : "");
+      +(info.finalized_differs ? "<span class='mc'>\u26a0 FINALIZED GEOMETRY DIFFERS FROM PROMOTED \u2014 review before continuing spend</span>" : "")
+      +(info.campaign_record_exists ? "<span class='cx'>\u26a0 campaign exists \u2014 re-promotion changes NOTHING at Google; mid-flight re-pointing is Stage 3</span>" : "")+_pi;
   } else {
     send.disabled=true;
     send.title="No promoted solve \u2014 Approve a snapshot first.";
     pr.style.display="block"; pr.className="sd-promo none";
-    pr.innerHTML="<b>Send disabled</b> \u2014 "+((info&&info.states_why)||"no promoted solve \u2014 Approve a snapshot first")+".";
+    pr.innerHTML="<b>Send disabled</b> \u2014 "+((info&&info.states_why)||"no promoted solve \u2014 Approve a snapshot first")+"."+_pi;
   }
 }
 
