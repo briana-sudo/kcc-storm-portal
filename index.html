@@ -518,6 +518,13 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .sd-promo .cfm .go{background:#7a4f19;color:#fff}.sd-promo .cfm .no{background:#e5e7eb;color:#333}
 .sd-verdict{margin:8px 0;padding:8px 10px;border-radius:7px;font-size:12px;font-weight:600;background:#fff4e6;border-left:4px solid #e8430a;color:#5a3a1a}
 .sd-verdict.ok{background:#eaf7ef;border-left-color:#1a7a4f;color:#1c4a32}
+.sd-verdict.parcelbasis{border-left-color:#7a4fd6}
+.sd-peril{display:inline-block;background:#6a2fb5;color:#fff;font-size:9px;font-weight:800;letter-spacing:.5px;padding:1px 6px;border-radius:9px;vertical-align:1px}
+.sd-basis{display:inline-block;background:#efe7fb;color:#5a2fa0;font-size:9px;font-weight:800;letter-spacing:.4px;padding:1px 6px;border-radius:9px}
+.tchip{position:absolute;left:10px;top:10px;z-index:641;display:flex;flex-direction:column;gap:4px;pointer-events:none}
+.tchip span{font:800 10px/1.3 system-ui,sans-serif;padding:3px 8px;border-radius:9px;box-shadow:0 2px 8px rgba(0,0,0,.3);letter-spacing:.02em}
+.tchip .fund{background:#1a7a4f;color:#fff}.tchip .nofund{background:#8a6d3b;color:#fff}
+.tchip .miss{background:#b3341a;color:#fff}.tchip .pinc{background:#c77d0a;color:#fff}
 .sd-verdict.warn{background:#fdeaea;border-left-color:#bd0026;color:#7a1620}
 .sd-claimwarn{margin:0 0 9px;padding:8px 10px;border-radius:7px;font-size:11.5px;font-weight:700;
   background:#fff3cd;border:1px solid #e0a800;color:#7a5b00}
@@ -1276,6 +1283,28 @@ function swathNums(cells){ let mx=0,g=0; (cells||[]).forEach(c=>{ const s=+c[2]|
 // Classify a date's raw storm_date_layers ROWS into ONE hail verdict. In-market FUNDABLE beats
 // in-market SUB_GATE beats out-of-market CHASE beats NO_HAIL — a real in-market hit is never hidden
 // behind chase, and a blank in-market day still surfaces the chase truth instead of "No qualifying storm".
+// Core-3 (2026-07-12): the deferred portal CHIPS, read from the additive storm_date_layers fields —
+// tornado gate verdict (fundable / not + reason), the miss-recovery review flag, and the
+// pricing-incomplete flag. Renders a small stack on the map; absent fields -> no chip.
+function tornadoChips(rows){
+  const tor = (rows||[]).find(r => r.peril === "tornado");
+  return { tornado_fundable: tor ? !!tor.fundable : null,
+           tornado_reason: tor ? (tor.not_promotable_reason || "") : "",
+           miss_recovery: (rows||[]).some(r => r.miss_recovery),
+           passes_incomplete: (rows||[]).some(r => r.passes_incomplete) };
+}
+function renderTornadoChips(D){
+  const host=document.getElementById("map"); if(!host) return;
+  const old=document.getElementById("tchips"); if(old) old.remove();
+  const c=(D&&D.chips)||{}, parts=[];
+  if(c.tornado_fundable===true) parts.push("<span class='fund'>TORNADO FUNDABLE</span>");
+  else if(c.tornado_fundable===false) parts.push("<span class='nofund' title='"+(c.tornado_reason||"")+"'>TORNADO \u2014 NOT FUNDABLE</span>");
+  if(c.miss_recovery) parts.push("<span class='miss'>\u26a0 NWS-CONFIRMED \u2014 RADAR GATE DID NOT FIRE</span>");
+  if(c.passes_incomplete) parts.push("<span class='pinc'>\u26a0 PRICING INCOMPLETE</span>");
+  if(!parts.length) return;
+  const el=document.createElement("div"); el.id="tchips"; el.className="tchip"; el.innerHTML=parts.join("");
+  host.appendChild(el);
+}
 function classifyHailRows(rows){
   const im = (rows||[]).find(r=>r && r.peril==="hail" && r.coverage_zone!=="chase");
   const chaseRows = (rows||[]).filter(r=>r && r.peril==="hail" && r.coverage_zone==="chase");
@@ -1368,6 +1397,7 @@ function assemble(date, rows, geo){
     core2_size_floor: (h && h.core2_size_floor != null) ? +h.core2_size_floor : null,
     core2_min_contig: (h && h.core2_min_contig != null) ? +h.core2_min_contig : null,
   };
+  D.chips = tornadoChips(rows);                                 // Core-3 portal chips (from proxy fields)
   // Initial framing uses in-market targeting only — the chase toggle never moves the
   // map (Part 3), and the unified swath renders to 150mi regardless of view.
   const pts = [];
@@ -1699,9 +1729,15 @@ function sgRenderAll(){
   const sol=SG_STATE.sol; if(!sol) return;
   sgHeadline(sol); sgTable(sol); sgDrawSel(sol); sgSnapBar(); sgCompare();
   const v=document.getElementById("sdVerdict"), s=sgSums(sol);
-  if(v){ v.textContent = s.dmg>0 ? ("Solved \u00b7 "+s.n+" rings \u00b7 $"+Math.round(s.smin).toLocaleString()+"\u2013$"+Math.round(s.smax).toLocaleString())
-      : "Presence only \u2014 no damage core; recommended $0";
-    v.className="sd-verdict "+(s.dmg>0?"ok":""); }
+  if(v){
+    // Core-3: a tornado solve carries a peril tag + a PARCEL-BASIS label so its $ is never mistaken for
+    // the hail damaged-homes basis. Hail solves (no exposure_basis) render byte-identically to before.
+    const isT = (sol.peril && sol.peril!=="hail");
+    const perilTag = isT ? "<span class='sd-peril'>"+sol.peril.toUpperCase()+"</span> " : "";
+    const basis = sol.exposure_basis ? " <span class='sd-basis' title='"+sol.exposure_basis+"'>PARCEL-BASIS</span>" : "";
+    v.innerHTML = perilTag + (s.dmg>0 ? ("Solved \u00b7 "+s.n+" rings \u00b7 $"+Math.round(s.smin).toLocaleString()+"\u2013$"+Math.round(s.smax).toLocaleString()+basis)
+      : "Presence only \u2014 no damage core; recommended $0");
+    v.className="sd-verdict "+(s.dmg>0?"ok":"")+(sol.exposure_basis?" parcelbasis":""); }
   // STAGE 2: Approve enables on a FUNDABLE solve (something to promote). Send is gated on an ACTIVE
   // PROMOTION only (never on a fresh solve) — sgRefreshPromotion owns sdSend.disabled + the badge.
   const ap=document.getElementById("sdApprove"); if(ap) ap.disabled = !(s.dmg>0);
@@ -3336,6 +3372,7 @@ async function boot(){
   }
   // ALWAYS render the interactive map (basemap + service-area reference), storm or not.
   const D = assemble(date, rows||[], geo);
+  renderTornadoChips(D);                                        // Core-3: gate verdict / miss-recovery / pricing chips
   renderMap(D);
   setBaseStreet();
   paintRankedTargets(D);   // #6 additive: payout-score rank badges (no-op if no data)
