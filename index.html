@@ -454,6 +454,12 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .swathbadge{position:absolute;left:10px;bottom:26px;z-index:640;pointer-events:none;font:600 11px/1.3 system-ui,-apple-system,sans-serif;padding:5px 9px;border-radius:7px;box-shadow:0 2px 8px rgba(0,0,0,.35);letter-spacing:.02em}
 .swathbadge.subgate{background:#223247;color:#b9c8dd;border:1px solid #33465f}
 .swathbadge.gated{background:#3a1414;color:#ffd9cf;border:1px solid #7a2a20}
+/* PER-PERIL glance badges (truth pass) — named wind/tornado corner labels, stacked ABOVE the hail badge */
+.perilbadges{position:absolute;left:10px;bottom:46px;z-index:641;display:flex;flex-direction:column;gap:4px;pointer-events:none}
+.perilbadge{font:800 10px/1.3 system-ui,-apple-system,sans-serif;letter-spacing:.05em;text-transform:uppercase;padding:4px 9px;border-radius:7px;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+.perilbadge.tornado{background:rgba(58,14,14,.92);color:#ffd2cd;border:1px solid #7a2a20}
+.perilbadge.wind{background:rgba(8,32,72,.92);color:#cfe1ff;border:1px solid #24487f}
+.swath-hover-tip .oom{color:#9fb0c8;font-weight:700}
 .leaflet-image-layer.hailheat{image-rendering:auto}
 /* OUT-OF-MARKET chase swath label (truth pass) — persistent, subordinate slate, its own numbers */
 .chaseoom{position:absolute;right:10px;bottom:26px;z-index:640;pointer-events:none;font:800 10.5px/1.3 system-ui,-apple-system,sans-serif;
@@ -1167,32 +1173,53 @@ L.map = function(){ const m = _origLmap.apply(this, arguments); TMAP = m; return
 // hit-tests the underlying cell GRID at the cursor lat/lng, so it reads IDENTICALLY in both
 // render modes — Cells (per-cell rects) and Smooth (the imageOverlay raster is dumb). Gated to
 // 7-wide cells so it only lights up on the live provisional swath, not historical dates.
-let _HOVER = {idx:null, step:0.01, tip:null, wired:false};
+// PER-PERIL hover index (truth pass, 2026-07-13): EVERY rendered swath is point-identifiable, not
+// just the live hail one. Works at cellW>=3 so HISTORICAL swaths (6-wide hail, 3-wide wind/tornado)
+// and the out-of-market chase swath all gain hover; the richer size/scan-time/persistence line only
+// shows on 7-wide LIVE hail cells. `_HOVER.layers` is priority-ordered (topmost/most-specific first);
+// the mousemove reads the live array so re-calling initSwathHover per date refreshes it in place.
+let _HOVER = {layers:[], tip:null, wired:false};
 function _hoverKey(la, lo, st){ return (Math.round(la/st)*st).toFixed(3)+","+(Math.round(lo/st)*st).toFixed(3); }
 function _fmtScanTs(ts){
   const m=/^(\d{4})(\d{2})(\d{2})-(\d{2})Z?$/.exec(String(ts||"")); if(!m) return String(ts||"\u2014");
   try{ return new Intl.DateTimeFormat("en-US",{month:"numeric",day:"numeric",hour:"numeric",hour12:true,
        timeZone:"America/Chicago"}).format(new Date(Date.UTC(+m[1],+m[2]-1,+m[3],+m[4]))); }catch(e){ return String(ts); }
 }
-function initSwathHover(cells){
-  const live = (cells && cells.length && cells[0].length>=7) ? cells : null;  // 7-wide == live provisional
-  _HOVER.idx = null;
-  if(live){
-    const lats=[...new Set(live.map(c=>+c[0]))].sort((a,b)=>a-b);
-    let st=0.01; for(let i=1;i<lats.length;i++){ const d=lats[i]-lats[i-1]; if(d>1e-6 && d<st) st=d; }
-    _HOVER.step = st||0.01;
-    const m=new Map(); for(const c of live) m.set(_hoverKey(+c[0],+c[1],_HOVER.step), c); _HOVER.idx=m;
+function _hoverGrid(cells, peril){                                  // one peril's cell grid, or null
+  if(!cells || !cells.length || !cells[0] || cells[0].length<3) return null;
+  const lats=[...new Set(cells.map(c=>+c[0]))].sort((a,b)=>a-b);
+  let st=0.01; for(let i=1;i<lats.length;i++){ const d=lats[i]-lats[i-1]; if(d>1e-6 && d<st) st=d; }
+  st=st||0.01;
+  const m=new Map(); for(const c of cells) m.set(_hoverKey(+c[0],+c[1],st), c);
+  return { step:st, map:m, peril, live:(cells[0].length>=7) };
+}
+function _hoverTip(g, c){
+  const v=(+c[2]||0).toFixed(2);
+  if(g.peril==="hail" || g.peril==="chase"){
+    let s='<b>'+v+'\u2033 hail</b>'+(g.peril==="chase"?' <span class="oom">out of market \u00b7 chase</span>':'');
+    if(g.live && c.length>=7) s+='<br>max @ '+_fmtScanTs(c[6])+'<br>'+(+c[4]||0)+' scan'+((+c[4]||0)===1?'':'s')+' with hail';
+    return s;
   }
+  if(g.peril==="tornado") return '<b>tornado corridor</b><br>rotation index '+v;
+  if(g.peril==="wind")    return '<b>wind swath</b><br>gust index '+v;
+  return '<b>'+v+'</b>';
+}
+function initSwathHover(D){
+  _HOVER.layers = [];
+  const add=(cells,peril)=>{ const g=_hoverGrid(cells,peril); if(g) _HOVER.layers.push(g); };
+  add((D&&D.swath_cells)||[], "hail");                             // priority: in-market hail first
+  if(D&&D.tornado) add(D.tornado.swath_cells||[], "tornado");
+  if(D&&D.wind)    add(D.wind.swath_cells||[], "wind");
+  if(D&&D.chase)   add((D.chase.swath_cells)||[], "chase");        // out-of-market chase last
   if(!TMAP || _HOVER.wired) return;
   _HOVER.wired=true;
   _HOVER.tip=L.tooltip({sticky:true, direction:"top", opacity:0.95, className:"swath-hover-tip"});
   TMAP.on("mousemove", e=>{
-    const c=_HOVER.idx && _HOVER.idx.get(_hoverKey(e.latlng.lat, e.latlng.lng, _HOVER.step));
-    if(!c){ TMAP.closeTooltip(_HOVER.tip); return; }
-    const size=(+c[2]||0).toFixed(2), pers=(+c[4]||0);
-    _HOVER.tip.setLatLng(e.latlng).setContent(
-      '<b>'+size+'\u2033 hail</b><br>max @ '+_fmtScanTs(c[6])+'<br>'+pers+' scan'+(pers===1?'':'s')+' with hail');
-    TMAP.openTooltip(_HOVER.tip);
+    for(const g of _HOVER.layers){
+      const c=g.map.get(_hoverKey(e.latlng.lat, e.latlng.lng, g.step));
+      if(c){ _HOVER.tip.setLatLng(e.latlng).setContent(_hoverTip(g,c)); TMAP.openTooltip(_HOVER.tip); return; }
+    }
+    TMAP.closeTooltip(_HOVER.tip);
   });
   TMAP.on("mouseout", ()=>{ if(_HOVER.tip) TMAP.closeTooltip(_HOVER.tip); });
 }
@@ -1218,6 +1245,23 @@ function updateSwathBadge(cells){
     b.textContent='sub-gate \u00b7 max '+mx.toFixed(2)+'\u2033 \u00b7 0 fundable cells'
       + ((live && _fmtSinceHr(since)) ? ' \u00b7 cumulative since '+_fmtSinceHr(since) : ''); }
   b.style.display="";
+}
+
+// PER-PERIL glance badges (truth pass, 2026-07-13): wind + tornado swaths get a NAMED corner label
+// (peril · max · cell count), stacked above the hail badge, so no rendered raster is nameless. Chase
+// keeps its own OUT OF MARKET badge (addChaseSwathLayer). Hail keeps updateSwathBadge above.
+let _PERILBADGEBOX = null;
+function updatePerilBadges(D){
+  const host=document.getElementById("map"); if(!host) return;
+  if(!_PERILBADGEBOX){ _PERILBADGEBOX=document.createElement("div"); _PERILBADGEBOX.className="perilbadges"; host.appendChild(_PERILBADGEBOX); }
+  const box=_PERILBADGEBOX; box.innerHTML="";
+  const nums=cells=>{ let mx=0; for(const c of (cells||[])){ const s=+c[2]||0; if(s>mx) mx=s; } return {mx, n:(cells||[]).length}; };
+  const add=(cls,html)=>{ const b=document.createElement("div"); b.className="perilbadge "+cls; b.innerHTML=html; box.appendChild(b); };
+  if(D && D.tornado && D.tornado.swath_cells && D.tornado.swath_cells.length){ const t=nums(D.tornado.swath_cells);
+    add("tornado","TORNADO \u00b7 rot "+t.mx.toFixed(1)+" \u00b7 "+t.n+" cell"+(t.n===1?'':'s')); }
+  if(D && D.wind && D.wind.swath_cells && D.wind.swath_cells.length){ const w=nums(D.wind.swath_cells);
+    add("wind","WIND \u00b7 max "+w.mx.toFixed(1)+" \u00b7 "+w.n+" cell"+(w.n===1?'':'s')); }
+  box.style.display = box.children.length ? "" : "none";
 }
 
 // STORM-DAY (mirrors engine storm.service.provisional.storm_day_of): the Central convective day runs
@@ -1675,6 +1719,7 @@ window.tempestMonthsSince = function(dateStr){
 const SOLVE_API = (CFG.solveApi || "").replace(/\/$/, "") ||
                   (API ? API.replace(/\/api\/storm$/, "/api/solve-geometry") : "");
 let SG_STATE = { sol: null }, SG_GRP = null, SG_BASEGRP = null;
+let SG_PERIL = "hail";           // active Spend-Dial peril (hail | tornado). Wind is not solvable yet.
 const SG_BANDS = [["1.125-1.5", "b0"], ["1.5-1.8", "b1"], ["1.8-2.0", "b2"], ["2.0+", "b3"]];
 async function sgApi(body){
   if(!SOLVE_API) throw new Error("no solve-geometry endpoint configured");
@@ -1694,7 +1739,8 @@ async function sgSolveFresh(){   // hail floor / date -> FRESH geometry from the
   if(w){ w.style.display="block"; w.innerHTML="Solving\u2026 <span class='warm'>(warming index if cold \u2014 first solve of a date is slow)</span>"; }
   if(v){ v.textContent="Solving\u2026"; v.className="sd-verdict"; }
   try {
-    const sol = await sgApi({ date:getDate(), hail_floor:+document.getElementById("sdHail").value,
+    const sol = await sgApi({ date:getDate(), peril:SG_PERIL,
+      hail_floor:+document.getElementById("sdHail").value,   // ignored server-side for tornado (fixed corridor)
       spend_cap:+document.getElementById("sdCapR").value });
     SG_STATE.sol = sol; SG_MANUAL = new Set();
     sgApplyDials(); sgSnapPush(sol); sgRenderAll();
@@ -1747,7 +1793,7 @@ function sgHeadline(sol){
   w.innerHTML="floor <b>"+(+sol.floor).toFixed(3)+"\u2033</b> \u00b7 <b>"+s.n+"</b> rings \u00b7 audience <b>"+s.aud.toLocaleString()
     +"</b> \u00b7 damaged <b>"+s.dmg.toLocaleString()+"</b> \u00b7 search <b>$"+Math.round(s.smin).toLocaleString()+"\u2013$"+Math.round(s.smax).toLocaleString()
     +"</b> \u00b7 <span title='Core jobs = search yield from the damage cores (\u22658.5 intensity / \u22652.0\u2033). Insurance-approvable hail extends below core thresholds (1\u2033, 6+ hits/square); band conversion is unmeasured until live-campaign learning. Treat core jobs as the floor.'>~<b>"+s.jobs+"</b> core jobs \u00b7 <span class='warm'>band upside unmodeled (learning)</span></span>"
-    +(sol.index_warming?' <span class="warm">\u00b7 index warming (cold path)</span>':"");
+    +((sol.served_by==="cold"||sol.index_warming)?' <span class="warm" title="The resident solve engine (KCCSolveEngine, 8790) did not serve this solve \u2014 the slow cold GPKG path did. Numbers are correct; expect delay. If every solve is cold, the service is down or stale (restart it).">\u00b7 \u26a0 cold solve \u2014 resident engine unavailable or stale; expect delay / check service</span>':"");
   w.style.display="block";
 }
 function sgTable(sol){
@@ -1832,13 +1878,51 @@ function sgDrawBase(on, D){                     // frozen base cluster as a dash
     { pane:"baseGhost", radius:(c.radius_mi||1)*1609.344, color:"#64748b", weight:1, opacity:.7, dashArray:"3,4", fill:false })));
   SG_BASEGRP = L.layerGroup(layers).addTo(TMAP);
 }
+// circle_id -> coords for the Solve map SNAP, keyed by the ACTIVE peril's cluster:
+// CLUSTER-<peril>-<date>#<idx> (matches solve()'s funded_circle_ids / deselected[].circle_id).
+// Rebuilt on every peril flip so the snap lands on the right geometry.
+function sdBuildCircles(peril, D){
+  SD_CIRCLES = {};
+  const src = (peril === "tornado") ? ((D && D.tornado && D.tornado.circles) || [])
+                                    : ((D && D.circles) || []);
+  const ck = "CLUSTER-" + peril + "-" + getDate();
+  src.forEach((c, i) => { SD_CIRCLES[ck + "#" + i] = { lat: c.center_lat, lng: c.center_lng, r: c.radius_mi }; });
+}
+// Tornado button state off the per-date tornado gate verdict the proxy serves (D.chips, from
+// storm_date_layers' fundable / not_promotable_reason). Fundable -> enabled; detected-but-not-
+// fundable -> disabled with the states-why reason (never "calibrating"); no tornado row -> disabled
+// "no tornado detected". Wind stays "calibrating" (no wind solve exists).
+function sdTornadoBtn(D){
+  const chips = (D && D.chips) || {}, f = chips.tornado_fundable;
+  if(f === true)  return '<button data-peril="tornado">Tornado</button>';
+  const why = (f === false) ? (chips.tornado_reason || "detected \u2014 below the tornado funding gate")
+                            : "no tornado detected on this date";
+  return '<button disabled data-peril="tornado" title="' + why.replace(/"/g,"&quot;") + '">Tornado</button>';
+}
+// Flip the active Spend-Dial peril: restyle the segment, swap the header badge, disable the hail-floor
+// slider for tornado (a tornado prices on its FIXED corridor — the floor is meaningless, never let it
+// silently pretend to re-solve), rebuild the snap circles, and re-price the table for the new peril.
+function sdSetPeril(peril, D){
+  if(peril === SG_PERIL) return;
+  SG_PERIL = peril;
+  document.querySelectorAll("#spendPanel .sd-peril button").forEach(b =>
+    b.classList.toggle("on", b.dataset.peril === peril));
+  const pk = document.querySelector("#spendPanel h2 .pk"); if(pk) pk.textContent = peril.toUpperCase();
+  const hail = document.getElementById("sdHail"), hrow = hail ? hail.closest(".sd-row") : null;
+  const isT = (peril === "tornado");
+  if(hail) hail.disabled = isT;
+  if(hrow){ hrow.style.opacity = isT ? "0.45" : ""; hrow.title = isT ? "Hail floor is n/a for a tornado solve \u2014 it prices on the fixed corridor" : ""; }
+  const fn = document.querySelector("#spendPanel .sd-floornote");
+  if(fn) fn.textContent = isT
+    ? "n/a for tornado \u2014 the corridor geometry is fixed; funding is corridor parcels (audience), priced parcel-basis."
+    : "Audience width only \u2014 funding comes from the damage cores (\u22658.5 intensity or \u22652.0\u2033 size). Dialing below 1.80\u2033 widens the ad field around funded damage; it never changes damaged homes or spend.";
+  sdBuildCircles(peril, D);
+  sgSolveFresh();                                                  // reprice for the new peril
+  if(typeof sgRefreshPromotion === "function") sgRefreshPromotion();   // Approve/Send state for this peril
+}
 function setupSpendDial(D){
   if(document.getElementById("spendPanel")) return;
-  // circle_id -> coords for the Solve map SNAP (hail is the only solvable peril). circle_id is
-  // CLUSTER-hail-<date>#<idx>, matching solve()'s funded_circle_ids / deselected[].circle_id.
-  SD_CIRCLES = {}; const _ck = "CLUSTER-hail-" + getDate();
-  ((D && D.circles) || []).forEach((c, i) => { SD_CIRCLES[_ck + "#" + i] =
-    { lat: c.center_lat, lng: c.center_lng, r: c.radius_mi }; });
+  sdBuildCircles("hail", D);                                       // hail is the initial active peril
   const host = (document.getElementById("side") || {}).parentElement || document.getElementById("main") || document.body;
   const p = document.createElement("div"); p.id = "spendPanel";
   p.innerHTML =
@@ -1846,7 +1930,7 @@ function setupSpendDial(D){
     + '<div class="sd-row sd-peril"><label>Peril</label><div class="sd-seg">'
     + '<button class="on" data-peril="hail">Hail</button>'
     + '<button disabled title="calibrating" data-peril="wind">Wind</button>'
-    + '<button disabled title="calibrating" data-peril="tornado">Tornado</button></div></div>'
+    + sdTornadoBtn(D) + '</div></div>'
     + '<div class="sd-cap"><span>Annual room: <b id="sdCap">set in config</b></span>'
     + '<span>Target jobs: <input id="sdTargetJobs" type="number" min="0" style="width:54px"></span></div>'
     + '<div class="sd-row"><label title="Audience width \u2014 which cells qualify a ring to run ads. Not the money.">Hail floor</label><input id="sdHail" type="range" min="1.125" max="4.00" step="0.025" value="1.80"><span class="val" id="sdHailV">1.80\u2033</span></div>'
@@ -1897,6 +1981,11 @@ function setupSpendDial(D){
   capr.oninput  = () => { document.getElementById("sdCapV").textContent = "$" + (+capr.value).toLocaleString(); _recompute(); };
   document.getElementById("sdTargetJobs").oninput = _recompute;
   document.getElementById("sdSolve").onclick = () => sgSolveFresh();
+  // PERIL TOGGLE (2026-07-13): a click on an enabled peril button flips the active peril and re-solves.
+  // Disabled buttons (wind "calibrating"; tornado when not fundable / not detected) are inert.
+  p.querySelectorAll(".sd-peril button[data-peril]").forEach(btn => {
+    btn.onclick = () => { if(!btn.disabled) sdSetPeril(btn.dataset.peril, D); };
+  });
   document.getElementById("sdApprove").onclick = sgApproveInline;   // promote the dialed solve (inline, no popup)
   document.getElementById("sdSend").onclick = sgSendPromoted;       // feed the ACTIVE promoted geometry to push
   const bt = document.getElementById("sgBaseToggle");
@@ -2045,13 +2134,13 @@ function sdPopup(cid){
 // ── STAGE 2 promotion (INLINE — no popups). Approve promotes the dialed solve to this storm's ONE
 //    active campaign geometry (graph only, never Google). Send feeds that promoted geometry to push.
 //    #sdPromo is the inline strip: promotion badge, campaign-exists warning, and the Approve confirm. ──
-function sgPromoDials(){ return { date:getDate(), peril:"hail",
+function sgPromoDials(){ return { date:getDate(), peril:SG_PERIL,
   hail_floor:+document.getElementById("sdHail").value, spend_cap:+document.getElementById("sdCapR").value }; }
 
 async function sgRefreshPromotion(){
   // Read the storm's active promotion and set Send state + badge from it (never from a fresh solve).
   const send=document.getElementById("sdSend"), pr=document.getElementById("sdPromo"); if(!send||!pr) return;
-  let info; try { info = await sdApi("active-promotion", { date:getDate(), peril:"hail" }); }
+  let info; try { info = await sdApi("active-promotion", { date:getDate(), peril:SG_PERIL }); }
   catch(e){ send.disabled=true; send.title="Promotion state unavailable \u2014 "+e.message; return; }
   const _pi = (info && info.passes_incomplete)   // Part 1 warning chip: pricing passes failed at finalization
     ? "<span class='mc'>\u26a0 PRICING INCOMPLETE \u2014 pass chain failed; costs may be stale/fallback (best-effort-then-fix)</span>" : "";
@@ -3419,8 +3508,9 @@ async function boot(){
       const w=buildHeatmap(D.wind.swath_cells,c=>+c[2]||0,WIND_RAMP,"wHeatPane",354); if(w) HL.push({pane:"windPane",group:w,peril:"wind",op:0.55}); }
     if(D.tornado && D.tornado.swath_cells && D.tornado.swath_cells.length){
       const t=buildHeatmap(D.tornado.swath_cells,c=>+c[2]||0,TORN_RAMP,"tHeatPane",355); if(t) HL.push({pane:"tornadoPane",group:t,peril:"tornado",op:0.55}); }
-    try{ initSwathHover(D.swath_cells); }catch(e){}   // Part C: live-swath hover (size/scan-time/persistence)
-    try{ updateSwathBadge(D.swath_cells); }catch(e){} // render-truth: sub-gate/gated glance badge
+    try{ initSwathHover(D); }catch(e){}               // truth pass: per-peril hover (hail/wind/tornado/chase)
+    try{ updateSwathBadge(D.swath_cells); }catch(e){} // render-truth: hail sub-gate/gated glance badge
+    try{ updatePerilBadges(D); }catch(e){}            // truth pass: named wind/tornado corner badges
     if(HL.length){ let mode="smooth";
       const setOp=o=>o.group.eachLayer(im=>im.setOpacity(o.op));
       const chk=sel=>{ const e=document.querySelector(sel); return !e || e.checked; };
