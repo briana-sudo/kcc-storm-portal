@@ -459,6 +459,25 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .sd-seg button{border:1px solid #c7d2e0;background:#f3f6fb;color:#26344d;border-radius:6px;padding:3px 9px;font-size:11px;font-weight:700;cursor:pointer}
 .sd-seg button.on{background:#2f6fe0;border-color:#2f6fe0;color:#fff}
 .sd-peril button:disabled{opacity:.4;cursor:not-allowed}
+/* STORM TOTAL — dual-peril stacked view */
+.sd-total{margin-top:-2px}
+#sdTotalBtn{border:1px solid #6a2fb5;background:#f4eefc;color:#4a1f86;border-radius:6px;padding:3px 11px;font-size:11px;font-weight:800;cursor:pointer}
+#sdTotalBtn.on{background:#6a2fb5;color:#fff}
+.sd-total-view{margin-top:6px}
+.sdt-summary{background:#111a30;color:#eaf1ff;border:1px solid #2b3d5f;border-radius:8px;padding:8px 11px;font-size:12.5px;margin-bottom:8px}
+.sdt-summary b{color:#7fb2ff}
+.sdt-summary.warn{background:#3a1414;border-color:#7a2a20;color:#ffd9cf}
+.sdt-disp{display:inline-block;margin-left:6px;font-size:9.5px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#f0b64a}
+.sdt-sec{border:1px solid #e3e8f0;border-radius:8px;padding:7px 8px;margin-bottom:8px}
+.sdt-head{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:5px}
+.sdt-v{font-size:11.5px;color:#26344d;font-weight:700}
+.sdt-nf{font-size:11.5px;color:#8a4b1b;font-weight:700}
+.sdt-btns{margin-left:auto;display:flex;gap:5px}
+.sdt-btns button{border:none;border-radius:7px;padding:5px 9px;font-size:11px;font-weight:800;cursor:pointer}
+.sdt-appr{background:#1e7a4f;color:#fff}
+.sdt-send{background:#1e2b46;color:#fff}
+.sdt-btns button:disabled{opacity:.4;cursor:not-allowed}
+.sdt-table{margin-top:2px}
 .sd-cap{display:flex;gap:10px;margin:8px 0;padding:7px 9px;background:#eef3ff;border-radius:7px;font-size:11.5px}
 .sd-cap b{color:#13203c}
 .sd-actions{display:flex;gap:8px;margin:10px 0 4px}
@@ -830,6 +849,11 @@ function renderTornadoChips(D){
   const host=document.getElementById("map"); if(!host) return;
   const old=document.getElementById("tchips"); if(old) old.remove();
   const c=(D&&D.chips)||{}, parts=[];
+  // HAIL verdict chip (truth pass 2026-07-13): on a multi-peril night BOTH perils' verdicts show in the
+  // chip row, not just tornado's. Renders whenever there's an in-market hail classification (FUND/SUB).
+  const hc=(D&&D.classification)?D.classification.cls:null;
+  if(hc===CLS.FUND) parts.push("<span class='fund'>HAIL FUNDABLE</span>");
+  else if(hc===CLS.SUB) parts.push("<span class='nofund'>HAIL \\u2014 SUB-GATE</span>");
   if(c.tornado_fundable===true) parts.push("<span class='fund'>TORNADO FUNDABLE</span>");
   else if(c.tornado_fundable===false) parts.push("<span class='nofund' title='"+(c.tornado_reason||"")+"'>TORNADO \\u2014 NOT FUNDABLE</span>");
   if(c.miss_recovery) parts.push("<span class='miss'>\\u26a0 NWS-CONFIRMED \\u2014 RADAR GATE DID NOT FIRE</span>");
@@ -1409,6 +1433,144 @@ function sdSetPeril(peril, D){
   sgSolveFresh();                                                  // reprice for the new peril
   if(typeof sgRefreshPromotion === "function") sgRefreshPromotion();   // Approve/Send state for this peril
 }
+// ── STORM TOTAL (2026-07-13): multi-peril nights on ONE screen. On a date with 2+ FUNDABLE perils
+//    (in-market fundable hail + tornado gate fired), one click runs BOTH solves — each through its OWN
+//    existing path (score_solve hail / score_solve_tornado), each on its own basis — and STACKS them.
+//    The per-peril separation is sacred: different exposure bases, different keyword economics, TWO
+//    campaigns, TWO budgets, NEVER blended. The combined $ is a DISPLAY SUM ONLY, labeled as such.
+let SG_TOTAL_MODE = false, SG_TOTAL = {hail:null, tornado:null};
+function sdFundablePerils(D){
+  const out=[];
+  if(D && D.classification && D.classification.cls===CLS.FUND) out.push("hail");   // in-market fundable hail
+  if(D && D.chips && D.chips.tornado_fundable===true) out.push("tornado");         // tornado gate fired
+  return out;
+}
+function sdTotalCtl(D){   // the STORM TOTAL toggle — rendered ONLY when 2+ fundable perils; single-peril never sees it
+  if(sdFundablePerils(D).length < 2) return "";
+  return '<div class="sd-row sd-total"><label>Storm total</label>'
+    + '<button id="sdTotalBtn" title="Run BOTH fundable perils on one screen \\u2014 each solved on its own basis. Two campaigns, two budgets, never blended; the total is a display sum only.">Both perils \\u2295</button></div>';
+}
+// per-solve deselection from the CURRENT dials, computed INDEPENDENTLY per peril (caps apply per-peril,
+// exactly as single-peril mode does — the summary line just adds the two results). Mirrors sgApplyDials
+// but is PURE (no global SG_OFF), so the golden single-peril path is untouched.
+function _dialOff(sol){
+  const off=new Set();
+  const vf=+document.getElementById("sdFloor").value;
+  const cap=+document.getElementById("sdCapR").value, tj=(+document.getElementById("sdTargetJobs").value||null);
+  const net=(sol.net_close||0.255);
+  (sol.circles||[]).forEach(c=>{ if(vf>0 && c.avg_home_value!=null && c.avg_home_value<vf) off.add(c.idx); });
+  let cum=0, jobs=0;
+  (sol.circles||[]).slice().sort((a,b)=>(b.damaged||0)-(a.damaged||0)).forEach(c=>{
+    if(off.has(c.idx)) return; const cost=c.search_cost_floor||0;
+    if(((cum+cost)>cap+1e-6 && cost>0) || (tj!=null && jobs>=tj)){ off.add(c.idx); }
+    else { cum+=cost; jobs+=Math.round(Math.round((c.damaged||0)*0.02)*net); } });
+  return off;
+}
+function _sumsOff(sol, off){
+  const sel=(sol.circles||[]).filter(c=>!off.has(c.idx));
+  return { n:sel.length, aud:sel.reduce((s,c)=>s+(c.parcel_count||0),0), dmg:sel.reduce((s,c)=>s+(c.damaged||0),0),
+    smin:sel.reduce((s,c)=>s+(c.search_cost_floor||0),0), smax:sel.reduce((s,c)=>s+(c.search_cost_ceiling||0),0),
+    jobs:Math.round(Math.round(sel.reduce((s,c)=>s+(c.damaged||0),0)*0.02)*(sol.net_close||0.255)) };
+}
+function _rowsHtml(sol, off){   // SAME ring-table row format as sgTable, read-only (fine-tuning is single-peril mode)
+  return (sol.circles||[]).slice().sort((a,b)=>(b.damaged||0)-(a.damaged||0)).slice(0,80).map(c=>{
+    let chips=""; SG_BANDS.forEach(([k,cls])=>{ const r=(c.band_ratio&&c.band_ratio[k])||0;
+      if(r>0) chips+='<span class="sg-band '+cls+'" title="'+k+'\\u2033">'+Math.round(r*100)+'</span>'; });
+    const val=(c.avg_home_value!=null)?("$"+Math.round(c.avg_home_value/1000)+"k"):"\\u2014";
+    return "<tr class='"+(off.has(c.idx)?"dropped":"")+"'><td>#"+c.idx+"</td><td>"+(c.parcel_count||0).toLocaleString()
+      +"</td><td>"+(c.damaged||0).toLocaleString()+"</td><td style='text-align:left'>"+(chips||"\\u2014")
+      +"</td><td>$"+Math.round(c.search_cost_floor||0).toLocaleString()+"\\u2013$"+Math.round(c.search_cost_ceiling||0).toLocaleString()
+      +"</td><td>"+val+"</td><td>70%</td></tr>"; }).join("");
+}
+function _totalSection(peril, sol){
+  const tag="<span class='sd-peril'>"+peril.toUpperCase()+"</span>";
+  const basis=(sol && sol.exposure_basis) ? " <span class='sd-basis' title='"+sol.exposure_basis+"'>PARCEL-BASIS</span>" : "";
+  if(!sol || sol.solvable===false){
+    return "<div class='sdt-sec'><div class='sdt-head'>"+tag+basis
+      +" <span class='sdt-nf'>not solvable \\u2014 "+((sol&&sol.states_why)||"no fundable geometry")+"</span></div></div>"; }
+  const off=_dialOff(sol), s=_sumsOff(sol, off);
+  const verdict = s.dmg>0 ? (s.n+" rings \\u00b7 $"+Math.round(s.smin).toLocaleString()+"\\u2013$"+Math.round(s.smax).toLocaleString()
+    +" \\u00b7 ~"+s.jobs+" core jobs") : "presence only \\u2014 recommended $0";
+  return "<div class='sdt-sec' data-peril='"+peril+"'>"
+    + "<div class='sdt-head'>"+tag+basis+" <span class='sdt-v'>"+verdict+"</span>"
+    + "<span class='sdt-btns'><button class='sdt-appr' data-peril='"+peril+"'>Approve "+peril.toUpperCase()+"</button>"
+    + "<button class='sdt-send' data-peril='"+peril+"' disabled>Send &rarr;</button></span></div>"
+    + "<table class='sd-table sdt-table'><thead><tr><th>ring</th><th>aud</th><th>dmg</th><th>bands</th>"
+    + "<th>search $ min\\u2013max</th><th>val</th><th>IS*</th></tr></thead><tbody>"
+    + _rowsHtml(sol, off) + "</tbody></table></div>";
+}
+function sgRenderTotal(D){
+  const box=document.getElementById("sdTotal"); if(!box) return;
+  const H=SG_TOTAL.hail, T=SG_TOTAL.tornado;
+  const zH=(H&&H.solvable!==false)?_sumsOff(H,_dialOff(H)).smin:0;
+  const zT=(T&&T.solvable!==false)?_sumsOff(T,_dialOff(T)).smin:0;
+  const summary="<div class='sdt-summary'><b>STORM TOTAL</b> \\u00b7 Hail $"+Math.round(zH).toLocaleString()
+    +" + Tornado $"+Math.round(zT).toLocaleString()+" = <b>$"+Math.round(zH+zT).toLocaleString()+"</b> total recommended"
+    +" \\u00b7 2 campaigns \\u00b7 2 budgets <span class='sdt-disp'>display sum only \\u2014 never blended</span></div>";
+  box.innerHTML = summary + _totalSection("hail", H) + _totalSection("tornado", T);
+  box.style.display="block";
+  // per-section Approve/Send REUSE the existing Stage-2 path, scoped to the section's peril (independent;
+  // one-active-per-storm is already per-peril in the backend). The inline confirm lands in #sdPromo.
+  box.querySelectorAll(".sdt-appr").forEach(b=>b.onclick=()=>{ const pk=b.dataset.peril;
+    SG_PERIL=pk; SG_STATE.sol=SG_TOTAL[pk];
+    const pr=document.getElementById("sdPromo"); if(pr) pr.style.display="block";
+    sgApproveInline(); });
+  box.querySelectorAll(".sdt-send").forEach(b=>b.onclick=()=>{ const pk=b.dataset.peril;
+    SG_PERIL=pk; SG_STATE.sol=SG_TOTAL[pk]; sgSendPromoted(); });
+  sgDrawTotal();
+  // per-peril Send enables off THAT peril's active promotion (independent reads)
+  box.querySelectorAll(".sdt-send").forEach(async b=>{ try{ const info=await sdApi("active-promotion",{date:getDate(),peril:b.dataset.peril});
+    b.disabled=!(info&&info.promoted); if(info&&info.promoted) b.title="Feeds the active promoted "+b.dataset.peril+" geometry to push."; }catch(e){} });
+}
+function sgDrawTotal(){          // BOTH perils' solve circles on the map — hail teal, tornado crimson
+  if(!TMAP) return;
+  if(!TMAP.getPane("solveCirc")){ const pn=TMAP.createPane("solveCirc"); pn.style.zIndex=656; }
+  if(SG_GRP){ TMAP.removeLayer(SG_GRP); SG_GRP=null; }
+  const layers=[];
+  const draw=(sol,color)=>{ if(!sol || sol.solvable===false) return; const off=_dialOff(sol);
+    (sol.circles||[]).forEach(c=>{ const funded=(c.damaged||0)>0, o=off.has(c.idx);
+      layers.push(L.circle([c.center_lat,c.center_lng],{pane:"solveCirc",radius:(c.radius_mi||1)*1609.344,
+        color:o?"#94a3b8":color, weight:(funded&&!o)?2.5:1.5, opacity:o?.5:.95,
+        dashArray:(funded&&!o)?null:"5,4", fill:(funded&&!o), fillColor:color, fillOpacity:(funded&&!o)?.13:0})); }); };
+  draw(SG_TOTAL.hail, "#0d9488"); draw(SG_TOTAL.tornado, "#d6141b");
+  if(layers.length) SG_GRP=L.layerGroup(layers).addTo(TMAP);
+}
+async function sgTotalSolve(D){
+  const box=document.getElementById("sdTotal"); if(!box) return;
+  box.style.display="block"; box.innerHTML="<div class='sdt-summary'>Solving hail + tornado\\u2026 <span class='warm'>(two solves, ~6s warm)</span></div>";
+  const floor=+document.getElementById("sdHail").value, cap=+document.getElementById("sdCapR").value;
+  try {
+    // SEQUENTIAL, each through its OWN existing solve path — the warm engine keeps this ~6s total.
+    const H=await sgApi({date:getDate(), peril:"hail", hail_floor:floor, spend_cap:cap});
+    const T=await sgApi({date:getDate(), peril:"tornado", hail_floor:floor, spend_cap:cap});
+    SG_TOTAL={hail:H, tornado:T};
+    sgSnapPush(H); sgSnapPush(T);            // stores as its TWO per-peril solves (existing peril-keyed machinery)
+    sgRenderTotal(D); sgSnapBar();
+  } catch(e){ box.innerHTML="<div class='sdt-summary warn'>Storm total unavailable \\u2014 "+e.message+"</div>"; }
+}
+async function sgTotalReSolveHail(D){   // hail floor moved in total mode -> re-solve HAIL only, restack
+  const floor=+document.getElementById("sdHail").value, cap=+document.getElementById("sdCapR").value;
+  try{ SG_TOTAL.hail=await sgApi({date:getDate(), peril:"hail", hail_floor:floor, spend_cap:cap});
+    sgSnapPush(SG_TOTAL.hail); sgRenderTotal(D); sgSnapBar(); }catch(e){}
+}
+function sdEnterTotal(D){
+  SG_TOTAL_MODE=true;
+  const b=document.getElementById("sdTotalBtn"); if(b) b.classList.add("on");
+  document.querySelectorAll("#spendPanel .sd-peril button").forEach(x=>x.classList.remove("on"));
+  const pk=document.querySelector("#spendPanel h2 .pk"); if(pk) pk.textContent="STORM TOTAL";
+  ["sdVerdict","sgWork","sdTable","sdPromo"].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display="none"; });
+  const act=document.querySelector("#spendPanel .sd-actions button#sdApprove"), snd=document.getElementById("sdSend");
+  if(act) act.style.display="none"; if(snd) snd.style.display="none";
+  sgTotalSolve(D);
+}
+function sdExitTotal(){
+  SG_TOTAL_MODE=false;
+  const b=document.getElementById("sdTotalBtn"); if(b) b.classList.remove("on");
+  const box=document.getElementById("sdTotal"); if(box) box.style.display="none";
+  ["sdVerdict","sgWork","sdTable"].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display=""; });
+  const ap=document.getElementById("sdApprove"), snd=document.getElementById("sdSend");
+  if(ap) ap.style.display=""; if(snd) snd.style.display="";
+}
 function setupSpendDial(D){
   if(document.getElementById("spendPanel")) return;
   sdBuildCircles("hail", D);                                       // hail is the initial active peril
@@ -1420,6 +1582,7 @@ function setupSpendDial(D){
     + '<button class="on" data-peril="hail">Hail</button>'
     + '<button disabled title="calibrating" data-peril="wind">Wind</button>'
     + sdTornadoBtn(D) + '</div></div>'
+    + sdTotalCtl(D)                                              // STORM TOTAL toggle (only on 2+ fundable perils)
     + '<div class="sd-cap"><span>Annual room: <b id="sdCap">set in config</b></span>'
     + '<span>Target jobs: <input id="sdTargetJobs" type="number" min="0" style="width:54px"></span></div>'
     + '<div class="sd-row"><label title="Audience width \\u2014 which cells qualify a ring to run ads. Not the money.">Hail floor</label><input id="sdHail" type="range" min="1.125" max="4.00" step="0.025" value="1.80"><span class="val" id="sdHailV">1.80\\u2033</span></div>'
@@ -1439,7 +1602,8 @@ function setupSpendDial(D){
     + '<th title="min = core cost-to-win \\u00b7 max = full-audience ceiling (both modeled)">search $ min\\u2013max</th>'
     + '<th title="avg home value \\u00b7 \\u2014 = value-blind county (floor-exempt)">val</th>'
     + '<th title="modeled target impression share">IS*</th></tr></thead><tbody></tbody></table>'
-    + '<div class="sd-modelnote" style="font-size:10px;color:#8a6d3b;margin:3px 0 0;font-style:italic">One panel, one loop: any dial re-prices THIS table. search min = damage core cost-to-win; max = whole-audience worst case (both modeled CTR \\u00d7 real county CPC). Damage/min pinned to cores; audience/max grow as you widen. Value floor greys rings below the $ threshold; value-blind counties (val \\u2014) are floor-exempt.</div>';
+    + '<div class="sd-modelnote" style="font-size:10px;color:#8a6d3b;margin:3px 0 0;font-style:italic">One panel, one loop: any dial re-prices THIS table. search min = damage core cost-to-win; max = whole-audience worst case (both modeled CTR \\u00d7 real county CPC). Damage/min pinned to cores; audience/max grow as you widen. Value floor greys rings below the $ threshold; value-blind counties (val \\u2014) are floor-exempt.</div>'
+    + '<div id="sdTotal" class="sd-total-view" style="display:none"></div>';   // STORM TOTAL stacked dual-peril view
   host.appendChild(p);
   // NO QUALIFIED STORM -> gray the dial: it can only fund ad targets, and there are none
   // for any peril. SAME condition as Storm Review's "No qualifying storm" verdict (no circles
@@ -1461,19 +1625,24 @@ function setupSpendDial(D){
   if(CFG.remainingAnnualCapacity != null) document.getElementById("sdCap").textContent = CFG.remainingAnnualCapacity + " jobs";
   // ── MERGED LOOP wiring: hail floor -> RE-SOLVE (fresh geometry); cap/target-jobs -> RECOMPUTE over the
   //    current solve (no re-solve); value floor -> visibly states why it's inactive (per-ring value = Stage 2).
-  const _recompute = () => { if(SG_STATE.sol){ sgApplyDials(); sgRenderAll(); } };
+  // dial handlers branch on STORM TOTAL mode: in total mode a recompute restacks both sections and a
+  // hail-floor move re-solves HAIL only; single-peril mode is byte-identical to before.
+  const _recompute = () => { if(SG_TOTAL_MODE){ sgRenderTotal(D); } else if(SG_STATE.sol){ sgApplyDials(); sgRenderAll(); } };
   const hail = document.getElementById("sdHail");
   hail.oninput  = () => { document.getElementById("sdHailV").textContent = (+hail.value).toFixed(2) + "\\u2033"; };
-  hail.onchange = () => sgSolveFresh();                       // floor changes the FIELD -> fresh tiling
+  hail.onchange = () => { if(SG_TOTAL_MODE) sgTotalReSolveHail(D); else sgSolveFresh(); };   // floor -> fresh tiling
   const floor = document.getElementById("sdFloor"), capr = document.getElementById("sdCapR");
   floor.oninput = () => { document.getElementById("sdFloorV").textContent = "$" + (+floor.value).toLocaleString(); _recompute(); };
   capr.oninput  = () => { document.getElementById("sdCapV").textContent = "$" + (+capr.value).toLocaleString(); _recompute(); };
   document.getElementById("sdTargetJobs").oninput = _recompute;
-  document.getElementById("sdSolve").onclick = () => sgSolveFresh();
+  document.getElementById("sdSolve").onclick = () => { if(SG_TOTAL_MODE) sgTotalSolve(D); else sgSolveFresh(); };
+  const totBtn = document.getElementById("sdTotalBtn"); if(totBtn) totBtn.onclick = () => sdEnterTotal(D);
   // PERIL TOGGLE (2026-07-13): a click on an enabled peril button flips the active peril and re-solves.
-  // Disabled buttons (wind "calibrating"; tornado when not fundable / not detected) are inert.
+  // From STORM TOTAL, a peril click EXITS total mode back to that single peril. Disabled buttons inert.
   p.querySelectorAll(".sd-peril button[data-peril]").forEach(btn => {
-    btn.onclick = () => { if(!btn.disabled) sdSetPeril(btn.dataset.peril, D); };
+    btn.onclick = () => { if(btn.disabled) return;
+      if(SG_TOTAL_MODE){ sdExitTotal(); SG_PERIL=null; }        // force a re-solve even if same peril
+      sdSetPeril(btn.dataset.peril, D); };
   });
   document.getElementById("sdApprove").onclick = sgApproveInline;   // promote the dialed solve (inline, no popup)
   document.getElementById("sdSend").onclick = sgSendPromoted;       // feed the ACTIVE promoted geometry to push
