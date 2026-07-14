@@ -207,6 +207,13 @@ body.fullmap #fmExit:hover{background:#1e2b46}
   padding:0;font-size:15px;line-height:1;cursor:pointer;flex:none}
 #tbar .hdr-search .ms-clear:hover{color:#fff;background:#274069}
 #tbar .hdr-search .ms-addrwrap{position:relative;display:flex;align-items:center;gap:5px}
+/* address-box ACTIONS: build+email the per-address storm report · add to the operator watchlist */
+#tbar .hdr-search .ms-act{background:#1e2b46;color:#dfe8f7;border:1px solid #33456a;border-radius:6px;
+  padding:5px 9px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
+#tbar .hdr-search .ms-act:hover{background:#274069}
+#tbar .hdr-search .ms-act:disabled{opacity:.5;cursor:default}
+#tbar .hdr-search .ms-actmsg{font-size:11px;color:#9fd8b0;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#tbar .hdr-search .ms-actmsg.err{color:#ffb4a2}
 .ms-sugg{position:absolute;left:0;top:calc(100% + 4px);z-index:1400;min-width:360px;max-width:440px;background:#fff;border:1px solid #c9d2dd;
   border-radius:6px;box-shadow:0 12px 28px rgba(0,0,0,.45);max-height:320px;overflow:auto}
 .ms-sugg:empty{display:none}
@@ -685,6 +692,9 @@ body:not(.mobile) #wxBtn{display:none}   /* desktop: Weather lives on row 2; mob
       <button class="ms-clear" type="button" data-clear="msCity" title="Clear">&times;</button>
       <button id="msCityGo" class="ms-go" type="button">Go</button>
       <div class="ms-addrwrap"><input id="msAddr" type="text" placeholder="Address, City ST &mdash; Enter" autocomplete="off" title="Type the address WITH the city, then Enter (or pick a suggestion)"><button class="ms-clear" type="button" data-clear="msAddr" title="Clear">&times;</button><div id="msSugg" class="ms-sugg"></div></div>
+      <button id="msReport" class="ms-act" type="button" title="Build the 5-year storm report for this address and email it (PDF). A no-history address gets the finding in the email body — no document.">&#128196; Report</button>
+      <button id="msWatch" class="ms-act" type="button" title="Add this address to the operator watchlist. Future storms sweep it and digest the hits to you. No homeowner is ever contacted.">&#128065; Watch</button>
+      <span id="msActMsg" class="ms-actmsg"></span>
     </div>
     <button id="wxBtn" title="Rain forecast for job scheduling">&#127783; Weather</button>
     <button id="expandBtn" title="Full-screen radar">&#9974; Full-screen radar</button>
@@ -1718,6 +1728,35 @@ async function sdApi(action, body){
     headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) });
   if(!r.ok) throw new Error("HTTP " + r.status);
   return await r.json();
+}
+// ── ADDRESS-BOX ACTIONS (2026-07-14): per-address storm report (PDF -> email) + operator watchlist.
+//    OPERATOR-FACING ONLY. The report is emailed to the operator; the watchlist digests to the
+//    operator. No homeowner is contacted by either path in v1.
+function msActMsg(txt, err){
+  const el=document.getElementById("msActMsg"); if(!el) return;
+  el.textContent=txt||""; el.className="ms-actmsg"+(err?" err":"");
+}
+async function msAddrAction(kind){
+  const box=document.getElementById("msAddr"); const addr=(box&&box.value||"").trim();
+  if(!addr){ msActMsg("Type an address first (with the city).", true); return; }
+  const btn=document.getElementById(kind==="report"?"msReport":"msWatch");
+  if(btn) btn.disabled=true;
+  msActMsg(kind==="report" ? "Building report… (geocode · 5-yr history · PDF · email)"
+                           : "Adding to watchlist…");
+  try{
+    const cmd = (kind==="report") ? "address-report" : "watchlist-add";
+    const res = await sdApi(cmd, { address: addr });
+    if(res && res.ok === false){                       // geocode failed -> states-why, never a guess
+      msActMsg(res.states_why || "Address did not resolve.", true);
+    } else if(kind==="report"){
+      // a non-qualifying address gets NO document — the finding rides in the email body instead
+      msActMsg(res.qualifies ? ("✓ Report emailed — " + (res.address||addr))
+                             : ("✓ Emailed — no qualifying events, so no document was produced"));
+    } else {
+      msActMsg("✓ Watching — " + (res.address||addr));
+    }
+  }catch(e){ msActMsg("Failed — " + e.message, true); }
+  finally{ if(btn) btn.disabled=false; }
 }
 function sdReadDials(){
   // hail-size floor replaces Core/Core+/Wide; area is inert server-side (defaults to wide).
@@ -3289,6 +3328,11 @@ function addMapSearch(){
         addrEl=document.getElementById("msAddr"), suggEl=document.getElementById("msSugg");
   if(!cityEl || !addrEl || cityEl.dataset.wired) return;
   cityEl.dataset.wired="1";
+  // address-box ACTIONS: build+email the per-address storm report · add to the operator watchlist
+  const repEl=document.getElementById("msReport"), watEl=document.getElementById("msWatch");
+  if(repEl) repEl.addEventListener("click", ()=>msAddrAction("report"));
+  if(watEl) watEl.addEventListener("click", ()=>msAddrAction("watch"));
+  addrEl.addEventListener("input", ()=>msActMsg(""));
   // clear (x) buttons on both boxes — also removes the map pin
   document.querySelectorAll("#tbar .hdr-search .ms-clear").forEach(btn=>btn.addEventListener("click",()=>{
     const t=document.getElementById(btn.dataset.clear); if(t){ t.value=""; t.focus(); }

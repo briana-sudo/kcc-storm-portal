@@ -8,3 +8,7 @@ node_modules/
 
 # local-only demo render data (real lead targeting) — never publish
 public/sample/
+
+# Windows/browser duplicate-download strays ("foo (1).py") — never source
+* (1).*
+*\ (1).*
