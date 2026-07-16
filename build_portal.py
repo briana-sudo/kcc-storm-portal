@@ -1211,11 +1211,42 @@ let SD_CIRCLES = {};          // circle_id -> {lat,lng,r} for the Solve map SNAP
 let SD_SNAPGRP = null;        // the funded/deselected highlight layer group (cleared each Solve)
 let SD_SORT = "value";        // readout sort mode (display only): value | cheap | vpd
 let SD_MANUAL_OFF = new Set(); // Part C: rings the operator manually clicked off (recompute cost/jobs)
+// FAIL-LOUD (2026-07-16). The Watch/Report buttons failed behind a bare "Failed to fetch"
+// because this function discarded the only three facts that identify a broken hop: the URL it
+// fired, the response body on an HTTP error, and — for a CORS/network rejection, where fetch()
+// rejects with a TypeError and `r` never exists — that the browser blocked a real response.
+// Every sdApi command now logs its URL and surfaces status + body snippet.
+// The COMPLETE set of commands sdApi can build, declared once so the redirect-coverage guard
+// (tests/test_redirect_coverage.py) can read it. msAddrAction builds its command from a
+// variable, so no literal grep can enumerate these — which is exactly how Watch/Report shipped
+// with no /api/spend-* redirect and the suite stayed green. Add a command here and it MUST get
+// a matching redirect in netlify-proxy/netlify.toml or the suite fails naming the missing path.
+const SD_COMMANDS = ["solve", "active-promotion", "promote-solve", "send-promoted",
+                     "address-report", "watchlist-add"];
 async function sdApi(action, body){
   if(!SPEND_API) throw new Error("no spend endpoint configured (v2 proxy wiring)");
-  const r = await fetch(SPEND_API + "-" + action, { method:"POST",
-    headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) });
-  if(!r.ok) throw new Error("HTTP " + r.status);
+  if(!SD_COMMANDS.includes(action))
+    throw new Error("sdApi: undeclared command \\"" + action + "\\" — add it to SD_COMMANDS and give it an /api/spend-" + action + " redirect");
+  const url = SPEND_API + "-" + action;
+  console.log("[sdApi] POST " + url, body);
+  let r;
+  try{
+    r = await fetch(url, { method:"POST",
+      headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) });
+  }catch(e){
+    // TypeError here = no response ever reached the page: DNS, timeout, or a cross-origin
+    // response blocked for want of Access-Control-Allow-Origin (a missing Netlify redirect
+    // serves a static 404 carrying no ACAO and lands exactly here).
+    console.error("[sdApi] network/CORS failure on " + url, e);
+    throw new Error(e.message + " \\u2014 " + url + " (network or CORS; no response reached the page)");
+  }
+  if(!r.ok){
+    let snip = "";
+    try{ snip = (await r.text() || "").replace(/\\s+/g, " ").trim().slice(0, 200); }
+    catch(_){ snip = "<body unreadable>"; }
+    console.error("[sdApi] HTTP " + r.status + " from " + url + " :: " + snip);
+    throw new Error("HTTP " + r.status + " from " + url + (snip ? " :: " + snip : ""));
+  }
   return await r.json();
 }
 // ── ADDRESS-BOX ACTIONS (2026-07-14): per-address storm report (PDF -> email) + operator watchlist.
