@@ -694,6 +694,7 @@ body:not(.mobile) #wxBtn{display:none}   /* desktop: Weather lives on row 2; mob
       <div class="ms-addrwrap"><input id="msAddr" type="text" placeholder="Address, City ST &mdash; Enter" autocomplete="off" title="Type the address WITH the city, then Enter (or pick a suggestion)"><button class="ms-clear" type="button" data-clear="msAddr" title="Clear">&times;</button><div id="msSugg" class="ms-sugg"></div></div>
       <button id="msReport" class="ms-act" type="button" title="Build the 5-year storm report for this address and email it (PDF). A no-history address gets the finding in the email body — no document.">&#128196; Report</button>
       <button id="msWatch" class="ms-act" type="button" title="Add this address to the operator watchlist. Future storms sweep it and digest the hits to you. No homeowner is ever contacted.">&#128065; Watch</button>
+      <button id="wlBtn" class="ms-act" type="button" title="Open the watchlist manager — every monitored address, owner/insurance details, roof intel, storm hits, saved reports.">&#128203; Watchlist</button>
       <span id="msActMsg" class="ms-actmsg"></span>
     </div>
     <button id="wxBtn" title="Rain forecast for job scheduling">&#127783; Weather</button>
@@ -1733,7 +1734,10 @@ let SD_MANUAL_OFF = new Set(); // Part C: rings the operator manually clicked of
 // with no /api/spend-* redirect and the suite stayed green. Add a command here and it MUST get
 // a matching redirect in netlify-proxy/netlify.toml or the suite fails naming the missing path.
 const SD_COMMANDS = ["solve", "active-promotion", "promote-solve", "send-promoted",
-                     "address-report", "watchlist-add"];
+                     "address-report", "watchlist-add",
+                     // watchlist v2 management surface (2026-07-17)
+                     "watchlist-list", "watchlist-get", "watchlist-update", "watchlist-backfill",
+                     "watchlist-report", "watchlist-remove"];
 async function sdApi(action, body){
   if(!SPEND_API) throw new Error("no spend endpoint configured (v2 proxy wiring)");
   if(!SD_COMMANDS.includes(action))
@@ -1789,6 +1793,150 @@ async function msAddrAction(kind){
   }catch(e){ msActMsg("Failed — " + e.message, true); }
   finally{ if(btn) btn.disabled=false; }
 }
+
+// ── WATCHLIST v2 MANAGEMENT SURFACE (2026-07-17) ───────────────────────────────────────────────
+// Self-contained overlay: injects its own DOM + styles, wires to the live watchlist-* routes via
+// sdApi. List -> per-address detail (all fields editable, storm hits with clickable dates, saved
+// reports, backfill/report/remove actions). Operator-facing only; no homeowner is ever contacted.
+const WL_STR_FIELDS = [
+  ["owner_first","Owner first"],["owner_last","Owner last"],["owner_other","Other owner"],
+  ["business_name","Business name"],["business_contact","Business contact"],
+  ["carrier","Insurance carrier"],["policy_number","Policy #"],["claim_number","Claim #"],
+  ["phone","Phone"],["email","Email"],["roof_type","Roof type"],["marker_color","Marker color"],
+  ["note","Notes"]];
+const WL_NUM_FIELDS = [["roof_install_year","Roof install year"],["price_per_sq","Price / square ($)"]];
+function wlEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+function wlInject(){
+  if(document.getElementById("wlPanel")) return;
+  const st=document.createElement("style");
+  st.textContent = "#wlPanel{position:fixed;inset:0;z-index:9000;background:rgba(10,14,20,.96);"
+    +"display:none;overflow:auto;color:#e5e7eb;font:14px system-ui,sans-serif}"
+    +"#wlPanel.open{display:block}#wlPanel .wl-wrap{max-width:1100px;margin:0 auto;padding:18px}"
+    +"#wlPanel h2{margin:0 0 12px;font-size:20px}#wlPanel .wl-x{position:absolute;top:14px;right:18px;"
+    +"font-size:26px;cursor:pointer;color:#9ca3af;background:none;border:0}"
+    +"#wlPanel table{width:100%;border-collapse:collapse}#wlPanel th,#wlPanel td{padding:8px 10px;"
+    +"border-bottom:1px solid #263041;text-align:left}#wlPanel tr.wl-row{cursor:pointer}"
+    +"#wlPanel tr.wl-row:hover{background:#161d29}#wlPanel .wl-dot{display:inline-block;width:12px;"
+    +"height:12px;border-radius:50%;margin-right:7px;vertical-align:middle}"
+    +"#wlPanel .wl-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin:12px 0}"
+    +"#wlPanel label{display:block;font-size:12px;color:#9ca3af;margin-bottom:3px}"
+    +"#wlPanel input,#wlPanel textarea{width:100%;box-sizing:border-box;background:#0f1520;"
+    +"border:1px solid #2a3547;color:#e5e7eb;border-radius:6px;padding:7px 9px;font:13px system-ui}"
+    +"#wlPanel .wl-intel{background:#111826;border:1px solid #263041;border-radius:8px;padding:12px;margin:12px 0}"
+    +"#wlPanel .wl-tier{font-weight:700}#wlPanel .wl-tier.BASE{color:#f59e0b}"
+    +"#wlPanel .wl-chip{display:inline-block;background:#1e293b;border-radius:12px;padding:3px 9px;margin:2px 4px 2px 0;font-size:12px}"
+    +"#wlPanel .wl-date{color:#60a5fa;cursor:pointer;text-decoration:underline}"
+    +"#wlPanel button.wl-act{background:#1d4ed8;color:#fff;border:0;border-radius:6px;padding:8px 14px;"
+    +"margin:4px 8px 4px 0;cursor:pointer;font:13px system-ui}#wlPanel button.wl-act.danger{background:#b91c1c}"
+    +"#wlPanel button.wl-act.ghost{background:#334155}#wlPanel .wl-msg{margin-left:8px;color:#9ca3af}"
+    +"#wlPanel .wl-back{color:#60a5fa;cursor:pointer;background:none;border:0;font:13px system-ui;padding:0;margin-bottom:10px}";
+  document.head.appendChild(st);
+  const d=document.createElement("div"); d.id="wlPanel";
+  d.innerHTML = "<button class='wl-x' title='Close'>&times;</button><div class='wl-wrap' id='wlBody'></div>";
+  document.body.appendChild(d);
+  d.querySelector(".wl-x").onclick = wlClose;
+}
+function wlClose(){ const p=document.getElementById("wlPanel"); if(p) p.classList.remove("open"); }
+async function wlOpen(){
+  wlInject();
+  const p=document.getElementById("wlPanel"); p.classList.add("open");
+  await wlRenderList();
+}
+async function wlRenderList(){
+  const b=document.getElementById("wlBody");
+  b.innerHTML = "<h2>&#128203; Watchlist</h2><div class='wl-msg'>Loading…</div>";
+  let res; try{ res = await sdApi("watchlist-list", {}); }
+  catch(e){ b.innerHTML = "<h2>&#128203; Watchlist</h2><div class='wl-msg'>Failed to load — "+wlEsc(e.message)+"</div>"; return; }
+  const rows = (res && res.watched) || [];
+  let h = "<h2>&#128203; Watchlist &mdash; "+rows.length+" address"+(rows.length===1?"":"es")+"</h2>";
+  if(!rows.length){ h += "<div class='wl-msg'>No addresses watched yet. Use the &#128065; Watch button on an address to add one.</div>"; b.innerHTML=h; return; }
+  h += "<table><thead><tr><th>Address</th><th>Name</th><th>Owner of record</th><th>Roof</th><th>Last hit</th></tr></thead><tbody>";
+  for(const r of rows){
+    const nm = [r.owner_first,r.owner_last].filter(Boolean).join(" ") || r.business_name || "";
+    const roof = r.solar_roof_area_sq ? (r.solar_roof_area_sq+" sq "+(r.solar_imagery_quality||"")) : (r.roof_type||"");
+    h += "<tr class='wl-row' data-pid='"+wlEsc(r.property_id)+"'>"
+      +"<td><span class='wl-dot' style='background:"+wlEsc(r.marker_color||"#e11d48")+"'></span>"+wlEsc(r.address)+"</td>"
+      +"<td>"+wlEsc(nm)+"</td><td>"+wlEsc(r.owner_of_record||"")+"</td>"
+      +"<td>"+wlEsc(roof)+"</td><td>"+wlEsc(r.last_hit_date||"—")+"</td></tr>";
+  }
+  h += "</tbody></table>";
+  b.innerHTML = h;
+  b.querySelectorAll("tr.wl-row").forEach(tr=> tr.onclick=()=>wlDetail(tr.getAttribute("data-pid")));
+}
+async function wlDetail(pid){
+  const b=document.getElementById("wlBody");
+  b.innerHTML = "<button class='wl-back'>&larr; Back to list</button><div class='wl-msg'>Loading…</div>";
+  b.querySelector(".wl-back").onclick = wlRenderList;
+  let res; try{ res = await sdApi("watchlist-get", { property_id: pid }); }
+  catch(e){ b.innerHTML = "<button class='wl-back'>&larr; Back</button><div class='wl-msg'>Failed — "+wlEsc(e.message)+"</div>";
+            b.querySelector(".wl-back").onclick=wlRenderList; return; }
+  if(!res || !res.ok){ b.innerHTML = "<div class='wl-msg'>Not found.</div>"; return; }
+  const r = res.record;
+  let h = "<button class='wl-back'>&larr; Back to list</button>";
+  h += "<h2>"+wlEsc(r.address)+"</h2>";
+  // intel block — parcel + solar, tier always shown, BASE caveated
+  h += "<div class='wl-intel'><b>Owner of record:</b> "+wlEsc(r.owner_of_record||"—")
+     + " &nbsp;|&nbsp; <b>Year built:</b> "+(r.parcel_yb_known?wlEsc(r.parcel_year_built):"unknown")
+     + " &nbsp;|&nbsp; <b>Bldg sqft:</b> "+(r.parcel_sqft_known?wlEsc(r.parcel_bldg_sqft):"unknown")
+     + " &nbsp;|&nbsp; <b>Use:</b> "+wlEsc(r.parcel_land_use||"—")+"<br>";
+  if(r.solar_status==="ok"){
+    h += "<b>Roof (Google Solar):</b> "+wlEsc(r.solar_roof_area_sq)+" squares, "+wlEsc(r.solar_segment_count)
+       + " segments &nbsp; <span class='wl-tier "+wlEsc(r.solar_imagery_quality)+"'>"+wlEsc(r.solar_imagery_quality)+" imagery</span>";
+    if(r.solar_caveat) h += " <span class='wl-msg'>("+wlEsc(r.solar_caveat)+")</span>";
+  } else { h += "<b>Roof (Google Solar):</b> <span class='wl-msg'>"+wlEsc(r.solar_status||"not run")+" — manual entry</span>"; }
+  h += "</div>";
+  // storm hits — clickable dates
+  const hits = r.storm_hits||[];
+  h += "<b>Storm hits on record ("+hits.length+"):</b><div style='margin:6px 0'>";
+  if(!hits.length) h += "<span class='wl-msg'>none in the 5-year window</span>";
+  for(const x of hits) h += "<span class='wl-chip'><span class='wl-date' data-d='"+wlEsc(x.date)+"'>"+wlEsc(x.date)+"</span> &middot; "+wlEsc((x.perils||[]).join(", "))+"</span>";
+  h += "</div>";
+  // saved reports
+  const reps = r.reports||[];
+  h += "<b>Saved reports ("+reps.length+"):</b><div style='margin:6px 0'>";
+  if(!reps.length) h += "<span class='wl-msg'>none yet — use Run storm history</span>";
+  for(const rp of reps) h += "<div class='wl-chip'>"+wlEsc(rp.created_at||"")+" &middot; "+wlEsc(rp.summary||rp.pdf_path||"")+"</div>";
+  h += "</div>";
+  // editable form
+  h += "<h3 style='margin:14px 0 4px'>Details</h3><div class='wl-grid'>";
+  for(const f of WL_STR_FIELDS.concat(WL_NUM_FIELDS)){
+    const val = r[f[0]]==null ? "" : r[f[0]];
+    if(f[0]==="note") h += "<div style='grid-column:1/3'><label>"+f[1]+"</label><textarea id='wlf_"+f[0]+"' rows='2'>"+wlEsc(val)+"</textarea></div>";
+    else h += "<div><label>"+f[1]+"</label><input id='wlf_"+f[0]+"' value='"+wlEsc(val)+"'></div>";
+  }
+  h += "<div style='grid-column:1/3'><label>Alert recipients (comma-separated emails; blank = operator only)</label>"
+     + "<input id='wlf_alert_recipients' value='"+wlEsc((r.alert_recipients||[]).join(", "))+"'></div>";
+  h += "</div>";
+  h += "<div><button class='wl-act' id='wlSave'>Save changes</button>"
+     + "<button class='wl-act ghost' id='wlBackfill'>Refresh parcel + Solar</button>"
+     + "<button class='wl-act ghost' id='wlReport'>Run storm history &rarr; PDF</button>"
+     + "<button class='wl-act danger' id='wlRemove'>Un-watch</button><span class='wl-msg' id='wlDMsg'></span></div>";
+  b.innerHTML = h;
+  b.querySelector(".wl-back").onclick = wlRenderList;
+  b.querySelectorAll(".wl-date").forEach(el=> el.onclick=()=>{ wlClose(); goDate(el.getAttribute("data-d")); });
+  const msg=(t,err)=>{ const m=document.getElementById("wlDMsg"); if(m){ m.textContent=t; m.style.color=err?"#f87171":"#9ca3af"; } };
+  function collectFields(){
+    const out={};
+    for(const f of WL_STR_FIELDS.concat(WL_NUM_FIELDS)){ const el=document.getElementById("wlf_"+f[0]); if(el) out[f[0]]=el.value; }
+    const ar=document.getElementById("wlf_alert_recipients"); if(ar) out.alert_recipients=ar.value;
+    return out;
+  }
+  document.getElementById("wlSave").onclick = async ()=>{ msg("Saving…");
+    try{ const rr=await sdApi("watchlist-update",{property_id:pid,fields:collectFields()}); msg(rr.updated?"✓ Saved":(rr.reason||"no change")); }
+    catch(e){ msg("Failed — "+e.message,true); } };
+  document.getElementById("wlBackfill").onclick = async ()=>{ msg("Refreshing parcel + Solar (one Solar call)…");
+    try{ const rr=await sdApi("watchlist-backfill",{property_id:pid}); msg("✓ parcel="+rr.parcel_status+" solar="+rr.solar_status); setTimeout(()=>wlDetail(pid),700); }
+    catch(e){ msg("Failed — "+e.message,true); } };
+  document.getElementById("wlReport").onclick = async ()=>{ msg("Building report + saving PDF onto the address…");
+    try{ const rr=await sdApi("watchlist-report",{property_id:pid}); msg(rr.ok?("✓ saved "+(rr.report_id||"")):(rr.reason||"no qualifying events")); setTimeout(()=>wlDetail(pid),700); }
+    catch(e){ msg("Failed — "+e.message,true); } };
+  document.getElementById("wlRemove").onclick = async ()=>{
+    if(!confirm("Un-watch "+r.address+"? History is kept (the record is deactivated, not deleted).")) return;
+    msg("Removing…");
+    try{ const rr=await sdApi("watchlist-remove",{property_id:pid}); if(rr.removed){ wlRenderList(); } else msg("not removed",true); }
+    catch(e){ msg("Failed — "+e.message,true); } };
+}
+
 function sdReadDials(){
   // hail-size floor replaces Core/Core+/Wide; area is inert server-side (defaults to wide).
   return { date:getDate(), peril:"hail", footprint_source:"canonical",
@@ -3363,6 +3511,7 @@ function addMapSearch(){
   const repEl=document.getElementById("msReport"), watEl=document.getElementById("msWatch");
   if(repEl) repEl.addEventListener("click", ()=>msAddrAction("report"));
   if(watEl) watEl.addEventListener("click", ()=>msAddrAction("watch"));
+  const wlEl=document.getElementById("wlBtn"); if(wlEl) wlEl.addEventListener("click", wlOpen);
   addrEl.addEventListener("input", ()=>msActMsg(""));
   // clear (x) buttons on both boxes — also removes the map pin
   document.querySelectorAll("#tbar .hdr-search .ms-clear").forEach(btn=>btn.addEventListener("click",()=>{
