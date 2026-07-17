@@ -1226,7 +1226,9 @@ const SD_COMMANDS = ["solve", "active-promotion", "promote-solve", "send-promote
                      "address-report", "watchlist-add",
                      // watchlist v2 management surface (2026-07-17)
                      "watchlist-list", "watchlist-get", "watchlist-update", "watchlist-backfill",
-                     "watchlist-report", "watchlist-remove"];
+                     "watchlist-report", "watchlist-remove",
+                     // v7 lookup (2026-07-17): Places autocomplete + CSV bulk import
+                     "autocomplete", "csv-import"];
 async function sdApi(action, body){
   if(!SPEND_API) throw new Error("no spend endpoint configured (v2 proxy wiring)");
   if(!SD_COMMANDS.includes(action))
@@ -3033,19 +3035,28 @@ function addMapSearch(){
     const loc=await resolveAddress(v); addrEl.placeholder=old;
     if(loc){ addrEl.value=loc.label||v; flyToSearch(loc, 17); } else { addrEl.placeholder="address not found \\u2014 add the city"; } }
   addrEl.addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); addrGo(); } });
-  let acT=null;
+  // TYPEAHEAD (Lane B, 2026-07-17): Google Places (New) Autocomplete, HARD-bounded to the metro
+  // geofence server-side (the key never reaches the browser). Supersedes the old Photon ranking — its
+  // suggestions are STL-first and out-of-market/foreign is suppressed at the source. A session token
+  // threads keystrokes into one billing session. Census stays the resolve-on-submit geocoder of record
+  // (addrGo -> resolveAddress), so a picked suggestion still resolves through the engine's stated path;
+  // Photon remains the graceful fallback if Places is unavailable.
+  let acT=null, _acTok=null;
+  function _newAcTok(){ _acTok = (crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Math.random()); return _acTok; }
   addrEl.addEventListener("input", ()=>{ const q=addrEl.value.trim(); clearTimeout(acT);
     if(q.length<3){ suggEl.innerHTML=""; return; }
-    acT=setTimeout(async()=>{ try{ const hits=await photonSuggest(q,6); suggEl.innerHTML="";
-      hits.forEach(h=>{ const b=document.createElement("button"); b.type="button"; b.className="ms-sg"; b.textContent=h.label;
-        b.onclick=()=>{ const typed=addrEl.value.trim();
-          // resolve a COMPLETE address: the typed text if it already has a city, else the
-          // typed house+street plus the picked suggestion's city/state/ZIP.
-          const query = (typed.indexOf(",")>=0) ? typed
-            : typed+(h.city?", "+h.city:"")+(h.state?", "+h.state:"")+(h.postcode?" "+h.postcode:"");
-          addrGo(query); };
+    if(!_acTok) _newAcTok();
+    acT=setTimeout(async()=>{
+      let labels=[];
+      try{ const res=await sdApi("autocomplete",{input:q,session_token:_acTok});
+        if(res && res.status==="ok") labels=(res.suggestions||[]).map(s=>s.description).filter(Boolean); }
+      catch(e){ labels=[]; }
+      if(!labels.length){ try{ labels=(await photonSuggest(q,6)).map(h=>h.label); }catch(e){} }  // fallback
+      suggEl.innerHTML="";
+      labels.forEach(lbl=>{ const b=document.createElement("button"); b.type="button"; b.className="ms-sg"; b.textContent=lbl;
+        b.onclick=()=>{ _acTok=null; addrEl.value=lbl; addrGo(lbl); };   // a Places description already carries the city
         suggEl.appendChild(b); });
-    }catch(e){ suggEl.innerHTML=""; } }, 350); });
+    }, 300); });
   document.addEventListener("click", e=>{ const w=addrEl.closest(".ms-addrwrap");
     if(w && !w.contains(e.target)) suggEl.innerHTML=""; });
 }
