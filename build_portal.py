@@ -649,6 +649,7 @@ SHELL_HEAD = """  <div id="tbar">
       <button id="msReport" class="ms-act" type="button" title="Build the 5-year storm report for this address and email it (PDF). A no-history address gets the finding in the email body — no document.">&#128196; Report</button>
       <button id="msWatch" class="ms-act" type="button" title="Add this address to the operator watchlist. Future storms sweep it and digest the hits to you. No homeowner is ever contacted.">&#128065; Watch</button>
       <button id="wlBtn" class="ms-act" type="button" title="Open the watchlist manager — every monitored address, owner/insurance details, roof intel, storm hits, saved reports.">&#128203; Watchlist</button>
+      <button id="wlPinsBtn" class="ms-act" type="button" title="Drop a pin on the map for every watched address. Click a pin to open that address. Toggle off to clear.">&#128204; Pins</button>
       <span id="msActMsg" class="ms-actmsg"></span>
     </div>
     <button id="wxBtn" title="Rain forecast for job scheduling">&#127783; Weather</button>
@@ -1285,10 +1286,14 @@ async function msAddrAction(kind){
   finally{ if(btn) btn.disabled=false; }
 }
 
-// ── WATCHLIST v2 MANAGEMENT SURFACE (2026-07-17) ───────────────────────────────────────────────
-// Self-contained overlay: injects its own DOM + styles, wires to the live watchlist-* routes via
-// sdApi. List -> per-address detail (all fields editable, storm hits with clickable dates, saved
-// reports, backfill/report/remove actions). Operator-facing only; no homeowner is ever contacted.
+// ── WATCHLIST v2.1 MANAGEMENT SURFACE (Part C, 2026-07-17) ─────────────────────────────────────
+// A MOVABLE + RESIZABLE floating popup (#wlPop) over the map — not a full-page takeover. One popup
+// whose body swaps between the LIST and a per-address DETAIL. Detail is TABBED (Overview · Parcel ·
+// Contact · History) with the photo pair + identity strip PINNED above the tabs and the actions bar
+// PINNED below, so both stay visible on every tab. Wires to the live watchlist-* routes via sdApi.
+// NULL-PRESERVING: an empty field renders "—", never an invented value. Operator-facing only; no
+// homeowner is ever contacted. Also: an all-watched-pins map toggle (wlTogglePins) drops one pin per
+// watched address on TMAP without touching renderMap's storm layers.
 const WL_STR_FIELDS = [
   ["owner_first","Owner first"],["owner_last","Owner last"],["owner_other","Other owner"],
   ["business_name","Business name"],["business_contact","Business contact"],
@@ -1297,113 +1302,296 @@ const WL_STR_FIELDS = [
   ["note","Notes"]];
 const WL_NUM_FIELDS = [["roof_install_year","Roof install year"],["price_per_sq","Price / square ($)"]];
 function wlEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
+// NULL-PRESERVING formatter. Returns SAFE html. Empty/unknown -> em-dash; never fabricates a value.
+function wlFmt(v, kind, known){
+  if(v==null || v==="" || known===false) return "<span class='wl-na'>&mdash;</span>";
+  let s;
+  if(kind==="$"){ const n=Number(v); s = isNaN(n) ? String(v) : "$"+Math.round(n).toLocaleString("en-US"); }
+  else if(kind==="n"){ const n=Number(v); s = isNaN(n) ? String(v) : Math.round(n).toLocaleString("en-US"); }
+  else if(kind==="f1"){ const n=Number(v); s = isNaN(n) ? String(v) : n.toFixed(1); }
+  else if(kind==="y"){ const n=parseInt(v,10); s = isNaN(n) ? String(v) : String(n); }
+  else s = String(v);
+  return wlEsc(s);
+}
 function wlInject(){
-  if(document.getElementById("wlPanel")) return;
+  if(document.getElementById("wlPop")) return;
   const st=document.createElement("style");
-  st.textContent = "#wlPanel{position:fixed;inset:0;z-index:9000;background:rgba(10,14,20,.96);"
-    +"display:none;overflow:auto;color:#e5e7eb;font:14px system-ui,sans-serif}"
-    +"#wlPanel.open{display:block}#wlPanel .wl-wrap{max-width:1100px;margin:0 auto;padding:18px}"
-    +"#wlPanel h2{margin:0 0 12px;font-size:20px}#wlPanel .wl-x{position:absolute;top:14px;right:18px;"
-    +"font-size:26px;cursor:pointer;color:#9ca3af;background:none;border:0}"
-    +"#wlPanel table{width:100%;border-collapse:collapse}#wlPanel th,#wlPanel td{padding:8px 10px;"
-    +"border-bottom:1px solid #263041;text-align:left}#wlPanel tr.wl-row{cursor:pointer}"
-    +"#wlPanel tr.wl-row:hover{background:#161d29}#wlPanel .wl-dot{display:inline-block;width:12px;"
-    +"height:12px;border-radius:50%;margin-right:7px;vertical-align:middle}"
-    +"#wlPanel .wl-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;margin:12px 0}"
-    +"#wlPanel label{display:block;font-size:12px;color:#9ca3af;margin-bottom:3px}"
-    +"#wlPanel input,#wlPanel textarea{width:100%;box-sizing:border-box;background:#0f1520;"
-    +"border:1px solid #2a3547;color:#e5e7eb;border-radius:6px;padding:7px 9px;font:13px system-ui}"
-    +"#wlPanel .wl-intel{background:#111826;border:1px solid #263041;border-radius:8px;padding:12px;margin:12px 0}"
-    +"#wlPanel .wl-tier{font-weight:700}#wlPanel .wl-tier.BASE{color:#f59e0b}"
-    +"#wlPanel .wl-chip{display:inline-block;background:#1e293b;border-radius:12px;padding:3px 9px;margin:2px 4px 2px 0;font-size:12px}"
-    +"#wlPanel .wl-date{color:#60a5fa;cursor:pointer;text-decoration:underline}"
-    +"#wlPanel button.wl-act{background:#1d4ed8;color:#fff;border:0;border-radius:6px;padding:8px 14px;"
-    +"margin:4px 8px 4px 0;cursor:pointer;font:13px system-ui}#wlPanel button.wl-act.danger{background:#b91c1c}"
-    +"#wlPanel button.wl-act.ghost{background:#334155}#wlPanel .wl-msg{margin-left:8px;color:#9ca3af}"
-    +"#wlPanel .wl-back{color:#60a5fa;cursor:pointer;background:none;border:0;font:13px system-ui;padding:0;margin-bottom:10px}";
+  st.textContent = `
+  #wlPop{position:fixed;top:82px;right:16px;z-index:9000;width:460px;height:620px;min-width:330px;
+    min-height:360px;max-width:96vw;max-height:92vh;background:#0e141f;color:#e5e7eb;
+    border:1px solid #2a3547;border-radius:10px;box-shadow:0 18px 52px rgba(0,0,0,.55);
+    display:none;flex-direction:column;overflow:hidden;resize:both;font:14px system-ui,sans-serif}
+  #wlPop.open{display:flex}
+  #wlPop .wl-bar{display:flex;align-items:center;gap:8px;padding:9px 10px;background:#141c2b;
+    border-bottom:1px solid #263041;cursor:move;user-select:none;touch-action:none;border-radius:10px 10px 0 0}
+  #wlPop .wl-grip{color:#5b6b83;font-size:14px;letter-spacing:-2px}
+  #wlPop .wl-title{flex:1;font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  #wlPop .wl-x{font-size:22px;line-height:1;cursor:pointer;color:#9ca3af;background:none;border:0;padding:0 4px}
+  #wlPop .wl-x:hover{color:#e5e7eb}
+  #wlPop .wl-body{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0}
+  #wlPop .wl-list{flex:1;overflow:auto;padding:12px 14px;min-height:0}
+  #wlPop .wl-msg{color:#9ca3af}
+  #wlPop table{width:100%;border-collapse:collapse;font-size:13px}
+  #wlPop th,#wlPop td{padding:6px 8px;border-bottom:1px solid #263041;text-align:left}
+  #wlPop tr.wl-row{cursor:pointer}#wlPop tr.wl-row:hover{background:#161d29}
+  #wlPop .wl-dot{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:6px;vertical-align:middle}
+  #wlPop .wl-detail{flex:1;display:flex;flex-direction:column;overflow:hidden;min-height:0}
+  #wlPop .wl-pin{flex-shrink:0;padding:10px 12px 0;border-bottom:1px solid #1c2637}
+  #wlPop .wl-back{color:#60a5fa;cursor:pointer;background:none;border:0;font:12px system-ui;padding:0;margin-bottom:8px}
+  #wlPop .wl-photos{display:flex;gap:8px;margin-bottom:10px}
+  #wlPop .wl-photo{flex:1;position:relative;border-radius:6px;overflow:hidden;background:#0a0f18;border:1px solid #263041}
+  #wlPop .wl-photo img{display:block;width:100%;height:96px;object-fit:cover}
+  #wlPop .wl-photo span{position:absolute;left:0;bottom:0;background:rgba(8,12,20,.72);color:#cbd5e1;
+    font-size:10px;padding:1px 6px;border-top-right-radius:5px}
+  #wlPop .wl-nophoto{flex:1;height:96px;display:flex;align-items:center;justify-content:center;color:#5b6b83;
+    font-size:12px;border:1px dashed #263041;border-radius:6px;margin-bottom:10px}
+  #wlPop .wl-idstrip{margin-bottom:8px}
+  #wlPop .wl-addr{font-weight:700;font-size:15px;margin-bottom:3px}
+  #wlPop .wl-idrow{display:inline-block;margin-right:16px;font-size:12px;color:#9ca3af}
+  #wlPop .wl-idrow b{color:#e5e7eb;font-weight:600;margin-left:5px}
+  #wlPop .wl-tabs{display:flex;gap:2px;margin-top:4px}
+  #wlPop .wl-tabs button{flex:1;background:none;border:0;border-bottom:2px solid transparent;color:#9ca3af;
+    padding:8px 4px;font:12px system-ui;cursor:pointer}
+  #wlPop .wl-tabs button.on{color:#e5e7eb;border-bottom-color:#3b82f6}
+  #wlPop .wl-panels{flex:1;overflow:auto;padding:12px;min-height:0}
+  #wlPop .wl-tab{display:none}#wlPop .wl-tab.on{display:block}
+  #wlPop h4{margin:0 0 6px;font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:#7e90b3}
+  #wlPop .wl-sec{margin-bottom:16px}
+  #wlPop .wl-na{color:#5b6b83}
+  #wlPop .wl-intel{background:#111826;border:1px solid #263041;border-radius:8px;padding:10px 12px}
+  #wlPop .wl-intel .wl-line{margin:3px 0}
+  #wlPop .wl-tier{font-weight:700}#wlPop .wl-tier.BASE{color:#f59e0b}
+  #wlPop .wl-caveat{color:#f59e0b;font-size:12px;margin-top:4px}
+  #wlPop .wl-chip{display:inline-block;background:#1e293b;border-radius:12px;padding:3px 9px;margin:2px 4px 2px 0;font-size:12px}
+  #wlPop .wl-date{color:#60a5fa;cursor:pointer;text-decoration:underline}
+  #wlPop .wl-ptable{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px}
+  #wlPop .wl-ptable td{padding:4px 6px;border-bottom:1px solid #1c2637}
+  #wlPop .wl-ptable td.k{color:#9ca3af;width:58%}
+  #wlPop .wl-ptable td.v{text-align:right;font-variant-numeric:tabular-nums}
+  #wlPop details.wl-more{margin-top:4px}
+  #wlPop details.wl-more>summary{cursor:pointer;color:#60a5fa;font-size:12px;list-style:none;padding:4px 0}
+  #wlPop details.wl-more>summary::-webkit-details-marker{display:none}
+  #wlPop .wl-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
+  #wlPop label{display:block;font-size:11px;color:#9ca3af;margin-bottom:3px}
+  #wlPop input,#wlPop textarea{width:100%;box-sizing:border-box;background:#0f1520;border:1px solid #2a3547;
+    color:#e5e7eb;border-radius:6px;padding:6px 8px;font:13px system-ui}
+  #wlPop .wl-actions{flex-shrink:0;display:flex;flex-wrap:wrap;align-items:center;gap:6px;padding:10px 12px;
+    border-top:1px solid #263041;background:#0c121c}
+  #wlPop button.wl-act{background:#1d4ed8;color:#fff;border:0;border-radius:6px;padding:7px 12px;
+    cursor:pointer;font:12px system-ui}
+  #wlPop button.wl-act.danger{background:#b91c1c}#wlPop button.wl-act.ghost{background:#334155}
+  #wlPop .wl-dmsg{flex-basis:100%;color:#9ca3af;font-size:12px}
+  #wlPinsBtn.on{background:#1d4ed8;color:#fff}`;
   document.head.appendChild(st);
-  const d=document.createElement("div"); d.id="wlPanel";
-  d.innerHTML = "<button class='wl-x' title='Close'>&times;</button><div class='wl-wrap' id='wlBody'></div>";
+  const d=document.createElement("div"); d.id="wlPop";
+  d.innerHTML = "<div class='wl-bar' id='wlBar'><span class='wl-grip'>&#8942;&#8942;</span>"
+    + "<span class='wl-title' id='wlTitle'>Watchlist</span>"
+    + "<button class='wl-x' id='wlXBtn' title='Close'>&times;</button></div>"
+    + "<div class='wl-body' id='wlBody'></div>";
   document.body.appendChild(d);
-  d.querySelector(".wl-x").onclick = wlClose;
+  document.getElementById("wlXBtn").onclick = wlClose;
+  wlWireDrag(document.getElementById("wlBar"), d);
 }
-function wlClose(){ const p=document.getElementById("wlPanel"); if(p) p.classList.remove("open"); }
-async function wlOpen(){
-  wlInject();
-  const p=document.getElementById("wlPanel"); p.classList.add("open");
-  await wlRenderList();
+// Pointer-based drag (mouse + touch). Clamps the popup inside the viewport.
+function wlWireDrag(bar, pop){
+  let ox=0, oy=0, dragging=false;
+  bar.addEventListener("pointerdown", (e)=>{
+    if(e.target.closest(".wl-x")) return;
+    const r=pop.getBoundingClientRect();
+    ox=e.clientX-r.left; oy=e.clientY-r.top; dragging=true;
+    pop.style.left=r.left+"px"; pop.style.top=r.top+"px"; pop.style.right="auto"; pop.style.bottom="auto";
+    try{ bar.setPointerCapture(e.pointerId); }catch(_){}
+    e.preventDefault();
+  });
+  bar.addEventListener("pointermove", (e)=>{
+    if(!dragging) return;
+    let x=e.clientX-ox, y=e.clientY-oy;
+    x=Math.max(0, Math.min(x, window.innerWidth - pop.offsetWidth));
+    y=Math.max(0, Math.min(y, window.innerHeight - pop.offsetHeight));
+    pop.style.left=x+"px"; pop.style.top=y+"px";
+  });
+  const end=(e)=>{ dragging=false; try{ bar.releasePointerCapture(e.pointerId); }catch(_){} };
+  bar.addEventListener("pointerup", end);
+  bar.addEventListener("pointercancel", end);
 }
+function wlShow(){ wlInject(); document.getElementById("wlPop").classList.add("open"); }
+function wlClose(){ const p=document.getElementById("wlPop"); if(p) p.classList.remove("open"); }
+function wlSetTitle(t){ const el=document.getElementById("wlTitle"); if(el) el.textContent=t; }
+async function wlOpen(){ wlShow(); await wlRenderList(); }
 async function wlRenderList(){
   const b=document.getElementById("wlBody");
-  b.innerHTML = "<h2>&#128203; Watchlist</h2><div class='wl-msg'>Loading…</div>";
+  wlSetTitle("Watchlist");
+  b.innerHTML = "<div class='wl-list'><div class='wl-msg'>Loading…</div></div>";
   let res; try{ res = await sdApi("watchlist-list", {}); }
-  catch(e){ b.innerHTML = "<h2>&#128203; Watchlist</h2><div class='wl-msg'>Failed to load — "+wlEsc(e.message)+"</div>"; return; }
+  catch(e){ b.innerHTML = "<div class='wl-list'><div class='wl-msg'>Failed to load &mdash; "+wlEsc(e.message)+"</div></div>"; return; }
   const rows = (res && res.watched) || [];
-  let h = "<h2>&#128203; Watchlist &mdash; "+rows.length+" address"+(rows.length===1?"":"es")+"</h2>";
-  if(!rows.length){ h += "<div class='wl-msg'>No addresses watched yet. Use the &#128065; Watch button on an address to add one.</div>"; b.innerHTML=h; return; }
-  h += "<table><thead><tr><th>Address</th><th>Name</th><th>Owner of record</th><th>Roof</th><th>Last hit</th></tr></thead><tbody>";
-  for(const r of rows){
-    const nm = [r.owner_first,r.owner_last].filter(Boolean).join(" ") || r.business_name || "";
-    const roof = r.solar_roof_area_sq ? (r.solar_roof_area_sq+" sq "+(r.solar_imagery_quality||"")) : (r.roof_type||"");
-    h += "<tr class='wl-row' data-pid='"+wlEsc(r.property_id)+"'>"
-      +"<td><span class='wl-dot' style='background:"+wlEsc(r.marker_color||"#e11d48")+"'></span>"+wlEsc(r.address)+"</td>"
-      +"<td>"+wlEsc(nm)+"</td><td>"+wlEsc(r.owner_of_record||"")+"</td>"
-      +"<td>"+wlEsc(roof)+"</td><td>"+wlEsc(r.last_hit_date||"—")+"</td></tr>";
+  wlSetTitle("Watchlist \\u2014 "+rows.length+" address"+(rows.length===1?"":"es"));
+  let h = "<div class='wl-list'>";
+  if(!rows.length){
+    h += "<div class='wl-msg'>No addresses watched yet. Use the &#128065; Watch button on an address to add one.</div></div>";
+    b.innerHTML=h; return;
   }
-  h += "</tbody></table>";
+  h += "<table><thead><tr><th>Address</th><th>Name</th><th>Roof</th><th>Last hit</th></tr></thead><tbody>";
+  for(const r of rows){
+    const nm = [r.owner_first,r.owner_last].filter(Boolean).join(" ") || r.business_name || r.owner_of_record || "";
+    const roof = r.solar_roof_area_sq ? (r.solar_roof_area_sq+" sq "+(r.solar_imagery_quality||"")) : "";
+    h += "<tr class='wl-row' data-pid='"+wlEsc(r.property_id)+"'>"
+      +"<td><span class='wl-dot' style='background:"+wlEsc(r.marker_color||"#e11d48")+"'></span>"+wlEsc(r.address||"")+"</td>"
+      +"<td>"+(nm?wlEsc(nm):"<span class='wl-na'>&mdash;</span>")+"</td>"
+      +"<td>"+(roof?wlEsc(roof):"<span class='wl-na'>&mdash;</span>")+"</td>"
+      +"<td>"+(r.last_hit_date?wlEsc(r.last_hit_date):"<span class='wl-na'>&mdash;</span>")+"</td></tr>";
+  }
+  h += "</tbody></table></div>";
   b.innerHTML = h;
   b.querySelectorAll("tr.wl-row").forEach(tr=> tr.onclick=()=>wlDetail(tr.getAttribute("data-pid")));
 }
+// build the pinned photo pair (a) — omit a null photo gracefully, never a broken img
+function wlPhotoPair(photos){
+  photos = photos || {};
+  const cells=[];
+  if(photos.street)    cells.push("<div class='wl-photo'><img src='"+photos.street+"' alt='Street view'><span>Street</span></div>");
+  if(photos.satellite) cells.push("<div class='wl-photo'><img src='"+photos.satellite+"' alt='Satellite'><span>Satellite</span></div>");
+  if(!cells.length) return "<div class='wl-nophoto'>No street or satellite imagery on file</div>";
+  return "<div class='wl-photos'>"+cells.join("")+"</div>";
+}
+// roof intel (c) — solar squares/segments/per-segment pitch, imagery tier ALWAYS shown (BASE caveated)
+function wlRoofIntel(r){
+  let segs=[];
+  try{ segs = Array.isArray(r.solar_segments_json) ? r.solar_segments_json
+                                                   : JSON.parse(r.solar_segments_json||"[]"); }
+  catch(_){ segs=[]; }
+  let h = "<div class='wl-sec'><h4>Roof intel</h4><div class='wl-intel'>";
+  if(r.solar_status==="ok"){
+    h += "<div class='wl-line'><b>Solar:</b> "+wlFmt(r.solar_roof_area_sq,"f1")+" squares &middot; "
+       + wlFmt(r.solar_segment_count,"n")+" segments</div>";
+  } else {
+    h += "<div class='wl-line'><b>Solar:</b> <span class='wl-msg'>"+wlEsc(r.solar_status||"not run")+" &mdash; manual entry</span></div>";
+  }
+  // imagery quality tier — ALWAYS shown
+  const tier = r.solar_imagery_quality || "";
+  h += "<div class='wl-line'><b>Imagery quality:</b> "
+     + (tier ? "<span class='wl-tier "+wlEsc(tier)+"'>"+wlEsc(tier)+"</span>" : "<span class='wl-na'>&mdash;</span>")+"</div>";
+  if(tier==="BASE") h += "<div class='wl-caveat'>&#9888; BASE tier &mdash; low-detail aerial; verify roof geometry on site before quoting.</div>";
+  // per-segment pitch
+  if(segs && segs.length){
+    h += "<div class='wl-line'><b>Segments:</b> ";
+    for(const s of segs){
+      const pitch = (s.pitch_deg==null) ? "&mdash;" : wlFmt(s.pitch_deg,"f1")+"&deg;";
+      const area  = (s.area_sq==null) ? "" : " &middot; "+wlFmt(s.area_sq,"f1")+" sq";
+      h += "<span class='wl-chip'>"+pitch+area+"</span>";
+    }
+    h += "</div>";
+  }
+  h += "<div class='wl-line'><b>Roof type:</b> "+wlFmt(r.roof_type,"str")
+     + " &nbsp; <b>Installed:</b> "+wlFmt(r.roof_install_year,"y")
+     + " &nbsp; <b>$/sq:</b> "+wlFmt(r.price_per_sq,"$")+"</div>";
+  h += "</div></div>";
+  return h;
+}
+// parcel full (e) — Valuation/Building/Land&use expanded, Identifiers + long tail under an expander
+function wlParcelFull(pf){
+  if(!pf || !pf.groups || !pf.groups.length){
+    return "<div class='wl-sec'><h4>Parcel data</h4><div class='wl-msg'>"
+      + wlEsc((pf&&pf.status)||"no parcel data on file")+"</div></div>";
+  }
+  const groupHtml=(g)=>{
+    let h="<h4>"+wlEsc(g.title||"")+"</h4><table class='wl-ptable'><tbody>";
+    for(const f of (g.fields||[])){
+      h+="<tr><td class='k'>"+wlEsc(f.label||f.key||"")+"</td><td class='v'>"+wlFmt(f.value,f.kind,f.known)+"</td></tr>";
+    }
+    h+="</tbody></table>";
+    return h;
+  };
+  const isPrimary=(t)=>/valuation|building|land|use/i.test(t||"");
+  const primary=[], tail=[];
+  for(const g of pf.groups){ (isPrimary(g.title)?primary:tail).push(g); }
+  let h="<div class='wl-sec'>";
+  for(const g of (primary.length?primary:pf.groups.slice(0,3))) h+=groupHtml(g);
+  const rest = primary.length ? tail : pf.groups.slice(3);
+  if(rest.length){
+    h+="<details class='wl-more'><summary>All parcel data &#9662;</summary>";
+    for(const g of rest) h+=groupHtml(g);
+    h+="</details>";
+  }
+  h+="</div>";
+  return h;
+}
 async function wlDetail(pid){
   const b=document.getElementById("wlBody");
-  b.innerHTML = "<button class='wl-back'>&larr; Back to list</button><div class='wl-msg'>Loading…</div>";
-  b.querySelector(".wl-back").onclick = wlRenderList;
+  wlSetTitle("Loading…");
+  b.innerHTML = "<div class='wl-list'><button class='wl-back'>&larr; Back to list</button><div class='wl-msg'>Loading…</div></div>";
+  const bk=b.querySelector(".wl-back"); if(bk) bk.onclick = wlRenderList;
   let res; try{ res = await sdApi("watchlist-get", { property_id: pid }); }
-  catch(e){ b.innerHTML = "<button class='wl-back'>&larr; Back</button><div class='wl-msg'>Failed — "+wlEsc(e.message)+"</div>";
+  catch(e){ b.innerHTML = "<div class='wl-list'><button class='wl-back'>&larr; Back</button><div class='wl-msg'>Failed &mdash; "+wlEsc(e.message)+"</div></div>";
             b.querySelector(".wl-back").onclick=wlRenderList; return; }
-  if(!res || !res.ok){ b.innerHTML = "<div class='wl-msg'>Not found.</div>"; return; }
-  const r = res.record;
-  let h = "<button class='wl-back'>&larr; Back to list</button>";
-  h += "<h2>"+wlEsc(r.address)+"</h2>";
-  // intel block — parcel + solar, tier always shown, BASE caveated
-  h += "<div class='wl-intel'><b>Owner of record:</b> "+wlEsc(r.owner_of_record||"—")
-     + " &nbsp;|&nbsp; <b>Year built:</b> "+(r.parcel_yb_known?wlEsc(r.parcel_year_built):"unknown")
-     + " &nbsp;|&nbsp; <b>Bldg sqft:</b> "+(r.parcel_sqft_known?wlEsc(r.parcel_bldg_sqft):"unknown")
-     + " &nbsp;|&nbsp; <b>Use:</b> "+wlEsc(r.parcel_land_use||"—")+"<br>";
-  if(r.solar_status==="ok"){
-    h += "<b>Roof (Google Solar):</b> "+wlEsc(r.solar_roof_area_sq)+" squares, "+wlEsc(r.solar_segment_count)
-       + " segments &nbsp; <span class='wl-tier "+wlEsc(r.solar_imagery_quality)+"'>"+wlEsc(r.solar_imagery_quality)+" imagery</span>";
-    if(r.solar_caveat) h += " <span class='wl-msg'>("+wlEsc(r.solar_caveat)+")</span>";
-  } else { h += "<b>Roof (Google Solar):</b> <span class='wl-msg'>"+wlEsc(r.solar_status||"not run")+" — manual entry</span>"; }
-  h += "</div>";
-  // storm hits — clickable dates
-  const hits = r.storm_hits||[];
-  h += "<b>Storm hits on record ("+hits.length+"):</b><div style='margin:6px 0'>";
+  if(!res || !res.ok){ b.innerHTML = "<div class='wl-list'><button class='wl-back'>&larr; Back</button><div class='wl-msg'>Not found.</div></div>";
+            b.querySelector(".wl-back").onclick=wlRenderList; return; }
+  const r = res.record || {};
+  wlSetTitle(r.address || "Address");
+  const hits = r.storm_hits || [];
+  const reps = r.reports || [];
+  // ── PINNED HEADER: back + photo pair (a) + identity strip (b) + tab bar ──
+  let h = "<div class='wl-detail'><div class='wl-pin'>";
+  h += "<button class='wl-back'>&larr; Back to list</button>";
+  h += wlPhotoPair(r.photos);
+  h += "<div class='wl-idstrip'>"
+     + "<div class='wl-addr'>"+wlEsc(r.address||"&mdash;")+"</div>"
+     + "<span class='wl-idrow'>Owner of record<b>"+(r.owner_of_record?wlEsc(r.owner_of_record):"<span class=\\"wl-na\\">&mdash;</span>")+"</b></span>"
+     + "<span class='wl-idrow'>Year built<b>"+wlFmt(r.parcel_year_built,"y",r.parcel_yb_known)+"</b></span>"
+     + "</div>";
+  h += "<div class='wl-tabs'>"
+     + "<button data-tab='ov' class='on'>Overview</button>"
+     + "<button data-tab='pc'>Parcel</button>"
+     + "<button data-tab='ct'>Contact</button>"
+     + "<button data-tab='hs'>History</button></div>";
+  h += "</div>"; // /wl-pin
+  // ── SCROLLING TAB PANELS ──
+  h += "<div class='wl-panels'>";
+  // Overview: roof intel (c) + storm hits (d)
+  h += "<div class='wl-tab on' data-tab='ov'>";
+  h += wlRoofIntel(r);
+  h += "<div class='wl-sec'><h4>Storm hits ("+hits.length+")</h4>";
   if(!hits.length) h += "<span class='wl-msg'>none in the 5-year window</span>";
   for(const x of hits) h += "<span class='wl-chip'><span class='wl-date' data-d='"+wlEsc(x.date)+"'>"+wlEsc(x.date)+"</span> &middot; "+wlEsc((x.perils||[]).join(", "))+"</span>";
-  h += "</div>";
-  // saved reports
-  const reps = r.reports||[];
-  h += "<b>Saved reports ("+reps.length+"):</b><div style='margin:6px 0'>";
-  if(!reps.length) h += "<span class='wl-msg'>none yet — use Run storm history</span>";
-  for(const rp of reps) h += "<div class='wl-chip'>"+wlEsc(rp.created_at||"")+" &middot; "+wlEsc(rp.summary||rp.pdf_path||"")+"</div>";
-  h += "</div>";
-  // editable form
-  h += "<h3 style='margin:14px 0 4px'>Details</h3><div class='wl-grid'>";
+  h += "</div></div>";
+  // Parcel (e)
+  h += "<div class='wl-tab' data-tab='pc'>"+wlParcelFull(r.parcel_full)+"</div>";
+  // Contact (f) + notes (g) + alert recipients (h) — all editable inputs (present even when hidden)
+  h += "<div class='wl-tab' data-tab='ct'><div class='wl-sec'><h4>Contact &amp; claim</h4><div class='wl-grid'>";
   for(const f of WL_STR_FIELDS.concat(WL_NUM_FIELDS)){
     const val = r[f[0]]==null ? "" : r[f[0]];
-    if(f[0]==="note") h += "<div style='grid-column:1/3'><label>"+f[1]+"</label><textarea id='wlf_"+f[0]+"' rows='2'>"+wlEsc(val)+"</textarea></div>";
-    else h += "<div><label>"+f[1]+"</label><input id='wlf_"+f[0]+"' value='"+wlEsc(val)+"'></div>";
+    if(f[0]==="note")
+      h += "<div style='grid-column:1/3'><label>"+wlEsc(f[1])+"</label><textarea id='wlf_"+f[0]+"' rows='2'>"+wlEsc(val)+"</textarea></div>";
+    else
+      h += "<div><label>"+wlEsc(f[1])+"</label><input id='wlf_"+f[0]+"' value='"+wlEsc(val)+"'></div>";
   }
   h += "<div style='grid-column:1/3'><label>Alert recipients (comma-separated emails; blank = operator only)</label>"
      + "<input id='wlf_alert_recipients' value='"+wlEsc((r.alert_recipients||[]).join(", "))+"'></div>";
-  h += "</div>";
-  h += "<div><button class='wl-act' id='wlSave'>Save changes</button>"
+  h += "</div></div></div>";
+  // History: saved reports
+  h += "<div class='wl-tab' data-tab='hs'><div class='wl-sec'><h4>Saved reports ("+reps.length+")</h4>";
+  if(!reps.length) h += "<span class='wl-msg'>none yet &mdash; use Run report</span>";
+  for(const rp of reps) h += "<div class='wl-chip'>"+wlEsc(rp.created_at||"")+" &middot; "+wlEsc(rp.summary||rp.pdf_path||"")+"</div>";
+  h += "</div></div>";
+  h += "</div>"; // /wl-panels
+  // ── PINNED ACTIONS (i) ──
+  h += "<div class='wl-actions'>"
+     + "<button class='wl-act' id='wlSave'>Save</button>"
      + "<button class='wl-act ghost' id='wlBackfill'>Refresh parcel + Solar</button>"
-     + "<button class='wl-act ghost' id='wlReport'>Run storm history &rarr; PDF</button>"
-     + "<button class='wl-act danger' id='wlRemove'>Un-watch</button><span class='wl-msg' id='wlDMsg'></span></div>";
+     + "<button class='wl-act ghost' id='wlReport'>Run report</button>"
+     + "<button class='wl-act danger' id='wlRemove'>Un-watch</button>"
+     + "<span class='wl-dmsg' id='wlDMsg'></span></div>";
+  h += "</div>"; // /wl-detail
   b.innerHTML = h;
+  // wire back, tabs, clickable dates
   b.querySelector(".wl-back").onclick = wlRenderList;
+  const tabBtns=b.querySelectorAll(".wl-tabs button"), tabPanes=b.querySelectorAll(".wl-tab");
+  tabBtns.forEach(btn=> btn.onclick=()=>{
+    tabBtns.forEach(x=>x.classList.remove("on")); btn.classList.add("on");
+    const t=btn.getAttribute("data-tab");
+    tabPanes.forEach(p=> p.classList.toggle("on", p.getAttribute("data-tab")===t));
+    const panels=b.querySelector(".wl-panels"); if(panels) panels.scrollTop=0;
+  });
   b.querySelectorAll(".wl-date").forEach(el=> el.onclick=()=>{ wlClose(); goDate(el.getAttribute("data-d")); });
   const msg=(t,err)=>{ const m=document.getElementById("wlDMsg"); if(m){ m.textContent=t; m.style.color=err?"#f87171":"#9ca3af"; } };
   function collectFields(){
@@ -1413,19 +1601,49 @@ async function wlDetail(pid){
     return out;
   }
   document.getElementById("wlSave").onclick = async ()=>{ msg("Saving…");
-    try{ const rr=await sdApi("watchlist-update",{property_id:pid,fields:collectFields()}); msg(rr.updated?"✓ Saved":(rr.reason||"no change")); }
+    try{ const rr=await sdApi("watchlist-update",{property_id:pid,fields:collectFields()}); msg(rr.updated?"\\u2713 Saved":(rr.reason||"no change")); }
     catch(e){ msg("Failed — "+e.message,true); } };
   document.getElementById("wlBackfill").onclick = async ()=>{ msg("Refreshing parcel + Solar (one Solar call)…");
-    try{ const rr=await sdApi("watchlist-backfill",{property_id:pid}); msg("✓ parcel="+rr.parcel_status+" solar="+rr.solar_status); setTimeout(()=>wlDetail(pid),700); }
+    try{ const rr=await sdApi("watchlist-backfill",{property_id:pid}); msg("\\u2713 parcel="+rr.parcel_status+" solar="+rr.solar_status); setTimeout(()=>wlDetail(pid),700); }
     catch(e){ msg("Failed — "+e.message,true); } };
   document.getElementById("wlReport").onclick = async ()=>{ msg("Building report + saving PDF onto the address…");
-    try{ const rr=await sdApi("watchlist-report",{property_id:pid}); msg(rr.ok?("✓ saved "+(rr.report_id||"")):(rr.reason||"no qualifying events")); setTimeout(()=>wlDetail(pid),700); }
+    try{ const rr=await sdApi("watchlist-report",{property_id:pid}); msg(rr.ok?("\\u2713 saved "+(rr.report_id||"")):(rr.reason||"no qualifying events")); setTimeout(()=>wlDetail(pid),700); }
     catch(e){ msg("Failed — "+e.message,true); } };
   document.getElementById("wlRemove").onclick = async ()=>{
-    if(!confirm("Un-watch "+r.address+"? History is kept (the record is deactivated, not deleted).")) return;
+    if(!confirm("Un-watch "+(r.address||"this address")+"? History is kept (the record is deactivated, not deleted).")) return;
     msg("Removing…");
     try{ const rr=await sdApi("watchlist-remove",{property_id:pid}); if(rr.removed){ wlRenderList(); } else msg("not removed",true); }
     catch(e){ msg("Failed — "+e.message,true); } };
+}
+// ── ALL-WATCHED-PINS MAP TOGGLE (Part C) ──────────────────────────────────────────────────────
+// Drops one pin per watched address on TMAP (its own layerGroup — never touches renderMap's storm
+// layers). Each pin uses the row's marker_color; clicking opens that address's detail popup.
+let WL_PINS_GRP=null, WL_PINS_ON=false;
+async function wlTogglePins(){
+  const btn=document.getElementById("wlPinsBtn");
+  if(WL_PINS_ON){
+    if(WL_PINS_GRP && TMAP && TMAP.hasLayer(WL_PINS_GRP)) TMAP.removeLayer(WL_PINS_GRP);
+    WL_PINS_GRP=null; WL_PINS_ON=false; if(btn) btn.classList.remove("on"); msActMsg(""); return;
+  }
+  if(!TMAP){ msActMsg("Map not ready yet.", true); return; }
+  let res; try{ res=await sdApi("watchlist-list",{}); }
+  catch(e){ msActMsg("Pins failed — "+e.message, true); return; }
+  const rows=(res&&res.watched)||[];
+  const markers=[];
+  for(const r of rows){
+    const lat=r.lat, lon=r.lon;
+    if(lat==null || lon==null) continue;
+    const col=r.marker_color||"#e11d48";
+    const m=L.circleMarker([lat,lon],{radius:8,color:"#fff",weight:2,fillColor:col,fillOpacity:0.92});
+    m.bindTooltip(r.address||"", {direction:"top"});
+    const pidv=r.property_id;
+    m.on("click", ()=>{ wlShow(); wlDetail(pidv); });
+    markers.push(m);
+  }
+  if(!markers.length){ msActMsg("No watched addresses with coordinates to pin.", true); return; }
+  WL_PINS_GRP=L.layerGroup(markers).addTo(TMAP);
+  WL_PINS_ON=true; if(btn) btn.classList.add("on");
+  msActMsg("Watched pins on map: "+markers.length);
 }
 
 function sdReadDials(){
@@ -3003,6 +3221,7 @@ function addMapSearch(){
   if(repEl) repEl.addEventListener("click", ()=>msAddrAction("report"));
   if(watEl) watEl.addEventListener("click", ()=>msAddrAction("watch"));
   const wlEl=document.getElementById("wlBtn"); if(wlEl) wlEl.addEventListener("click", wlOpen);
+  const wlPinsEl=document.getElementById("wlPinsBtn"); if(wlPinsEl) wlPinsEl.addEventListener("click", wlTogglePins);
   addrEl.addEventListener("input", ()=>msActMsg(""));
   // clear (x) buttons on both boxes — also removes the map pin
   document.querySelectorAll("#tbar .hdr-search .ms-clear").forEach(btn=>btn.addEventListener("click",()=>{
