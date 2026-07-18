@@ -912,8 +912,14 @@ function assemble(date, rows, geo){
     for(let i=0,j=ring.length-1;i<ring.length;j=i++){ const xi=ring[i][0],yi=ring[i][1],xj=ring[j][0],yj=ring[j][1];
       if(((yi>lat)!==(yj>lat)) && (lng < (xj-xi)*(lat-yi)/(yj-yi)+xi)) inside=!inside; } return inside; });
   const evIn = (h ? parseJSON(h.evidence_json) : []).filter(p => !_gfRings.length || _inGF(p.lng, p.lat));
+  // v8.3: overlay_json = the ENGINE-rendered corridor image ({png:data-URI, bounds:[[s,w],[n,e]]}) for
+  // wind/tornado — the same _build_corridor_raster field the per-address report draws, so the portal and
+  // the report cannot drift. Absent (hail, or a node cached before v8.3) -> null, layer just falls back
+  // to the client-side heatmap.
+  const parseOverlay = s => { if(!s) return null;
+    try{ const o=JSON.parse(s); return (o && o.png && o.bounds) ? o : null; }catch(e){ return null; } };
   const layer = r => r ? { swath_cells: parseJSON(r.swath_json), circles: parseJSON(r.circles_json),
-                           evidence: parseJSON(r.evidence_json),
+                           evidence: parseJSON(r.evidence_json), overlay: parseOverlay(r.overlay_json),
                            summary: { cells: parseJSON(r.swath_json).length, circles: r.circle_count } } : null;
   // UNIFIED SWATH (Step 3 v2 Part 2): ONE seamless hail swath — geofence-interior
   // cells + 150mi ring cells concatenated — rendered by renderMap's §3 SwathLayer,
@@ -3616,10 +3622,22 @@ async function boot(){
     if(D.swath_mode==="per_cell" && D.swath_cells && D.swath_cells.length){
       const h=hailHeat();
       if(h) HL.push({pane:"swathPane",group:h,peril:"hail",op:0.6}); }
+    // v8.3 CORRIDOR OVERLAY: when the engine shipped a rendered corridor for wind/tornado, draw THAT
+    // (an L.imageOverlay of the report's own _build_corridor_raster field — organic, meandering, with the
+    // core->edge gradient) instead of the client-side cell heatmap. Same pane/opacity/toggle plumbing, so
+    // Cells|Smooth still works. No overlay (hail, or a pre-v8.3 cached node) -> the heatmap, unchanged.
+    const corridorGroup=(ov,paneName,paneZ)=>{ if(!ov||!ov.png||!ov.bounds) return null;
+      try{ if(TMAP && !TMAP.getPane(paneName)){ TMAP.createPane(paneName); TMAP.getPane(paneName).style.zIndex=paneZ; }
+           return L.layerGroup([L.imageOverlay(ov.png, ov.bounds, {pane:paneName, opacity:1, interactive:false})]);
+      }catch(e){ return null; } };
     if(D.wind && D.wind.swath_cells && D.wind.swath_cells.length){
-      const w=buildHeatmap(D.wind.swath_cells,c=>+c[2]||0,WIND_RAMP,"wHeatPane",354); if(w) HL.push({pane:"windPane",group:w,peril:"wind",op:0.55}); }
+      const w=corridorGroup(D.wind.overlay,"wHeatPane",354)
+              || buildHeatmap(D.wind.swath_cells,c=>+c[2]||0,WIND_RAMP,"wHeatPane",354);
+      if(w) HL.push({pane:"windPane",group:w,peril:"wind",op:0.55}); }
     if(D.tornado && D.tornado.swath_cells && D.tornado.swath_cells.length){
-      const t=buildHeatmap(D.tornado.swath_cells,c=>+c[2]||0,TORN_RAMP,"tHeatPane",355); if(t) HL.push({pane:"tornadoPane",group:t,peril:"tornado",op:0.55}); }
+      const t=corridorGroup(D.tornado.overlay,"tHeatPane",355)
+              || buildHeatmap(D.tornado.swath_cells,c=>+c[2]||0,TORN_RAMP,"tHeatPane",355);
+      if(t) HL.push({pane:"tornadoPane",group:t,peril:"tornado",op:0.55}); }
     try{ initSwathHover(D); }catch(e){}               // truth pass: per-peril hover (hail/wind/tornado/chase)
     try{ updateSwathBadge(D.swath_cells); }catch(e){} // render-truth: hail sub-gate/gated glance badge
     try{ updatePerilBadges(D); }catch(e){}            // truth pass: named wind/tornado corner badges
