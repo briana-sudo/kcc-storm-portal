@@ -268,6 +268,11 @@ body.pull-armed #tbar #pullBtn{background:#2c6e4c;color:#fff}
 .tz-toast .tz-area{color:#9fb3d9;font-size:11px;margin-top:3px}
 .tz-toast .tz-x{background:transparent;border:none;color:#9fb3d9;font-size:20px;line-height:1;cursor:pointer;padding:0 2px;margin-top:-2px}
 .tz-toast .tz-x:hover{color:#fff}
+/* Part G: strip Leaflet's default divIcon chrome so the watched-address teardrop reads as a pin and
+   not as a white box with a pin inside it. This lives in the MAIN sheet, not the watchlist panel's
+   injected sheet, because Pins can be toggled on without ever opening the panel that injects it. */
+.wl-pin-icon{background:transparent;border:0}
+.wl-pin-icon svg{display:block;filter:drop-shadow(0 2px 3px rgba(0,0,0,.45))}
 body.tz-arming .leaflet-container{cursor:crosshair}
 body.tz-arming::after{content:"Click the map to set the timezone";position:fixed;top:64px;left:50%;transform:translateX(-50%);
   z-index:3000;background:#e8430a;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.4)}
@@ -1978,16 +1983,55 @@ function wlInject(){
     cursor:pointer;font:12px system-ui}
   #wlPop button.wl-act.danger{background:#b91c1c}#wlPop button.wl-act.ghost{background:#334155}
   #wlPop .wl-dmsg{flex-basis:100%;color:#9ca3af;font-size:12px}
-  #wlPinsBtn.on{background:#1d4ed8;color:#fff}`;
+  #wlPinsBtn.on{background:#1d4ed8;color:#fff}
+  /* Part F: a full-width bottom EDGE handle for drag-to-lengthen. The panel already carried CSS
+     resize:both, but that grip is a ~16px corner square — usable with a mouse, poor for a touch
+     drag, and it cannot lengthen without also changing width. This bar spans the panel so height is
+     draggable on its own. It stops short of the corner (right:14px) so the two never fight for the
+     same pixels. Applies to BOTH views: #wlPop is ONE container that swaps the list for the address
+     detail, so the list box and the popup inherit this from the same element. */
+  #wlPop .wl-vgrip{position:absolute;left:0;right:14px;bottom:0;height:10px;cursor:ns-resize;
+    touch-action:none;background:transparent}
+  #wlPop .wl-vgrip::after{content:"";position:absolute;left:50%;transform:translateX(-50%);
+    bottom:3px;width:44px;height:3px;border-radius:2px;background:#33415a}
+  #wlPop .wl-vgrip:hover::after{background:#60a5fa}`;
   document.head.appendChild(st);
   const d=document.createElement("div"); d.id="wlPop";
   d.innerHTML = "<div class='wl-bar' id='wlBar'><span class='wl-grip'>&#8942;&#8942;</span>"
     + "<span class='wl-title' id='wlTitle'>Watchlist</span>"
     + "<button class='wl-x' id='wlXBtn' title='Close'>&times;</button></div>"
-    + "<div class='wl-body' id='wlBody'></div>";
+    + "<div class='wl-body' id='wlBody'></div>"
+    + "<div class='wl-vgrip' id='wlVGrip' title='Drag to lengthen'></div>";
   document.body.appendChild(d);
   document.getElementById("wlXBtn").onclick = wlClose;
   wlWireDrag(document.getElementById("wlBar"), d);
+  wlWireVResize(document.getElementById("wlVGrip"), d);
+}
+// Part F: vertical-only resize from the bottom edge. Height is driven directly rather than through
+// the CSS resize grip, so a drag can lengthen the panel without also widening it.
+function wlWireVResize(grip, pop){
+  if(!grip) return;
+  let startY=0, startH=0, sizing=false;
+  const MIN=240;
+  grip.addEventListener("pointerdown", (e)=>{
+    const r=pop.getBoundingClientRect();
+    startY=e.clientY; startH=r.height; sizing=true;
+    // Pin the top-left before resizing: the panel is positioned from `top/right` by default, so
+    // growing the height while `right` is still authoritative makes it appear to jump sideways.
+    pop.style.top=r.top+"px"; pop.style.left=r.left+"px"; pop.style.right="auto"; pop.style.bottom="auto";
+    try{ grip.setPointerCapture(e.pointerId); }catch(_){}
+    e.preventDefault(); e.stopPropagation();
+  });
+  grip.addEventListener("pointermove", (e)=>{
+    if(!sizing) return;
+    // Clamp to the viewport bottom so the panel cannot be dragged past where it can be seen.
+    const top=pop.getBoundingClientRect().top;
+    const max=Math.max(MIN, window.innerHeight - top - 8);
+    pop.style.height=Math.max(MIN, Math.min(startH + (e.clientY-startY), max))+"px";
+  });
+  const end=(e)=>{ sizing=false; try{ grip.releasePointerCapture(e.pointerId); }catch(_){} };
+  grip.addEventListener("pointerup", end);
+  grip.addEventListener("pointercancel", end);
 }
 // Pointer-based drag (mouse + touch). Clamps the popup inside the viewport.
 function wlWireDrag(bar, pop){
@@ -2215,6 +2259,20 @@ async function wlDetail(pid){
 // ── ALL-WATCHED-PINS MAP TOGGLE (Part C) ──────────────────────────────────────────────────────
 // Drops one pin per watched address on TMAP (its own layerGroup — never touches renderMap's storm
 // layers). Each pin uses the row's marker_color; clicking opens that address's detail popup.
+// Part G: the Google-style teardrop used for watched addresses. Built as an inline-SVG divIcon so it
+// carries no external asset (the portal is a single self-contained page) and can take the row's own
+// marker_color. The white stroke keeps it legible over dark hail fill and light basemap alike.
+function wlPinIcon(col){
+  const svg =
+    "<svg xmlns='http://www.w3.org/2000/svg' width='26' height='34' viewBox='0 0 26 34'>"
+    + "<path d='M13 33C13 33 24.5 19.8 24.5 12.4 24.5 5.6 19.4.5 13 .5S1.5 5.6 1.5 12.4C1.5 19.8 13 33 13 33Z' "
+    +   "fill='" + col + "' stroke='#fff' stroke-width='2' stroke-linejoin='round'/>"
+    + "<circle cx='13' cy='12.2' r='4.2' fill='#fff' fill-opacity='.92'/></svg>";
+  return L.divIcon({
+    html: svg, className: "wl-pin-icon",
+    iconSize: [26,34], iconAnchor: [13,33], tooltipAnchor: [0,-30],
+  });
+}
 let WL_PINS_GRP=null, WL_PINS_ON=false;
 async function wlTogglePins(){
   const btn=document.getElementById("wlPinsBtn");
@@ -2228,11 +2286,21 @@ async function wlTogglePins(){
   const rows=(res&&res.watched)||[];
   const markers=[];
   for(const r of rows){
-    const lat=r.lat, lon=r.lon;
+    // Part E step 4: prefer the PARCEL's own representative point over the geocode. The geocode is
+    // a street-interpolated coordinate that measured OUTSIDE the parcel on 6 of 6 test addresses
+    // (1521 N Berry landed in the gap between 1521 and 1523). pin_lat/pin_lon come from the polygon
+    // the verified match actually fell inside, so the pin sits on the house.
+    const lat=(r.pin_lat!=null && r.pin_lat!==0) ? r.pin_lat : r.lat;
+    const lon=(r.pin_lon!=null && r.pin_lon!==0) ? r.pin_lon : r.lon;
     if(lat==null || lon==null) continue;
     const col=r.marker_color||"#e11d48";
-    const m=L.circleMarker([lat,lon],{radius:8,color:"#fff",weight:2,fillColor:col,fillOpacity:0.92});
-    m.bindTooltip(r.address||"", {direction:"top"});
+    // Part G: a teardrop PIN, not a flat dot. Every storm mark on this map is an L.circleMarker
+    // (hail cells, chase circles, the swath floor marker), so a watched address drawn as another
+    // filled circle reads as storm data at a glance. Shape — not just colour — is what separates
+    // them: nothing else on the map is a teardrop. Anchored at the TIP (iconAnchor y == height) so
+    // the point marks the parcel rather than the balloon's centre floating north of it.
+    const m=L.marker([lat,lon], {icon: wlPinIcon(col), riseOnHover:true});
+    m.bindTooltip(r.address||"", {direction:"top", offset:[0,-30]});
     const pidv=r.property_id;
     m.on("click", ()=>{ wlShow(); wlDetail(pidv); });
     markers.push(m);
