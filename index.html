@@ -483,8 +483,13 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 /* Why-line inside a visibility-floor marker tooltip: explains the dot instead of a swath. */
 .whyline{display:block;margin-top:3px;font-weight:600;color:#9fb0c6;font-size:10px;line-height:1.3}
 /* ── ON-MAP TIER LEGEND (2026-07-20) — collapsible, same vocabulary as the calendar popup so one
-   legend teaches both surfaces. Sits top-left under the zoom control. ── */
-#tierLegend{position:absolute;left:10px;top:78px;z-index:642;font:600 10.5px/1.35 system-ui,-apple-system,sans-serif;
+   legend teaches both surfaces.
+   POSITIONED BY LEAFLET, not by us. It first shipped as position:absolute;top:78px and landed
+   ON TOP of the hover readout, which is an L.control({position:'topleft'}) — the operator's
+   screenshot showed the readout covering the legend's own header. It is now a real Leaflet
+   control in the same top-left stack, so Leaflet flows it below zoom + readout and keeps that
+   true at any viewport size instead of us guessing a pixel offset. ── */
+#tierLegend{font:600 10.5px/1.35 system-ui,-apple-system,sans-serif;
   background:rgba(13,21,38,.93);color:#cfd9ea;border:1px solid #2c3c5e;border-radius:8px;
   box-shadow:0 3px 12px rgba(0,0,0,.45);pointer-events:auto;max-width:210px}
 #tierLegend .tl-h{display:flex;align-items:center;gap:6px;padding:5px 9px;cursor:pointer;
@@ -3417,7 +3422,7 @@ function addChaseLayer(chase){
 //    subordinate — DESATURATED grey fill (never an in-market/fundable color), dimmed, with a dashed
 //    convex-hull boundary + a persistent "OUT OF MARKET — chase" label. Display-only; never touches the
 //    in-market ramp/badge/spend math; never moves the map. Distinct from the opt-in CHASE FILL targeting. ──
-let CHASE_SWATH_LAYER=null;
+let CHASE_SWATH_LAYER=null, CHASE_LBL=null, CHASE_LBL_UPD=null;
 function _convexHull(pts){                                     // pts [[lat,lng]...] -> hull [[lat,lng]...]
   const P=pts.map(p=>[p[1],p[0]]).sort((a,b)=>a[0]-b[0]||a[1]-b[1]);   // work in [x=lng,y=lat]
   if(P.length<3) return pts.slice();
@@ -3427,6 +3432,8 @@ function _convexHull(pts){                                     // pts [[lat,lng]
   lo.pop(); up.pop(); return lo.concat(up).map(p=>[p[1],p[0]]);        // back to [lat,lng]
 }
 function addChaseSwathLayer(D){
+  if(CHASE_LBL_UPD && TMAP){ TMAP.off("moveend zoomend", CHASE_LBL_UPD); CHASE_LBL_UPD=null; }
+  CHASE_LBL=null;
   if(CHASE_SWATH_LAYER){ if(TMAP&&TMAP.hasLayer(CHASE_SWATH_LAYER)) TMAP.removeLayer(CHASE_SWATH_LAYER); CHASE_SWATH_LAYER=null; }
   const ex=document.querySelector(".chaseoom"); if(ex) ex.remove();
   if(!TMAP || !D.chase || !D.chase.swath_cells || !D.chase.swath_cells.length) return;
@@ -3446,12 +3453,48 @@ function addChaseSwathLayer(D){
   if(hull.length>=3){
     layers.push(L.polygon(hull,{pane:"chaseSwathPane",color:"#c98a2e",weight:2.2,
       dashArray:"14,5,3,5",fill:false,interactive:false,opacity:.95}));
-    // Anchor the label at the hull's NORTHERNMOST vertex so it sits clear of the swath body
-    // and lands somewhere stable across dates (a centroid label would sit ON the cells).
-    let top=hull[0]; for(const p of hull){ if(p[0]>top[0]) top=p; }
-    layers.push(L.marker(top,{pane:"chaseSwathPane",interactive:false,
+    // Anchor the label at the hull vertex NEAREST THE MAP CENTRE, and re-anchor on pan/zoom.
+    //
+    // It first shipped anchored to the hull's NORTHERNMOST vertex. On 07-18 that put the label at
+    // y = -453px — off the top of the viewport — so the operator's review screenshot showed the
+    // amber hull with no label at all, which is the one thing the label existed to prevent. A
+    // fixed vertex cannot be "legible at default zoom" for every date, because the hull's shape
+    // and the view are independent. Tracking the centre keeps it on the shape AND in front of
+    // whoever is looking.
+    CHASE_LBL=L.marker(hull[0],{pane:"chaseSwathPane",interactive:false,
       icon:L.divIcon({className:"chasehull-lbl",html:"chase activity extent \u2014 not the market boundary",
-        iconSize:[0,0],iconAnchor:[0,10]})}));
+        iconSize:[0,0],iconAnchor:[0,10]})});
+    layers.push(CHASE_LBL);
+    CHASE_LBL_UPD=()=>{
+      if(!CHASE_LBL || !TMAP) return;
+      const c=TMAP.getCenter(), b=TMAP.getBounds();
+      // Walk the hull BOUNDARY, not just its vertices, and prefer a point that is actually on
+      // screen. Nearest-vertex was not enough: on 07-18 the hull's EDGE crosses the viewport
+      // while every vertex lies outside it, so the operator saw the amber line with no label.
+      // Sampling each edge finds the on-screen stretch of boundary and pins the label there.
+      // Step sized to the VIEW, not a fixed sample count: a fixed count can stride clean over a
+      // zoomed-in viewport when the hull edge is long. Capped per edge so a wide zoom stays cheap
+      // (measured 0 ms on a CONUS-scale view).
+      const span={lat:Math.abs(b.getNorth()-b.getSouth()), lng:Math.abs(b.getEast()-b.getWest())};
+      const step=Math.max(1e-4, Math.min(span.lat, span.lng)/3);
+      let onScreen=null, nearest=hull[0], nd=Infinity;
+      for(let i=0;i<hull.length && !onScreen;i++){
+        const a=hull[i], z=hull[(i+1)%hull.length];
+        const elen=Math.max(Math.abs(z[0]-a[0]), Math.abs(z[1]-a[1]));
+        const SEG=Math.min(600, Math.max(1, Math.ceil(elen/step)));
+        for(let t=0;t<=SEG;t++){
+          const p=[a[0]+(z[0]-a[0])*t/SEG, a[1]+(z[1]-a[1])*t/SEG];
+          if(b.contains(p)){ onScreen=p; break; }
+          const dy=p[0]-c.lat, dx=(p[1]-c.lng)*Math.cos(c.lat*Math.PI/180);
+          const d=dy*dy+dx*dx; if(d<nd){ nd=d; nearest=p; }
+        }
+      }
+      // Nothing on screen => the whole chase hull is off-view; park it at the closest boundary
+      // point so the label arrives the moment you pan toward the swath.
+      CHASE_LBL.setLatLng(onScreen||nearest);
+    };
+    CHASE_LBL_UPD();
+    TMAP.on("moveend zoomend", CHASE_LBL_UPD);
   }
   if(layers.length){ CHASE_SWATH_LAYER=L.layerGroup(layers).addTo(TMAP); }
   const host=document.getElementById("map");
@@ -3508,8 +3551,10 @@ function addSwathVisibilityFloor(D){
 //    It also names the two dashed boundaries that were being confused for each other, which is
 //    the whole reason this pass exists. Collapsed state persists in localStorage.
 //    DISPLAY ONLY: reads nothing, decides nothing, renders no data — a static key. ──
+let TIER_LEGEND_CTL=null;
 function addTierLegend(){
-  const host=document.getElementById("map"); if(!host) return;
+  if(!TMAP) return;
+  if(TIER_LEGEND_CTL){ try{ TMAP.removeControl(TIER_LEGEND_CTL); }catch(e){} TIER_LEGEND_CTL=null; }
   const ex=document.getElementById("tierLegend"); if(ex) ex.remove();
   const el=document.createElement("div"); el.id="tierLegend";
   const closed=localStorage.getItem("tierLegendClosed")==="1";
@@ -3532,7 +3577,11 @@ function addTierLegend(){
   h.addEventListener("click", ()=>{ el.classList.toggle("closed");
     localStorage.setItem("tierLegendClosed", el.classList.contains("closed")?"1":"0"); });
   if(window.L && L.DomEvent){ L.DomEvent.disableClickPropagation(el); L.DomEvent.disableScrollPropagation(el); }
-  host.appendChild(el);
+  // Leaflet owns the placement: the top-left stack already holds the zoom control and the hover
+  // readout, and Leaflet flows a new control BELOW them. Added last => sits last, no overlap.
+  TIER_LEGEND_CTL=L.control({position:"topleft"});
+  TIER_LEGEND_CTL.onAdd=()=>el;
+  TIER_LEGEND_CTL.addTo(TMAP);
 }
 
 // ── BOTTOM DRAWERS: relocate LIVE (.livectl) and Active perils (.legend) into two
