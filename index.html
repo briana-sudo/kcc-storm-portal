@@ -1994,7 +1994,23 @@ function wlInject(){
     touch-action:none;background:transparent}
   #wlPop .wl-vgrip::after{content:"";position:absolute;left:50%;transform:translateX(-50%);
     bottom:3px;width:44px;height:3px;border-radius:2px;background:#33415a}
-  #wlPop .wl-vgrip:hover::after{background:#60a5fa}`;
+  #wlPop .wl-vgrip:hover::after{background:#60a5fa}
+  /* D3 claim-window chip. Three tones, one definition -- the tone name arrives from the API
+     (storm.claim_window) and the UI only colours it, so this can never disagree with the address
+     panel. Colours carry a text label too: tone alone must not be the only carrier of meaning. */
+  #wlPop .wl-cw{display:inline-block;padding:2px 7px;border-radius:10px;font-size:11px;
+    font-weight:700;white-space:nowrap;border:1px solid transparent}
+  #wlPop .wl-cw-green{background:#062b18;color:#4ade80;border-color:#14532d}
+  #wlPop .wl-cw-amber{background:#3a1206;color:#fb923c;border-color:#7c2d12}
+  #wlPop .wl-cw-grey {background:#1a212e;color:#94a3b8;border-color:#2a3547}
+  /* D4 filter bar */
+  #wlPop .wl-filters{flex-shrink:0;padding:8px 12px 6px;border-bottom:1px solid #263041;background:#111826}
+  #wlPop .wl-frow{display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap}
+  #wlPop .wl-in{flex:1;min-width:96px;background:#0b111c;color:#e5e7eb;border:1px solid #2a3547;
+    border-radius:6px;padding:5px 7px;font:12px system-ui}
+  #wlPop .wl-in.wl-num{max-width:110px}
+  #wlPop .wl-chk{display:flex;align-items:center;gap:5px;color:#9ca3af;font-size:11px;white-space:nowrap}
+  #wlPop .wl-fnote{color:#9ca3af;font-size:11px}`;
   document.head.appendChild(st);
   const d=document.createElement("div"); d.id="wlPop";
   d.innerHTML = "<div class='wl-bar' id='wlBar'><span class='wl-grip'>&#8942;&#8942;</span>"
@@ -2072,7 +2088,21 @@ async function wlRenderList(){
     h += "<div class='wl-msg'>No addresses watched yet. Use the &#128065; Watch button on an address to add one.</div></div>";
     b.innerHTML=h; return;
   }
-  h += "<table><thead><tr><th>Address</th><th>Name</th><th>Roof</th><th>Last hit</th></tr></thead><tbody>";
+  WL_ROWS = rows;                       // D4 filters/sorts operate on this cached set, client-side
+  wlRenderRows();
+}
+// D4: render the (filtered, sorted) rows. Split out of wlLoad so a filter change re-renders without
+// re-fetching -- at 200+ addresses one fetch and client-side work is the right trade, and the payload
+// is already fully materialised by the API.
+function wlRenderRows(){
+  const b = document.getElementById("wlBody"); if(!b) return;
+  const rows = wlApplyFilters(WL_ROWS);
+  let h = wlFilterBar(rows.length, WL_ROWS.length) + "<div class='wl-list'>";
+  if(!rows.length){
+    h += "<div class='wl-msg'>No addresses match these filters. <button class='wl-back' id='wlClearF'>Clear filters</button></div></div>";
+    b.innerHTML = h; wlWireFilterBar(); return;
+  }
+  h += "<table><thead><tr><th>Address</th><th>Name</th><th>Roof</th><th>Last hit</th><th>Filing window</th></tr></thead><tbody>";
   for(const r of rows){
     const nm = [r.owner_first,r.owner_last].filter(Boolean).join(" ") || r.business_name || r.owner_of_record || "";
     const roof = r.solar_roof_area_sq ? (r.solar_roof_area_sq+" sq "+(r.solar_imagery_quality||"")) : "";
@@ -2080,12 +2110,134 @@ async function wlRenderList(){
       +"<td><span class='wl-dot' style='background:"+wlEsc(r.marker_color||"#e11d48")+"'></span>"+wlEsc(r.address||"")+"</td>"
       +"<td>"+(nm?wlEsc(nm):"<span class='wl-na'>&mdash;</span>")+"</td>"
       +"<td>"+(roof?wlEsc(roof):"<span class='wl-na'>&mdash;</span>")+"</td>"
-      +"<td>"+(r.last_hit_date?wlEsc(r.last_hit_date):"<span class='wl-na'>&mdash;</span>")+"</td></tr>";
+      +"<td>"+(r.last_hit_date?wlEsc(r.last_hit_date):"<span class='wl-na'>&mdash;</span>")+"</td>"
+      +"<td>"+wlWindowChip(r)+"</td></tr>";
   }
   h += "</tbody></table></div>";
   b.innerHTML = h;
+  wlWireFilterBar();
   b.querySelectorAll("tr.wl-row").forEach(tr=> tr.onclick=()=>wlDetail(tr.getAttribute("data-pid")));
 }
+// D3: the claim-window chip. Tone comes from the API (storm.claim_window) -- the UI colours what it
+// is told and never re-derives a class or a deadline, so this surface cannot drift from the address
+// panel. ALWAYS says "estimated": the real deadline is set by the carrier and the policy.
+function wlWindowChip(r){
+  const tone = r.window_tone || "grey";
+  const st   = r.window_status || "unknown";
+  let txt;
+  if(st === "open")         txt = (r.window_months_left!=null ? Math.round(r.window_months_left) : "?") + " mo left";
+  else if(st === "closing") txt = "closes soon";
+  else if(st === "closed")  txt = "window closed";
+  else                      txt = r.use_class === "unknown" ? "classify" : "no qualifying hail";
+  const cls = r.use_class && r.use_class !== "unknown"
+    ? r.use_class.charAt(0).toUpperCase()+r.use_class.slice(1)
+      + (r.window_months ? " \u00b7 "+r.window_months+"mo" : "")
+    : "unclassified";
+  // title carries the full sentence + which cascade tier answered, so the operator can see whether a
+  // classification came from the assessor or from an inference without opening the address.
+  const tip = (r.window_label||"") + "  \u2014  " + cls
+            + (r.use_class_tier ? " (via "+r.use_class_tier+")" : "")
+            + (r.use_class_basis ? ": "+r.use_class_basis : "")
+            + "  \u2014  estimated only; carrier and policy govern.";
+  return "<span class='wl-cw wl-cw-"+wlEsc(tone)+"' title='"+wlEsc(tip)+"'>"+wlEsc(txt)+"</span>";
+}
+// ── D4: sort / search / filter ───────────────────────────────────────────────────────────────────
+// Client-side over the already-fetched set. At the 200+ address design target that is one fetch and
+// a few ms of array work per keystroke -- far cheaper than a round trip, and it keeps the API
+// read-only and stateless. If the watchlist ever reaches thousands this becomes a server concern.
+let WL_ROWS = [];
+let WL_F = {q:"", peril:"", win:"", sort:"addr", vmin:null, vmax:null, vunknown:true};
+
+function wlValueOf(r){
+  // "value unknown" is a distinct bucket, NOT zero. Jefferson + Monroe carry no mkt_val_tot at all
+  // (125,391 parcels); zeroing them would silently drop an eighth of the market out of any range.
+  return (r.parcel_value_known && r.parcel_market_value > 0) ? r.parcel_market_value : null;
+}
+function wlApplyFilters(rows){
+  const f = WL_F;
+  let out = (rows||[]).filter(r=>{
+    if(f.q){
+      const hay = ((r.address||"")+" "+(r.owner_of_record||"")+" "+(r.business_name||"")+" "
+                 + (r.owner_first||"")+" "+(r.owner_last||"")).toLowerCase();
+      if(hay.indexOf(f.q.toLowerCase()) === -1) return false;
+    }
+    if(f.peril && (r.last_hit_summary||"").toLowerCase().indexOf(f.peril) === -1) return false;
+    if(f.win && (r.window_status||"unknown") !== f.win) return false;
+    const v = wlValueOf(r);
+    if(v === null){ if(!f.vunknown) return false; }
+    else {
+      if(f.vmin != null && v < f.vmin) return false;
+      if(f.vmax != null && v > f.vmax) return false;
+    }
+    return true;
+  });
+  const cmpDesc = (k) => (a,b) => String(b[k]||"").localeCompare(String(a[k]||""));
+  if(f.sort === "hail")      out.sort(cmpDesc("last_hail_date"));
+  else if(f.sort === "torn") out.sort(cmpDesc("last_tornado_date"));
+  else if(f.sort === "value") out.sort((a,b)=>{
+    // unknown-value rows sort LAST rather than as 0, so they are visibly parked, not silently
+    // ranked at the bottom of a numeric scale they were never on.
+    const av=wlValueOf(a), bv=wlValueOf(b);
+    if(av===null && bv===null) return String(a.address||"").localeCompare(String(b.address||""));
+    if(av===null) return 1;
+    if(bv===null) return -1;
+    return bv-av;
+  });
+  else if(f.sort === "window") out.sort((a,b)=>{
+    const rank = {closing:0, open:1, closed:2, unknown:3};
+    const d = (rank[a.window_status]??9) - (rank[b.window_status]??9);
+    return d || ((a.window_months_left??999) - (b.window_months_left??999));
+  });
+  else out.sort((a,b)=> String(a.address||"").localeCompare(String(b.address||"")));
+  return out;
+}
+function wlFilterBar(shown, total){
+  const f = WL_F;
+  const active = (f.q||f.peril||f.win||f.vmin!=null||f.vmax!=null||!f.vunknown);
+  const opt=(v,l,cur)=>"<option value='"+v+"'"+(cur===v?" selected":"")+">"+l+"</option>";
+  return "<div class='wl-filters'>"
+    + "<div class='wl-frow'>"
+    +   "<input id='wlQ' class='wl-in' type='search' placeholder='Search address or owner\u2026' value='"+wlEsc(f.q)+"'>"
+    +   "<select id='wlSort' class='wl-in'>"
+    +     opt("addr","Sort: address",f.sort)+opt("hail","Sort: last hail",f.sort)
+    +     opt("torn","Sort: last tornado",f.sort)+opt("value","Sort: property value",f.sort)
+    +     opt("window","Sort: filing window",f.sort)
+    +   "</select>"
+    + "</div>"
+    + "<div class='wl-frow'>"
+    +   "<select id='wlPeril' class='wl-in'>"+opt("","Any peril",f.peril)+opt("hail","Hail",f.peril)
+    +     opt("wind","Wind",f.peril)+opt("tornado","Tornado",f.peril)+"</select>"
+    +   "<select id='wlWin' class='wl-in'>"+opt("","Any window",f.win)
+    +     opt("open","Window open",f.win)+opt("closing","Closing soon",f.win)
+    +     opt("closed","Window closed",f.win)+opt("unknown","Window unknown",f.win)+"</select>"
+    + "</div>"
+    + "<div class='wl-frow'>"
+    +   "<input id='wlVMin' class='wl-in wl-num' type='number' placeholder='Value min' value='"+(f.vmin??"")+"'>"
+    +   "<input id='wlVMax' class='wl-in wl-num' type='number' placeholder='Value max' value='"+(f.vmax??"")+"'>"
+    +   "<label class='wl-chk' title='Jefferson and Monroe counties carry no assessor value at all "
+    +     "(125,391 parcels). Untick to exclude them; they are never treated as $0.'>"
+    +     "<input id='wlVUnk' type='checkbox'"+(f.vunknown?" checked":"")+"> value unknown</label>"
+    + "</div>"
+    + "<div class='wl-fnote'>"+shown+" of "+total+" shown"
+    +   (active?" \u00b7 <button class='wl-back' id='wlClearF2'>clear filters</button>":"")
+    +   " \u00b7 <span class='wl-na'>filing windows are estimated \u2014 carrier and policy govern</span></div>"
+    + "</div>";
+}
+function wlWireFilterBar(){
+  const on=(id,ev,fn)=>{ const e=document.getElementById(id); if(e) e.addEventListener(ev,fn); };
+  const q=document.getElementById("wlQ");
+  if(q){ q.addEventListener("input", ()=>{ WL_F.q=q.value; const p=q.selectionStart; wlRenderRows();
+          const n=document.getElementById("wlQ"); if(n){ n.focus(); try{n.setSelectionRange(p,p);}catch(_){}} }); }
+  on("wlSort","change",e=>{ WL_F.sort=e.target.value; wlRenderRows(); });
+  on("wlPeril","change",e=>{ WL_F.peril=e.target.value; wlRenderRows(); });
+  on("wlWin","change",e=>{ WL_F.win=e.target.value; wlRenderRows(); });
+  on("wlVMin","change",e=>{ WL_F.vmin = e.target.value===""?null:Number(e.target.value); wlRenderRows(); });
+  on("wlVMax","change",e=>{ WL_F.vmax = e.target.value===""?null:Number(e.target.value); wlRenderRows(); });
+  on("wlVUnk","change",e=>{ WL_F.vunknown = e.target.checked; wlRenderRows(); });
+  const clear=()=>{ WL_F={q:"",peril:"",win:"",sort:"addr",vmin:null,vmax:null,vunknown:true}; wlRenderRows(); };
+  on("wlClearF","click",clear); on("wlClearF2","click",clear);
+}
+
 // build the pinned photo pair (a) — omit a null photo gracefully, never a broken img
 function wlPhotoPair(photos){
   photos = photos || {};
