@@ -458,7 +458,9 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .swath-hover-tip{background:#0d1526;color:#eaf1ff;border:1px solid #2b3d5f;border-radius:6px;padding:5px 8px;font-size:11px;line-height:1.35;font-weight:600;box-shadow:0 2px 10px rgba(0,0,0,.4)}
 .swath-hover-tip b{color:#7fb2ff}
 .swath-hover-tip:before{border-top-color:#0d1526}
-.swathbadge{position:absolute;left:10px;bottom:26px;z-index:640;pointer-events:none;font:600 11px/1.3 system-ui,-apple-system,sans-serif;padding:5px 9px;border-radius:7px;box-shadow:0 2px 8px rgba(0,0,0,.35);letter-spacing:.02em}
+/* pointer-events:auto so the hover title actually appears. Both badges are small bottom-corner
+   chips, so the map area they intercept is negligible; without this the title is dead markup. */
+.swathbadge{position:absolute;left:10px;bottom:26px;z-index:640;pointer-events:auto;cursor:help;font:600 11px/1.3 system-ui,-apple-system,sans-serif;padding:5px 9px;border-radius:7px;box-shadow:0 2px 8px rgba(0,0,0,.35);letter-spacing:.02em}
 .swathbadge.subgate{background:#223247;color:#b9c8dd;border:1px solid #33465f}
 .swathbadge.gated{background:#3a1414;color:#ffd9cf;border:1px solid #7a2a20}
 /* PER-PERIL glance badges (truth pass) — named wind/tornado corner labels, stacked ABOVE the hail badge */
@@ -471,8 +473,30 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 /* OUT-OF-MARKET chase swath label (truth pass) — persistent, subordinate slate, its own numbers */
 .chaseoom{position:absolute;right:10px;bottom:26px;z-index:640;pointer-events:none;font:800 10.5px/1.3 system-ui,-apple-system,sans-serif;
   letter-spacing:.06em;text-transform:uppercase;padding:5px 10px;border-radius:7px;background:rgba(38,46,60,.92);color:#cfd7e4;
-  border:1px dashed #7c869a;box-shadow:0 2px 8px rgba(0,0,0,.35)}
+  border:1px dashed #c98a2e;box-shadow:0 2px 8px rgba(0,0,0,.35)}
 .chaseoom span{display:block;text-transform:none;letter-spacing:.02em;font-weight:600;color:#9fb0c6;margin-top:1px}
+/* Chase hull label — sits ON the amber dash-dot hull and states what the shape is NOT. Amber ties
+   it to the hull stroke; the market geofence never uses a warm colour. */
+.chasehull-lbl{white-space:nowrap;font:700 10px/1.2 system-ui,-apple-system,sans-serif;letter-spacing:.03em;
+  color:#f0c078;background:rgba(24,20,12,.82);border:1px solid #c98a2e;border-radius:5px;padding:2px 7px;
+  text-shadow:0 1px 2px rgba(0,0,0,.9);transform:translateX(-50%)}
+/* Why-line inside a visibility-floor marker tooltip: explains the dot instead of a swath. */
+.whyline{display:block;margin-top:3px;font-weight:600;color:#9fb0c6;font-size:10px;line-height:1.3}
+/* ── ON-MAP TIER LEGEND (2026-07-20) — collapsible, same vocabulary as the calendar popup so one
+   legend teaches both surfaces. Sits top-left under the zoom control. ── */
+#tierLegend{position:absolute;left:10px;top:78px;z-index:642;font:600 10.5px/1.35 system-ui,-apple-system,sans-serif;
+  background:rgba(13,21,38,.93);color:#cfd9ea;border:1px solid #2c3c5e;border-radius:8px;
+  box-shadow:0 3px 12px rgba(0,0,0,.45);pointer-events:auto;max-width:210px}
+#tierLegend .tl-h{display:flex;align-items:center;gap:6px;padding:5px 9px;cursor:pointer;
+  font-weight:800;letter-spacing:.05em;text-transform:uppercase;font-size:9.5px;color:#9fb3d9}
+#tierLegend .tl-h .tl-caret{margin-left:auto;transition:transform .15s}
+#tierLegend.closed .tl-h .tl-caret{transform:rotate(-90deg)}
+#tierLegend.closed .tl-b{display:none}
+#tierLegend .tl-b{padding:2px 9px 8px}
+#tierLegend .tl-sec{margin-top:5px;font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:#7f8fab;font-weight:800}
+#tierLegend .tl-row{display:flex;align-items:center;gap:7px;margin-top:3px}
+#tierLegend .tl-sw{width:18px;height:10px;border-radius:2px;flex:0 0 auto}
+#tierLegend .tl-ln{width:18px;height:0;flex:0 0 auto;border-top-width:2px}
 /* ── #6 RANKED-TARGETS badges (payout_score): additive label pane over the §3
    ad circles. P1 deep-red / P2 orange to echo the locked ring colors; floor-muted
    circles get a greyed, dashed badge (flagged, not deleted). Toggle = the # button. */
@@ -804,7 +828,7 @@ map.createPane('georef'); const gpane=map.getPane('georef'); gpane.style.zIndex=
 map.createPane('p3Pane'); map.getPane('p3Pane').style.zIndex=360;
 const georef=L.layerGroup();
 (D.geo_ref.boundaries||[]).forEach(g=>L.geoJSON(g,{pane:'georef',interactive:false,
-  style:{color:'#90a4ae',weight:1,fill:false,dashArray:'2,3',opacity:.8}}).addTo(georef));
+  style:{color:'#5b7fa6',weight:1.2,fill:false,dashArray:'1,4',opacity:.75}}).addTo(georef));
 (D.geo_ref.cities||[]).forEach(c=>L.marker([c.lat,c.lng],{pane:'georef',interactive:false,
   icon:L.divIcon({className:'city',html:c.name,iconSize:null})}).addTo(georef));
 georef.addTo(map);
@@ -854,7 +878,7 @@ const readout=L.control({position:'topleft'});
 readout.onAdd=()=>{readoutDiv=L.DomUtil.create('div','readout');readoutDiv.innerHTML='Hover swath: intensity + size';return readoutDiv;};
 readout.addTo(map);
 map.on('mousemove',e=>{const c=window.meshAt(e.latlng.lat,e.latlng.lng);
-  readoutDiv.innerHTML=c?cellText(c):'swath: — (no cell here)';});
+  readoutDiv.innerHTML=c?cellText(c):'no mapped cells under cursor';});
 map.on('click',e=>{const c=window.meshAt(e.latlng.lat,e.latlng.lng);
   if(c)L.popup().setLatLng(e.latlng).setContent(cellText(c)).openOn(map);});
 
@@ -1261,7 +1285,7 @@ function initSwathHover(D){
 // Values are LIVE from the swath payload (size c[2] in inches; gate 1.125"; earliest scan c[6]).
 let _SWATHBADGE = null;
 function _fmtSinceHr(ts){ const m=/-(\d{2})Z?$/.exec(String(ts||"")); return m ? m[1]+"Z" : null; }
-function updateSwathBadge(cells){
+function updateSwathBadge(cells, cls){
   const host=document.getElementById("map"); if(!host) return;
   if(!_SWATHBADGE){ _SWATHBADGE=document.createElement("div"); _SWATHBADGE.className="swathbadge"; host.appendChild(_SWATHBADGE); }
   const b=_SWATHBADGE;
@@ -1270,11 +1294,32 @@ function updateSwathBadge(cells){
   for(const c of cells){ const s=+c[2]||0; if(s>mx) mx=s; if(s>=1.125) gated++;
     if(c.length>=7 && c[6] && (since===null || c[6]<since)) since=c[6]; }
   const live=(cells[0].length>=7);
+  // LEGIBILITY (2026-07-20): lead with the TIER WORD on both branches. The gated badge used to
+  // open with a bare number, so the fundable tier was the only one the map never named — the
+  // operator had to infer it from the colour. Hover expands every abbreviation (title works
+  // because .swathbadge now takes pointer events).
+  //
+  // THE TIER WORD COMES FROM classify.py (D.classification.cls), NOT from a local recount of
+  // gated cells. Caught in review on 2026-07-10: that date has 10 gated cells but classifies
+  // SUB_GATE, so a gated>0 recount printed "FUNDABLE" on the badge while the floor marker on the
+  // SAME date said "Sub-gate hail". Two surfaces, two answers, and the badge's was not the
+  // authoritative one. The gated count still drives the COLOUR (did any cell reach the gate);
+  // only classify.py names the tier. No classification (older payload) -> fall back to the
+  // pre-existing count-based wording rather than assert a tier we were not given.
+  const _isSub=(cls===CLS.SUB), _isFund=(cls===CLS.FUND);
+  const _tier=_isFund?'FUNDABLE':(_isSub?'SUB-GATE':null);
   if(gated>0){ b.className="swathbadge gated";
-    b.textContent='max '+mx.toFixed(2)+'\u2033 \u00b7 '+gated+' gated cell'+(gated===1?'':'s'); }
+    b.textContent=(_tier?_tier+' \u00b7 ':'')+'max '+mx.toFixed(2)+'\u2033 \u00b7 '+gated+' gated cell'+(gated===1?'':'s');
+    b.title='FUNDABLE — in-market hail at or above the 1.125\u2033 funding gate.\n'
+      +'max = largest hail size measured anywhere in this swath.\n'
+      +'gated cells = 0.005\u00b0 radar cells at or above the gate (the fundable footprint).'; }
   else { b.className="swathbadge subgate";
-    b.textContent='sub-gate \u00b7 max '+mx.toFixed(2)+'\u2033 \u00b7 0 fundable cells'
-      + ((live && _fmtSinceHr(since)) ? ' \u00b7 cumulative since '+_fmtSinceHr(since) : ''); }
+    b.textContent=(_tier||'SUB-GATE')+' \u00b7 max '+mx.toFixed(2)+'\u2033 \u00b7 0 fundable cells'
+      + ((live && _fmtSinceHr(since)) ? ' \u00b7 cumulative since '+_fmtSinceHr(since) : '');
+    b.title='SUB-GATE — in-market hail BELOW the 1.125\u2033 funding gate. Real hail, '
+      +'not fundable: no cell reached the gate.\n'
+      +'max = largest hail size measured anywhere in this swath.\n'
+      +'cumulative since = earliest scan hour merged into this footprint (UTC).'; }
   b.style.display="";
 }
 
@@ -3393,13 +3438,31 @@ function addChaseSwathLayer(D){
   const grp=buildHeatmap(cells, c=>+c[2]||0, GREY_RAMP, "chaseSwathPane", 345, null);            // relative grey ramp = never a hail color
   if(grp){ grp.eachLayer(im=>im.setOpacity(0.5)); layers.push(grp); }                            // dimmed = subordinate
   const hull=_convexHull(cells.map(c=>[c[0],c[1]]));
-  if(hull.length>=3) layers.push(L.polygon(hull,{pane:"chaseSwathPane",color:"#7c869a",weight:1.6,
-    dashArray:"7,6",fill:false,interactive:false}));                                             // dashed boundary
+  // LEGIBILITY (2026-07-20): this hull used to be #7c869a dash 7,6 — a grey-blue dashed line
+  // almost identical to the market geofence (#90a4ae dash 2,3). The operator read the hull AS
+  // the market boundary and concluded "STL is inside the box but there is no swath = broken".
+  // It is now AMBER with a long dash-dot: a warm colour the geofence never uses, and a pattern
+  // nothing else on the map draws. Plus a label ON the shape saying what it is NOT.
+  if(hull.length>=3){
+    layers.push(L.polygon(hull,{pane:"chaseSwathPane",color:"#c98a2e",weight:2.2,
+      dashArray:"14,5,3,5",fill:false,interactive:false,opacity:.95}));
+    // Anchor the label at the hull's NORTHERNMOST vertex so it sits clear of the swath body
+    // and lands somewhere stable across dates (a centroid label would sit ON the cells).
+    let top=hull[0]; for(const p of hull){ if(p[0]>top[0]) top=p; }
+    layers.push(L.marker(top,{pane:"chaseSwathPane",interactive:false,
+      icon:L.divIcon({className:"chasehull-lbl",html:"chase activity extent \u2014 not the market boundary",
+        iconSize:[0,0],iconAnchor:[0,10]})}));
+  }
   if(layers.length){ CHASE_SWATH_LAYER=L.layerGroup(layers).addTo(TMAP); }
   const host=document.getElementById("map");
   if(host){ const b=document.createElement("div"); b.className="chaseoom";
     const n=swathNums(cells);
-    b.innerHTML='OUT OF MARKET \u2014 chase <span>'+n.max.toFixed(2)+'\u2033 \u00b7 '+n.gated+' gated \u00b7 '+n.sqmi+' sq mi</span>';
+    b.innerHTML='OUT OF MARKET \u2014 CHASE <span>'+n.max.toFixed(2)+'\u2033 \u00b7 '+n.gated+' gated \u00b7 '+n.sqmi+' sq mi</span>';
+    b.title='CHASE — real hail, but OUTSIDE the KCC market geofence. Ring 2 chase territory: '
+      +'never funded, never counted as in-market damage.\n'
+      +'gated = radar cells at or above the 1.125\u2033 funding gate.\n'
+      +'sq mi = square miles of gated footprint.\n'
+      +'The amber dash-dot outline is the extent of this chase activity — it is NOT the market boundary.';
     host.appendChild(b); }
 }
 
@@ -3423,12 +3486,53 @@ function addSwathVisibilityFloor(D){
   if(!TMAP.getPane("swathFloorPane")){ TMAP.createPane("swathFloorPane"); TMAP.getPane("swathFloorPane").style.zIndex=353; }
   SWATH_FLOOR_MARKER=L.circleMarker([lat,lng],{pane:"swathFloorPane",radius:9,color:"#fff",weight:2,
     fillColor:rgb,fillOpacity:0.92})
+    // LEGIBILITY (2026-07-20): the WHY-line. A bare dot with numbers left the operator asking
+    // why there was a marker instead of a swath. The dot is a PRESENTATION floor — the swath is
+    // real and drawn, it is just a few pixels at this zoom — so say that, and say it resolves
+    // by zooming in, which is the actual next action.
     .bindTooltip((sub?'Sub-gate hail':'Hail')+' \u00b7 max '+n.max.toFixed(2)+'\u2033 \u00b7 '+n.gated+
-      ' gated cell'+(n.gated===1?'':'s')+' \u00b7 '+n.sqmi+' sq mi',{direction:"top"});
+      ' gated cell'+(n.gated===1?'':'s')+' \u00b7 '+n.sqmi+' sq mi'+
+      '<br><span class="whyline">cluster too small to draw at this zoom ('+n.gated+' cell'+
+      (n.gated===1?'':'s')+' \u00b7 '+n.sqmi+' sq mi) \u2014 shown as marker; zoom in for the real footprint</span>',
+      {direction:"top"});
   const FLOOR_ZOOM=11;
   SWATH_FLOOR_UPD=()=>{ if(TMAP.getZoom()<=FLOOR_ZOOM){ if(!TMAP.hasLayer(SWATH_FLOOR_MARKER)) SWATH_FLOOR_MARKER.addTo(TMAP); }
     else if(TMAP.hasLayer(SWATH_FLOOR_MARKER)) TMAP.removeLayer(SWATH_FLOOR_MARKER); };
   SWATH_FLOOR_UPD(); TMAP.on("zoomend",SWATH_FLOOR_UPD);
+}
+
+// ── ON-MAP TIER LEGEND (2026-07-20 legibility pass) ──────────────────────────────────────────
+//    The tier vocabulary (fundable / sub-gate / chase) existed ONLY in the calendar popup, so the
+//    map never said which tier was on screen — the operator had to infer it from colour. This is
+//    the SAME vocabulary and the SAME fills, so one legend teaches both surfaces.
+//    It also names the two dashed boundaries that were being confused for each other, which is
+//    the whole reason this pass exists. Collapsed state persists in localStorage.
+//    DISPLAY ONLY: reads nothing, decides nothing, renders no data — a static key. ──
+function addTierLegend(){
+  const host=document.getElementById("map"); if(!host) return;
+  const ex=document.getElementById("tierLegend"); if(ex) ex.remove();
+  const el=document.createElement("div"); el.id="tierLegend";
+  const closed=localStorage.getItem("tierLegendClosed")==="1";
+  if(closed) el.classList.add("closed");
+  el.innerHTML=
+    '<div class="tl-h">Map key<span class="tl-caret">\u25be</span></div>'+
+    '<div class="tl-b">'+
+      '<div class="tl-sec">Hail tier</div>'+
+      '<div class="tl-row"><span class="tl-sw" style="background:#d33f2a"></span>fundable (at/above gate)</div>'+
+      '<div class="tl-row"><span class="tl-sw" style="background:#d33f2a;opacity:.32"></span>sub-gate (below gate)</div>'+
+      '<div class="tl-row"><span class="tl-sw" style="background:transparent;border:1.5px solid #8a94a8"></span>chase (out of market)</div>'+
+      '<div class="tl-sec">Other perils</div>'+
+      '<div class="tl-row"><span class="tl-sw" style="background:#7a2a20"></span>tornado</div>'+
+      '<div class="tl-row"><span class="tl-sw" style="background:#24487f"></span>wind</div>'+
+      '<div class="tl-sec">Boundaries</div>'+
+      '<div class="tl-row"><span class="tl-ln" style="border-top:2px dashed #c98a2e"></span>chase activity extent</div>'+
+      '<div class="tl-row"><span class="tl-ln" style="border-top:1.5px dotted #5b7fa6"></span>KCC market geofence</div>'+
+    '</div>';
+  const h=el.querySelector(".tl-h");
+  h.addEventListener("click", ()=>{ el.classList.toggle("closed");
+    localStorage.setItem("tierLegendClosed", el.classList.contains("closed")?"1":"0"); });
+  if(window.L && L.DomEvent){ L.DomEvent.disableClickPropagation(el); L.DomEvent.disableScrollPropagation(el); }
+  host.appendChild(el);
 }
 
 // ── BOTTOM DRAWERS: relocate LIVE (.livectl) and Active perils (.legend) into two
@@ -4150,7 +4254,7 @@ async function boot(){
               || buildHeatmap(D.tornado.swath_cells,c=>+c[2]||0,TORN_RAMP,"tHeatPane",355);
       if(t) HL.push({pane:"tornadoPane",group:t,peril:"tornado",op:0.55}); }
     try{ initSwathHover(D); }catch(e){}               // truth pass: per-peril hover (hail/wind/tornado/chase)
-    try{ updateSwathBadge(D.swath_cells); }catch(e){} // render-truth: hail sub-gate/gated glance badge
+    try{ updateSwathBadge(D.swath_cells, (D.classification||{}).cls); }catch(e){} // render-truth: hail glance badge (tier word from classify.py)
     try{ updatePerilBadges(D); }catch(e){}            // truth pass: named wind/tornado corner badges
     if(HL.length){ let mode="smooth";
       const setOp=o=>o.group.eachLayer(im=>im.setOpacity(o.op));
@@ -4204,6 +4308,7 @@ async function boot(){
   addChaseLayer(D.chase);   // item 8 Step 3 v2: chase TARGETING block at the bottom of the Layers panel (master OFF)
   addChaseSwathLayer(D);    // truth pass: OUT-OF-MARKET chase SWATH — subordinate, labeled, PRESENT by default
   addSwathVisibilityFloor(D); // truth pass Part 3: min footprint so a small in-market gated swath is unmissable
+  addTierLegend();          // legibility 2026-07-20: on-map tier legend (fundable/sub-gate/chase + the two boundaries)
   addMapSearch();           // map location search: City/State + address typeahead (reuses Photon; navigation only)
   addPull();                // item 10: on-demand PULL (150mi capture -> secured write endpoint)
   buildOperatorPanel(D, forecast);
