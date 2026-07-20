@@ -50,7 +50,14 @@ self.addEventListener("push", e => {
   const url = d.url || "./";
   e.waitUntil(
     self.registration.showNotification(title, {
-      body, data: { url }, tag: "kcc-intraday", renotify: true,
+      // TAG IS PAYLOAD-DRIVEN (2026-07-20). It was hardcoded "kcc-intraday", and a tag COLLAPSES
+      // notifications: KEYSTONE now pushes on this same subscription (same origin —
+      // briana-sudo.github.io serves both portals), so a KEYSTONE open-loop alert arriving while a
+      // storm approve alert was still pending would have silently REPLACED the storm one in the
+      // tray. The operator would have seen one notification and lost the other with no trace.
+      // Default is unchanged, so every existing TEMPEST caller keeps collapsing against itself,
+      // which is the behaviour that lane wants.
+      body, data: { url }, tag: d.tag || "kcc-intraday", renotify: true,
       icon: "./icon-192.png", badge: "./icon-192.png", requireInteraction: true
     })
   );
