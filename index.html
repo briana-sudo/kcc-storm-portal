@@ -477,9 +477,16 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .chaseoom span{display:block;text-transform:none;letter-spacing:.02em;font-weight:600;color:#9fb0c6;margin-top:1px}
 /* Chase hull label — sits ON the amber dash-dot hull and states what the shape is NOT. Amber ties
    it to the hull stroke; the market geofence never uses a warm colour. */
-.chasehull-lbl{white-space:nowrap;font:700 10px/1.2 system-ui,-apple-system,sans-serif;letter-spacing:.03em;
-  color:#f0c078;background:rgba(24,20,12,.82);border:1px solid #c98a2e;border-radius:5px;padding:2px 7px;
-  text-shadow:0 1px 2px rgba(0,0,0,.9);transform:translateX(-50%)}
+/* Muted at REST, full contrast on HOVER (2026-07-20). At rest the amber-on-dark label was hard
+   to read over a light basemap and competed with the swath it annotates; it now sits back as a
+   small dim chip and comes forward when pointed at - the tooltip-expand pattern used elsewhere.
+   pointer-events:auto so the hover can land. */
+.chasehull-lbl{white-space:nowrap;font:700 9px/1.2 system-ui,-apple-system,sans-serif;letter-spacing:.02em;
+  color:#c9a06a;background:rgba(18,15,10,.55);border:1px solid rgba(201,138,46,.45);border-radius:5px;
+  padding:1px 5px;transform:translateX(-50%);pointer-events:auto;cursor:default;opacity:.72;
+  transition:opacity .12s,color .12s,background-color .12s,font-size .12s}
+.chasehull-lbl:hover{font-size:11px;opacity:1;color:#ffdca8;background:rgba(24,20,12,.95);
+  border-color:#c98a2e;text-shadow:0 1px 2px rgba(0,0,0,.95);box-shadow:0 2px 10px rgba(0,0,0,.5)}
 /* Why-line inside a visibility-floor marker tooltip: explains the dot instead of a swath. */
 .whyline{display:block;margin-top:3px;font-weight:600;color:#9fb0c6;font-size:10px;line-height:1.3}
 /* ── ON-MAP TIER LEGEND (2026-07-20) — collapsible, same vocabulary as the calendar popup so one
@@ -1239,6 +1246,11 @@ L.map = function(){ const m = _origLmap.apply(this, arguments); TMAP = m; return
 // shows on 7-wide LIVE hail cells. `_HOVER.layers` is priority-ordered (topmost/most-specific first);
 // the mousemove reads the live array so re-calling initSwathHover per date refreshes it in place.
 let _HOVER = {layers:[], tip:null, wired:false};
+// Current chase-hull boundary + its OWN tooltip. Set by addChaseSwathLayer, read by the hover
+// handler so the BOUNDARY answers for itself instead of leaking the chase CELL value underneath.
+let CHASE_HULL_PTS = null;
+const CHASE_HULL_TIP = '<b>chase activity extent</b><br>'
+  + '<span class="oom">not the market boundary · no hail value here</span>';
 function _hoverKey(la, lo, st){ return (Math.round(la/st)*st).toFixed(3)+","+(Math.round(lo/st)*st).toFixed(3); }
 function _fmtScanTs(ts){
   const m=/^(\d{4})(\d{2})(\d{2})-(\d{2})Z?$/.exec(String(ts||"")); if(!m) return String(ts||"\u2014");
@@ -1275,6 +1287,24 @@ function initSwathHover(D){
   _HOVER.wired=true;
   _HOVER.tip=L.tooltip({sticky:true, direction:"top", opacity:0.95, className:"swath-hover-tip"});
   TMAP.on("mousemove", e=>{
+    // CHASE-HULL BOUNDARY WINS (2026-07-20). The hull polygon is interactive:false and emits no
+    // tooltip of its own, so hovering the amber dash-dot line fell through to the per-cell index
+    // below and popped the CHASE CELL under the cursor. The value changed as you slid along the
+    // line, which reads as if the LINE encoded hail size. It does not - it is only the extent of
+    // chase activity. Within 7px of that boundary the line speaks for itself: no hail number.
+    if(CHASE_HULL_PTS && CHASE_HULL_PTS.length>2){
+      const p=TMAP.latLngToLayerPoint(e.latlng); let near=false;
+      for(let i=0;i<CHASE_HULL_PTS.length && !near;i++){
+        const a=TMAP.latLngToLayerPoint(L.latLng(CHASE_HULL_PTS[i])),
+              q=TMAP.latLngToLayerPoint(L.latLng(CHASE_HULL_PTS[(i+1)%CHASE_HULL_PTS.length]));
+        const dx=q.x-a.x, dy=q.y-a.y, LL=dx*dx+dy*dy;
+        let t=LL?(((p.x-a.x)*dx+(p.y-a.y)*dy)/LL):0; t=Math.max(0,Math.min(1,t));
+        const ex=a.x+t*dx-p.x, ey=a.y+t*dy-p.y;
+        if(ex*ex+ey*ey <= 49) near=true;
+      }
+      if(near){ _HOVER.tip.setLatLng(e.latlng).setContent(CHASE_HULL_TIP);
+        TMAP.openTooltip(_HOVER.tip); return; }
+    }
     for(const g of _HOVER.layers){
       const c=g.map.get(_hoverKey(e.latlng.lat, e.latlng.lng, g.step));
       if(c){ _HOVER.tip.setLatLng(e.latlng).setContent(_hoverTip(g,c)); TMAP.openTooltip(_HOVER.tip); return; }
@@ -3433,7 +3463,7 @@ function _convexHull(pts){                                     // pts [[lat,lng]
 }
 function addChaseSwathLayer(D){
   if(CHASE_LBL_UPD && TMAP){ TMAP.off("moveend zoomend", CHASE_LBL_UPD); CHASE_LBL_UPD=null; }
-  CHASE_LBL=null;
+  CHASE_LBL=null; CHASE_HULL_PTS=null;
   if(CHASE_SWATH_LAYER){ if(TMAP&&TMAP.hasLayer(CHASE_SWATH_LAYER)) TMAP.removeLayer(CHASE_SWATH_LAYER); CHASE_SWATH_LAYER=null; }
   const ex=document.querySelector(".chaseoom"); if(ex) ex.remove();
   if(!TMAP || !D.chase || !D.chase.swath_cells || !D.chase.swath_cells.length) return;
@@ -3461,6 +3491,7 @@ function addChaseSwathLayer(D){
     // fixed vertex cannot be "legible at default zoom" for every date, because the hull's shape
     // and the view are independent. Tracking the centre keeps it on the shape AND in front of
     // whoever is looking.
+    CHASE_HULL_PTS=hull;
     CHASE_LBL=L.marker(hull[0],{pane:"chaseSwathPane",interactive:false,
       icon:L.divIcon({className:"chasehull-lbl",html:"chase activity extent \u2014 not the market boundary",
         iconSize:[0,0],iconAnchor:[0,10]})});
