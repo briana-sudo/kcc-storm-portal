@@ -1951,8 +1951,8 @@ async function wlDetail(pid){
       // re-fetch returns.
       if(rr.removed){ wlDropPin(pid); await wlRenderList();
         // reconcile with the removed pid EXCLUDED, so a momentarily-stale list read can never
-        // re-add the pin the server just confirmed gone.
-        if(wlPinsOn()) await wlDrawPins([pid]); }
+        // re-add the pin the server just confirmed gone. wlRebuildPins preserves shown/hidden.
+        await wlRebuildPins([pid]); }
       else msg("not removed",true); }
     catch(e){ msg("Failed — "+e.message,true); } };
 }
@@ -1982,7 +1982,7 @@ function wlPinIcon(col){
 // state the map is really in, a click moves it to the opposite. This is the SAME root cause as Part L
 // (the pin layer not reflecting reality), so both are fixed by one idempotent draw path.
 let WL_PINS_GRP=null;
-function wlPinsOn(){ return !!(WL_PINS_GRP && TMAP && TMAP.hasLayer(WL_PINS_GRP)); }
+function wlPinsShown(){ return !!(WL_PINS_GRP && TMAP && TMAP.hasLayer(WL_PINS_GRP)); }
 function wlSetPinsBtn(on){ const b=document.getElementById("wlPinsBtn"); if(b) b.classList.toggle("on", !!on); }
 
 // Build one teardrop marker per watched address. Returns the markers array; fetches the live list.
@@ -2025,60 +2025,75 @@ function wlPinTooltip(r){
        + "<div class='wl-tip-win wl-cw-"+wlEsc(tone)+"'>"+label+"</div>";
 }
 
-// (Re)draw the pin layer from the CURRENT watched list. Idempotent: clears any existing group first,
-// so calling it after an add/remove refreshes in place (Part L). Turns the button on iff pins landed.
-async function wlDrawPins(exclude){
+// FAST TOGGLE (operator ask 2026-07-21): the pins are PRE-BUILT on launch but left HIDDEN, so the
+// first toggle-on is INSTANT -- it just adds an already-constructed layer to the map instead of
+// fetching the watchlist and building markers on every click ("loaded but not shown when you
+// launch"). WL_PINS_GRP holds the built group whether or not it is on the map; TMAP.hasLayer stays
+// the single source of truth for SHOWN-vs-hidden, so the toggle is still self-healing (Part N).
+let WL_PINS_BUILDING=null;      // in-flight build promise, dedupes concurrent builds
+
+// Build the layer group from the live list WITHOUT adding it to the map.
+async function wlBuildPinGroup(exclude){ return L.layerGroup(await wlBuildPinMarkers(exclude)); }
+
+// Ensure the group is built and ready (hidden). Dedupes concurrent calls; never changes shown state.
+async function wlEnsurePinsBuilt(){
+  if(WL_PINS_GRP) return WL_PINS_GRP;
+  if(WL_PINS_BUILDING) return WL_PINS_BUILDING;
+  WL_PINS_BUILDING = (async()=>{ try{ WL_PINS_GRP = await wlBuildPinGroup(); return WL_PINS_GRP; }
+                                 finally{ WL_PINS_BUILDING=null; } })();
+  return WL_PINS_BUILDING;
+}
+
+// Called from boot(): preload the group HIDDEN so the first toggle is instant. Best-effort/silent.
+async function wlPreloadPins(){ if(!TMAP) return; try{ await wlEnsurePinsBuilt(); }catch(_){} }
+
+// Show the pre-built pins (instant when already built; builds first if the preload hasn't finished).
+async function wlShowPins(){
   if(!TMAP){ msActMsg("Map not ready yet.", true); return; }
-  let markers; try{ markers = await wlBuildPinMarkers(exclude); }
-  catch(e){ msActMsg("Pins failed — "+e.message, true); return; }
-  if(WL_PINS_GRP && TMAP.hasLayer(WL_PINS_GRP)) TMAP.removeLayer(WL_PINS_GRP);
-  WL_PINS_GRP=null;
-  if(!markers.length){ wlSetPinsBtn(false); msActMsg("No watched addresses with coordinates to pin.", true); return; }
-  WL_PINS_GRP=L.layerGroup(markers).addTo(TMAP);
+  try{ await wlEnsurePinsBuilt(); }catch(e){ msActMsg("Pins failed — "+e.message, true); return; }
+  if(!WL_PINS_GRP || !WL_PINS_GRP.getLayers().length){ wlSetPinsBtn(false); msActMsg("No watched addresses with coordinates to pin.", true); return; }
+  if(!TMAP.hasLayer(WL_PINS_GRP)) WL_PINS_GRP.addTo(TMAP);
   wlSetPinsBtn(true);
-  try{ localStorage.setItem("wlPinsOn","1"); }catch(_){}    // remember ON so it auto-restores next open
-  msActMsg("Watched pins on map: "+markers.length);
+  msActMsg("Watched pins on map: "+WL_PINS_GRP.getLayers().length);
 }
 
-function wlClearPins(){
+// Hide the pins but KEEP the built group in memory so the next show is instant.
+function wlHidePins(){
   if(WL_PINS_GRP && TMAP && TMAP.hasLayer(WL_PINS_GRP)) TMAP.removeLayer(WL_PINS_GRP);
-  WL_PINS_GRP=null; wlSetPinsBtn(false);
-  try{ localStorage.setItem("wlPinsOn","0"); }catch(_){}    // remember OFF so it stays off next open
-  msActMsg("");
+  wlSetPinsBtn(false); msActMsg("");
 }
 
-// Restore the pins layer on load if it was left ON — so the toggle is a fast on/off that survives a
-// refresh or a date-nav reload, instead of resetting to off every time. Best-effort and silent: a
-// fetch failure just leaves pins off (the button reflects real state via wlSetPinsBtn inside draw).
-async function wlRestorePins(){
-  try{ if(localStorage.getItem("wlPinsOn")!=="1") return; }catch(_){ return; }
-  if(wlPinsOn()) return;                                    // already drawn
-  try{ await wlDrawPins(); }catch(_){}
+// Rebuild the group from fresh data (after an add/remove), PRESERVING shown-vs-hidden -- a
+// preloaded-but-hidden layer stays hidden, a shown one stays shown, both just current.
+async function wlRebuildPins(exclude){
+  const wasShown = wlPinsShown();
+  if(WL_PINS_GRP && TMAP && TMAP.hasLayer(WL_PINS_GRP)) TMAP.removeLayer(WL_PINS_GRP);
+  WL_PINS_GRP=null;
+  try{ WL_PINS_GRP = await wlBuildPinGroup(exclude); }catch(_){ WL_PINS_GRP=null; }
+  if(wasShown && WL_PINS_GRP && WL_PINS_GRP.getLayers().length){ WL_PINS_GRP.addTo(TMAP); wlSetPinsBtn(true); }
+  else if(wasShown){ wlSetPinsBtn(false); }
 }
 
-// Drop ONE pin by property_id, synchronously, with no network round-trip. Used the instant a remove
-// is confirmed so the un-watched pin vanishes immediately -- it does not wait on the reconciling
-// re-fetch (a slow network could otherwise leave the pin sitting there, which is the operator's
-// "the pin doesn't go away"). The subsequent wlDrawPins() reconciles the whole layer.
+// Drop ONE pin by property_id, synchronously (no fetch) -- instant feedback on un-watch, whether the
+// group is shown or hidden. wlRebuildPins then reconciles the whole layer.
 function wlDropPin(pid){
   if(!WL_PINS_GRP) return;
   WL_PINS_GRP.getLayers().forEach(m=>{ if(m._wlPid===pid) WL_PINS_GRP.removeLayer(m); });
 }
 
-// The toggle reads the REAL layer state, so it is correct no matter how the layer got orphaned.
+// The toggle reads REAL map state (shown vs not), so it is correct no matter how the layer got
+// orphaned -- and it is instant because the group is already built.
 async function wlTogglePins(){
-  if(wlPinsOn()){ wlClearPins(); return; }
-  await wlDrawPins();
+  if(wlPinsShown()){ wlHidePins(); } else { await wlShowPins(); }
 }
 
-// Part L: reflect an add/remove immediately in whatever watchlist surface is live -- the open list
-// panel and the pin layer -- without a manual close/reopen or reload. Called after a successful
-// watchlist-add / watchlist-remove. Refreshes the list ONLY if the panel is open, and the pins ONLY
-// if they are currently shown, so it never forces a surface into view the operator didn't open.
+// Part L: reflect an add/remove immediately. The list refreshes only if the panel is open; the pin
+// group is rebuilt from fresh data whenever it exists (preloaded OR shown), preserving shown/hidden,
+// so an added address is already in the group the next time pins are toggled on.
 async function wlReflectChange(){
   const pop=document.getElementById("wlPop");
   if(pop && pop.classList.contains("open")){ try{ await wlRenderList(); }catch(_){} }
-  if(wlPinsOn()){ try{ await wlDrawPins(); }catch(_){} }
+  if(WL_PINS_GRP || WL_PINS_BUILDING){ try{ await wlRebuildPins(); }catch(_){} }
 }
 
 function sdReadDials(){
@@ -4244,7 +4259,7 @@ async function boot(){
   setupMobile();
   setupPush();           // PWA push subscribe + re-subscribe-on-open (best-effort; SMS is the backbone)
   handleApproveDeepLink(); // ?s=TOKEN -> the shared approve modal (PWA + plain tab)
-  wlRestorePins();       // re-drop the watched pins if they were left on (fast toggle survives reload)
+  wlPreloadPins();       // preload the watched pins HIDDEN so the toggle is instant (loaded, not shown)
   if(D.geofence_fault){                                       // fail-loud: never a silent ads-gate exclusion
     console.warn("in_geofence UNSET on in-market hail cluster "+D.storm_date+
       " \\u2014 the fail-closed ads gate would silently exclude it (data fault).");
