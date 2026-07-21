@@ -230,6 +230,19 @@ body.pull-armed #tbar #pullBtn{background:#2c6e4c;color:#fff}
    injected sheet, because Pins can be toggled on without ever opening the panel that injects it. */
 .wl-pin-icon{background:transparent;border:0}
 .wl-pin-icon svg{display:block;filter:drop-shadow(0 2px 3px rgba(0,0,0,.45))}
+/* Part M: pin-hover quick-status tooltip (address + filing-window line). The window line's colour
+   comes from the SAME tone classes the D3 chip uses, so the tooltip cannot disagree with the list.
+   Tones are re-declared here because a Leaflet tooltip renders in the map pane, outside #wlPop where
+   the .wl-cw-* rules live. */
+.leaflet-tooltip.wl-pin-tip{background:#0e141f;color:#e5e7eb;border:1px solid #2a3547;border-radius:7px;
+  box-shadow:0 6px 20px rgba(0,0,0,.5);padding:6px 9px;font:12px system-ui,sans-serif;max-width:280px}
+.leaflet-tooltip.wl-pin-tip .wl-tip-addr{font-weight:700;margin-bottom:3px}
+.leaflet-tooltip.wl-pin-tip .wl-tip-win{font-size:11px;font-weight:700;padding:1px 6px;border-radius:9px;
+  display:inline-block;border:1px solid transparent}
+.leaflet-tooltip.wl-pin-tip .wl-cw-green{background:#062b18;color:#4ade80;border-color:#14532d}
+.leaflet-tooltip.wl-pin-tip .wl-cw-amber{background:#3a1206;color:#fb923c;border-color:#7c2d12}
+.leaflet-tooltip.wl-pin-tip .wl-cw-grey {background:#1a212e;color:#94a3b8;border-color:#2a3547}
+.leaflet-tooltip.wl-pin-tip.leaflet-tooltip-top::before{border-top-color:#2a3547}
 body.tz-arming .leaflet-container{cursor:crosshair}
 body.tz-arming::after{content:"Click the map to set the timezone";position:fixed;top:64px;left:50%;transform:translateX(-50%);
   z-index:3000;background:#e8430a;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.4)}
@@ -1372,6 +1385,8 @@ async function msAddrAction(kind){
                              : ("✓ Emailed — no qualifying events, so no document was produced"));
     } else {
       msActMsg("✓ Watching — " + (res.address||addr));
+      // Part L: the open list panel and the pin layer refresh immediately -- no close/reopen or reload.
+      await wlReflectChange();
     }
   }catch(e){ msActMsg("Failed — " + e.message, true); }
   finally{ if(btn) btn.disabled=false; }
@@ -1925,7 +1940,11 @@ async function wlDetail(pid){
   document.getElementById("wlRemove").onclick = async ()=>{
     if(!confirm("Un-watch "+(r.address||"this address")+"? History is kept (the record is deactivated, not deleted).")) return;
     msg("Removing…");
-    try{ const rr=await sdApi("watchlist-remove",{property_id:pid}); if(rr.removed){ wlRenderList(); } else msg("not removed",true); }
+    try{ const rr=await sdApi("watchlist-remove",{property_id:pid});
+      // Part L symmetry: on remove, refresh the list AND the pin layer so the un-watched address
+      // drops off both immediately. wlRenderList() rebuilds the list; wlDrawPins() re-reads the
+      // (now shorter) watched set if pins are shown.
+      if(rr.removed){ await wlRenderList(); if(wlPinsOn()) await wlDrawPins(); } else msg("not removed",true); }
     catch(e){ msg("Failed — "+e.message,true); } };
 }
 // ── ALL-WATCHED-PINS MAP TOGGLE (Part C) ──────────────────────────────────────────────────────
@@ -1945,42 +1964,87 @@ function wlPinIcon(col){
     iconSize: [26,34], iconAnchor: [13,33], tooltipAnchor: [0,-30],
   });
 }
-let WL_PINS_GRP=null, WL_PINS_ON=false;
-async function wlTogglePins(){
-  const btn=document.getElementById("wlPinsBtn");
-  if(WL_PINS_ON){
-    if(WL_PINS_GRP && TMAP && TMAP.hasLayer(WL_PINS_GRP)) TMAP.removeLayer(WL_PINS_GRP);
-    WL_PINS_GRP=null; WL_PINS_ON=false; if(btn) btn.classList.remove("on"); msActMsg(""); return;
-  }
-  if(!TMAP){ msActMsg("Map not ready yet.", true); return; }
-  let res; try{ res=await sdApi("watchlist-list",{}); }
-  catch(e){ msActMsg("Pins failed — "+e.message, true); return; }
-  const rows=(res&&res.watched)||[];
-  const markers=[];
+// Part N (2026-07-21): the pins layer's on/off state is now read from the MAP, never from a separate
+// boolean. The old code tracked WL_PINS_ON alongside the layer; anything that orphaned the layer
+// (removed it from the map) without clearing the boolean left the two out of sync, and then a click
+// merely toggled the stale boolean and did NOTHING visible -- the operator's "toggle isn't turning
+// pins on and off". CONFIRMED live: remove the layer with WL_PINS_ON still true, and one click is a
+// no-op. Making TMAP.hasLayer the single source of truth means the toggle is self-healing: whatever
+// state the map is really in, a click moves it to the opposite. This is the SAME root cause as Part L
+// (the pin layer not reflecting reality), so both are fixed by one idempotent draw path.
+let WL_PINS_GRP=null;
+function wlPinsOn(){ return !!(WL_PINS_GRP && TMAP && TMAP.hasLayer(WL_PINS_GRP)); }
+function wlSetPinsBtn(on){ const b=document.getElementById("wlPinsBtn"); if(b) b.classList.toggle("on", !!on); }
+
+// Build one teardrop marker per watched address. Returns the markers array; fetches the live list.
+async function wlBuildPinMarkers(){
+  const res = await sdApi("watchlist-list", {});
+  const rows = (res && res.watched) || [];
+  const markers = [];
   for(const r of rows){
-    // Part E step 4: prefer the PARCEL's own representative point over the geocode. The geocode is
-    // a street-interpolated coordinate that measured OUTSIDE the parcel on 6 of 6 test addresses
-    // (1521 N Berry landed in the gap between 1521 and 1523). pin_lat/pin_lon come from the polygon
-    // the verified match actually fell inside, so the pin sits on the house.
+    // Part E step 4: prefer the PARCEL's own representative point over the geocode. The geocode is a
+    // street-interpolated coordinate that measured OUTSIDE the parcel on 6 of 6 test addresses
+    // (1521 N Berry landed in the gap between 1521 and 1523). pin_lat/pin_lon sit on the house.
     const lat=(r.pin_lat!=null && r.pin_lat!==0) ? r.pin_lat : r.lat;
     const lon=(r.pin_lon!=null && r.pin_lon!==0) ? r.pin_lon : r.lon;
     if(lat==null || lon==null) continue;
     const col=r.marker_color||"#e11d48";
-    // Part G: a teardrop PIN, not a flat dot. Every storm mark on this map is an L.circleMarker
-    // (hail cells, chase circles, the swath floor marker), so a watched address drawn as another
-    // filled circle reads as storm data at a glance. Shape — not just colour — is what separates
-    // them: nothing else on the map is a teardrop. Anchored at the TIP (iconAnchor y == height) so
-    // the point marks the parcel rather than the balloon's centre floating north of it.
+    // Part G: a teardrop PIN, not a flat dot -- nothing else on the map is a teardrop, so a watched
+    // address never reads as storm data. Anchored at the TIP so the point marks the parcel.
     const m=L.marker([lat,lon], {icon: wlPinIcon(col), riseOnHover:true});
-    m.bindTooltip(r.address||"", {direction:"top", offset:[0,-30]});
+    m.bindTooltip(wlPinTooltip(r), {direction:"top", offset:[0,-30], className:"wl-pin-tip"});
     const pidv=r.property_id;
     m.on("click", ()=>{ wlShow(); wlDetail(pidv); });
     markers.push(m);
   }
-  if(!markers.length){ msActMsg("No watched addresses with coordinates to pin.", true); return; }
+  return markers;
+}
+
+// Part M: the hover quick-status. Address + the filing-window line, REUSING the tone and label
+// claim_window.py already computed for D3 (window_tone / window_label on the row) -- never a second
+// classification, so the tooltip cannot disagree with the list row or the popup for the same address.
+// Lightweight by contract: address + one filing-window line, no photos/parcel/hit-list.
+function wlPinTooltip(r){
+  const addr = wlEsc(r.address||"");
+  const tone = r.window_tone || "grey";
+  const label = wlEsc(r.window_label || (r.use_class==="unknown" ? "Filing window unknown" : "No qualifying hail on record"));
+  return "<div class='wl-tip-addr'>"+addr+"</div>"
+       + "<div class='wl-tip-win wl-cw-"+wlEsc(tone)+"'>"+label+"</div>";
+}
+
+// (Re)draw the pin layer from the CURRENT watched list. Idempotent: clears any existing group first,
+// so calling it after an add/remove refreshes in place (Part L). Turns the button on iff pins landed.
+async function wlDrawPins(){
+  if(!TMAP){ msActMsg("Map not ready yet.", true); return; }
+  let markers; try{ markers = await wlBuildPinMarkers(); }
+  catch(e){ msActMsg("Pins failed — "+e.message, true); return; }
+  if(WL_PINS_GRP && TMAP.hasLayer(WL_PINS_GRP)) TMAP.removeLayer(WL_PINS_GRP);
+  WL_PINS_GRP=null;
+  if(!markers.length){ wlSetPinsBtn(false); msActMsg("No watched addresses with coordinates to pin.", true); return; }
   WL_PINS_GRP=L.layerGroup(markers).addTo(TMAP);
-  WL_PINS_ON=true; if(btn) btn.classList.add("on");
+  wlSetPinsBtn(true);
   msActMsg("Watched pins on map: "+markers.length);
+}
+
+function wlClearPins(){
+  if(WL_PINS_GRP && TMAP && TMAP.hasLayer(WL_PINS_GRP)) TMAP.removeLayer(WL_PINS_GRP);
+  WL_PINS_GRP=null; wlSetPinsBtn(false); msActMsg("");
+}
+
+// The toggle reads the REAL layer state, so it is correct no matter how the layer got orphaned.
+async function wlTogglePins(){
+  if(wlPinsOn()){ wlClearPins(); return; }
+  await wlDrawPins();
+}
+
+// Part L: reflect an add/remove immediately in whatever watchlist surface is live -- the open list
+// panel and the pin layer -- without a manual close/reopen or reload. Called after a successful
+// watchlist-add / watchlist-remove. Refreshes the list ONLY if the panel is open, and the pins ONLY
+// if they are currently shown, so it never forces a surface into view the operator didn't open.
+async function wlReflectChange(){
+  const pop=document.getElementById("wlPop");
+  if(pop && pop.classList.contains("open")){ try{ await wlRenderList(); }catch(_){} }
+  if(wlPinsOn()){ try{ await wlDrawPins(); }catch(_){} }
 }
 
 function sdReadDials(){
