@@ -2044,8 +2044,20 @@ async function wlEnsurePinsBuilt(){
   return WL_PINS_BUILDING;
 }
 
-// Called from boot(): preload the group HIDDEN so the first toggle is instant. Best-effort/silent.
-async function wlPreloadPins(){ if(!TMAP) return; try{ await wlEnsurePinsBuilt(); }catch(_){} }
+// Preload the group HIDDEN so the first toggle is instant. Fired at the START of boot, in PARALLEL
+// with the map render -- the marker build needs Leaflet but NOT the map, so it runs before TMAP
+// exists and the watchlist-list fetch is in flight from the earliest moment. That is the fix for
+// "still a delay after opening TEMPEST even when I wait": the old call sat at the END of boot, so the
+// fetch only started after all the heavy map setup. Retries once on a transient/cold first hit so a
+// failed preload doesn't leave the toggle slow.
+async function wlPreloadPins(){
+  for(let attempt=0; attempt<2; attempt++){
+    try{ await wlEnsurePinsBuilt(); }catch(_){}
+    if(WL_PINS_GRP) return;                 // built -> ready; a later toggle is instant
+    WL_PINS_BUILDING=null;                  // clear the failed in-flight marker so the retry re-fetches
+    if(attempt===0) await new Promise(r=>setTimeout(r, 900));
+  }
+}
 
 // Show the pre-built pins (instant when already built; builds first if the preload hasn't finished).
 async function wlShowPins(){
@@ -4087,6 +4099,8 @@ function scaleVectors(){
 async function boot(){
   if(matchMedia("(pointer:coarse)").matches || /Android|iPhone|iPad|iPod|Mobile|Silk/i.test(navigator.userAgent))
     document.body.classList.add("mobile");
+  wlPreloadPins();       // fire the watched-pins fetch+build NOW, in parallel with the whole boot, so
+                         // the toggle is instant by the time the operator can click it (loaded, hidden)
   const date = getDate();
   document.getElementById("navDateBtn").textContent = fmtDate(date)+" \\u25be";
   document.getElementById("navDateBtn").onclick = e => { e.stopPropagation(); toggleCal(); };
@@ -4267,7 +4281,6 @@ async function boot(){
   setupMobile();
   setupPush();           // PWA push subscribe + re-subscribe-on-open (best-effort; SMS is the backbone)
   handleApproveDeepLink(); // ?s=TOKEN -> the shared approve modal (PWA + plain tab)
-  wlPreloadPins();       // preload the watched pins HIDDEN so the toggle is instant (loaded, not shown)
   if(D.geofence_fault){                                       // fail-loud: never a silent ads-gate exclusion
     console.warn("in_geofence UNSET on in-market hail cluster "+D.storm_date+
       " \\u2014 the fail-closed ads gate would silently exclude it (data fault).");
