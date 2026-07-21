@@ -179,6 +179,14 @@ body.fullmap #fmExit:hover{background:#1e2b46}
 .ms-sg:hover{background:#eef3ff}
 body.mobile #tbar .hdr-search #msCity{width:120px}
 body.mobile #tbar .hdr-search #msAddr{width:150px}
+/* Mobile: the search row (address + Report / Watch / Watchlist / Pins) used to run off the right
+   edge as one non-wrapping flex row, forcing a horizontal scroll and shoving the map sideways. Let
+   it WRAP — the address takes its own full-width row, then the action buttons flow onto the next
+   row(s) instead of overflowing. Desktop is untouched (body.mobile-scoped). */
+body.mobile #tbar .hdr-search{flex-wrap:wrap;max-width:100%}
+body.mobile #tbar .hdr-search .ms-addrwrap{flex:1 1 100%}
+body.mobile #tbar .hdr-search #msAddr{flex:1 1 auto;width:auto;min-width:0}
+body.mobile #tbar .hdr-search .ms-act{flex:0 0 auto}
 /* ── PULL (item 10): on-demand 150mi capture. Header button + a floating confirm bar. ── */
 #tbar #pullBtn{background:#143a2a;color:#bdf0d6;border:1px solid #2c6e4c;border-radius:6px;padding:5px 10px;font-size:13px;cursor:pointer}
 #tbar #pullBtn:hover{background:#1a5038}
