@@ -2064,14 +2064,22 @@ function wlHidePins(){
 }
 
 // Rebuild the group from fresh data (after an add/remove), PRESERVING shown-vs-hidden -- a
-// preloaded-but-hidden layer stays hidden, a shown one stays shown, both just current.
+// preloaded-but-hidden layer stays hidden, a shown one stays shown, both just current. This is what
+// makes an ADDED address's pin appear WITHOUT a toggle/reset: on add, the new list includes it, and
+// if pins are shown the new group (with the new pin) is swapped straight onto the map.
+// BUILD-THEN-SWAP: construct the fresh group OFF the map first, then remove the old and add the new
+// in one step. So there is no visible gap where the pins blink out, and a failed fetch leaves the
+// existing pins standing (early return) instead of wiping them.
 async function wlRebuildPins(exclude){
   const wasShown = wlPinsShown();
+  let grp; try{ grp = await wlBuildPinGroup(exclude); }
+  catch(_){ return; }                                   // fetch failed -> keep the current pins as-is
   if(WL_PINS_GRP && TMAP && TMAP.hasLayer(WL_PINS_GRP)) TMAP.removeLayer(WL_PINS_GRP);
-  WL_PINS_GRP=null;
-  try{ WL_PINS_GRP = await wlBuildPinGroup(exclude); }catch(_){ WL_PINS_GRP=null; }
-  if(wasShown && WL_PINS_GRP && WL_PINS_GRP.getLayers().length){ WL_PINS_GRP.addTo(TMAP); wlSetPinsBtn(true); }
-  else if(wasShown){ wlSetPinsBtn(false); }
+  WL_PINS_GRP = grp;
+  if(wasShown){
+    if(WL_PINS_GRP.getLayers().length){ WL_PINS_GRP.addTo(TMAP); wlSetPinsBtn(true); }
+    else wlSetPinsBtn(false);                            // shown, but nothing left to show
+  }
 }
 
 // Drop ONE pin by property_id, synchronously (no fetch) -- instant feedback on un-watch, whether the
