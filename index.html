@@ -278,10 +278,14 @@ body.pull-armed #tbar #pullBtn{background:#2c6e4c;color:#fff}
    Tones are re-declared here because a Leaflet tooltip renders in the map pane, outside #wlPop where
    the .wl-cw-* rules live. */
 .leaflet-tooltip.wl-pin-tip{background:#0e141f;color:#e5e7eb;border:1px solid #2a3547;border-radius:7px;
-  box-shadow:0 6px 20px rgba(0,0,0,.5);padding:6px 9px;font:12px system-ui,sans-serif;max-width:280px}
-.leaflet-tooltip.wl-pin-tip .wl-tip-addr{font-weight:700;margin-bottom:3px}
-.leaflet-tooltip.wl-pin-tip .wl-tip-win{font-size:11px;font-weight:700;padding:1px 6px;border-radius:9px;
-  display:inline-block;border:1px solid transparent}
+  box-shadow:0 6px 20px rgba(0,0,0,.5);padding:7px 11px;font:12px system-ui,sans-serif;
+  /* Leaflet forces white-space:nowrap on tooltips, which lets a long line run past max-width and out
+     of the box ("No qualifying hail on record (>= 1.00" at the address)"). Override to normal so the
+     text WRAPS inside the box, and widen a touch. min-width stops a short address making a cramped box. */
+  white-space:normal;line-height:1.4;max-width:300px;min-width:150px;width:max-content}
+.leaflet-tooltip.wl-pin-tip .wl-tip-addr{font-weight:700;margin-bottom:4px}
+.leaflet-tooltip.wl-pin-tip .wl-tip-win{font-size:11px;font-weight:700;padding:2px 8px;border-radius:9px;
+  display:inline-block;border:1px solid transparent;white-space:normal}
 .leaflet-tooltip.wl-pin-tip .wl-cw-green{background:#062b18;color:#4ade80;border-color:#14532d}
 .leaflet-tooltip.wl-pin-tip .wl-cw-amber{background:#3a1206;color:#fb923c;border-color:#7c2d12}
 .leaflet-tooltip.wl-pin-tip .wl-cw-grey {background:#1a212e;color:#94a3b8;border-color:#2a3547}
@@ -2543,12 +2547,24 @@ async function wlDrawPins(exclude){
   if(!markers.length){ wlSetPinsBtn(false); msActMsg("No watched addresses with coordinates to pin.", true); return; }
   WL_PINS_GRP=L.layerGroup(markers).addTo(TMAP);
   wlSetPinsBtn(true);
+  try{ localStorage.setItem("wlPinsOn","1"); }catch(_){}    // remember ON so it auto-restores next open
   msActMsg("Watched pins on map: "+markers.length);
 }
 
 function wlClearPins(){
   if(WL_PINS_GRP && TMAP && TMAP.hasLayer(WL_PINS_GRP)) TMAP.removeLayer(WL_PINS_GRP);
-  WL_PINS_GRP=null; wlSetPinsBtn(false); msActMsg("");
+  WL_PINS_GRP=null; wlSetPinsBtn(false);
+  try{ localStorage.setItem("wlPinsOn","0"); }catch(_){}    // remember OFF so it stays off next open
+  msActMsg("");
+}
+
+// Restore the pins layer on load if it was left ON — so the toggle is a fast on/off that survives a
+// refresh or a date-nav reload, instead of resetting to off every time. Best-effort and silent: a
+// fetch failure just leaves pins off (the button reflects real state via wlSetPinsBtn inside draw).
+async function wlRestorePins(){
+  try{ if(localStorage.getItem("wlPinsOn")!=="1") return; }catch(_){ return; }
+  if(wlPinsOn()) return;                                    // already drawn
+  try{ await wlDrawPins(); }catch(_){}
 }
 
 // Drop ONE pin by property_id, synchronously, with no network round-trip. Used the instant a remove
@@ -4739,6 +4755,7 @@ async function boot(){
   setupMobile();
   setupPush();           // PWA push subscribe + re-subscribe-on-open (best-effort; SMS is the backbone)
   handleApproveDeepLink(); // ?s=TOKEN -> the shared approve modal (PWA + plain tab)
+  wlRestorePins();       // re-drop the watched pins if they were left on (fast toggle survives reload)
   if(D.geofence_fault){                                       // fail-loud: never a silent ads-gate exclusion
     console.warn("in_geofence UNSET on in-market hail cluster "+D.storm_date+
       " \u2014 the fail-closed ads gate would silently exclude it (data fault).");
