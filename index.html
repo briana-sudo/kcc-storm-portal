@@ -2452,10 +2452,15 @@ async function wlDetail(pid){
     if(!confirm("Un-watch "+(r.address||"this address")+"? History is kept (the record is deactivated, not deleted).")) return;
     msg("Removing…");
     try{ const rr=await sdApi("watchlist-remove",{property_id:pid});
-      // Part L symmetry: on remove, refresh the list AND the pin layer so the un-watched address
-      // drops off both immediately. wlRenderList() rebuilds the list; wlDrawPins() re-reads the
-      // (now shorter) watched set if pins are shown.
-      if(rr.removed){ await wlRenderList(); if(wlPinsOn()) await wlDrawPins(); } else msg("not removed",true); }
+      // Part L symmetry: on remove, the un-watched address drops off BOTH surfaces immediately.
+      // Drop this pin synchronously FIRST (no network wait), then rebuild the list and reconcile the
+      // pin layer. The synchronous drop is what guarantees "the pin goes away" even before the
+      // re-fetch returns.
+      if(rr.removed){ wlDropPin(pid); await wlRenderList();
+        // reconcile with the removed pid EXCLUDED, so a momentarily-stale list read can never
+        // re-add the pin the server just confirmed gone.
+        if(wlPinsOn()) await wlDrawPins([pid]); }
+      else msg("not removed",true); }
     catch(e){ msg("Failed — "+e.message,true); } };
 }
 // ── ALL-WATCHED-PINS MAP TOGGLE (Part C) ──────────────────────────────────────────────────────
@@ -2488,9 +2493,12 @@ function wlPinsOn(){ return !!(WL_PINS_GRP && TMAP && TMAP.hasLayer(WL_PINS_GRP)
 function wlSetPinsBtn(on){ const b=document.getElementById("wlPinsBtn"); if(b) b.classList.toggle("on", !!on); }
 
 // Build one teardrop marker per watched address. Returns the markers array; fetches the live list.
-async function wlBuildPinMarkers(){
+// `exclude` drops those property_ids even if the fetched list still contains them -- used right after
+// a remove so a momentarily-stale read can never resurrect the pin the operator just deleted.
+async function wlBuildPinMarkers(exclude){
+  const skip = exclude instanceof Set ? exclude : new Set(exclude||[]);
   const res = await sdApi("watchlist-list", {});
-  const rows = (res && res.watched) || [];
+  const rows = ((res && res.watched) || []).filter(r=> !skip.has(r.property_id));
   const markers = [];
   for(const r of rows){
     // Part E step 4: prefer the PARCEL's own representative point over the geocode. The geocode is a
@@ -2505,6 +2513,7 @@ async function wlBuildPinMarkers(){
     const m=L.marker([lat,lon], {icon: wlPinIcon(col), riseOnHover:true});
     m.bindTooltip(wlPinTooltip(r), {direction:"top", offset:[0,-30], className:"wl-pin-tip"});
     const pidv=r.property_id;
+    m._wlPid=pidv;                     // tag so a single pin can be dropped without a re-fetch
     m.on("click", ()=>{ wlShow(); wlDetail(pidv); });
     markers.push(m);
   }
@@ -2525,9 +2534,9 @@ function wlPinTooltip(r){
 
 // (Re)draw the pin layer from the CURRENT watched list. Idempotent: clears any existing group first,
 // so calling it after an add/remove refreshes in place (Part L). Turns the button on iff pins landed.
-async function wlDrawPins(){
+async function wlDrawPins(exclude){
   if(!TMAP){ msActMsg("Map not ready yet.", true); return; }
-  let markers; try{ markers = await wlBuildPinMarkers(); }
+  let markers; try{ markers = await wlBuildPinMarkers(exclude); }
   catch(e){ msActMsg("Pins failed — "+e.message, true); return; }
   if(WL_PINS_GRP && TMAP.hasLayer(WL_PINS_GRP)) TMAP.removeLayer(WL_PINS_GRP);
   WL_PINS_GRP=null;
@@ -2540,6 +2549,15 @@ async function wlDrawPins(){
 function wlClearPins(){
   if(WL_PINS_GRP && TMAP && TMAP.hasLayer(WL_PINS_GRP)) TMAP.removeLayer(WL_PINS_GRP);
   WL_PINS_GRP=null; wlSetPinsBtn(false); msActMsg("");
+}
+
+// Drop ONE pin by property_id, synchronously, with no network round-trip. Used the instant a remove
+// is confirmed so the un-watched pin vanishes immediately -- it does not wait on the reconciling
+// re-fetch (a slow network could otherwise leave the pin sitting there, which is the operator's
+// "the pin doesn't go away"). The subsequent wlDrawPins() reconciles the whole layer.
+function wlDropPin(pid){
+  if(!WL_PINS_GRP) return;
+  WL_PINS_GRP.getLayers().forEach(m=>{ if(m._wlPid===pid) WL_PINS_GRP.removeLayer(m); });
 }
 
 // The toggle reads the REAL layer state, so it is correct no matter how the layer got orphaned.
