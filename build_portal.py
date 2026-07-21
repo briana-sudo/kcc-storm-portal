@@ -247,6 +247,18 @@ body.pull-armed #tbar #pullBtn{background:#2c6e4c;color:#fff}
 .leaflet-tooltip.wl-pin-tip .wl-cw-amber{background:#3a1206;color:#fb923c;border-color:#7c2d12}
 .leaflet-tooltip.wl-pin-tip .wl-cw-grey {background:#1a212e;color:#94a3b8;border-color:#2a3547}
 .leaflet-tooltip.wl-pin-tip.leaflet-tooltip-top::before{border-top-color:#2a3547}
+/* Initial app-load overlay: TEMPEST takes a moment to pull storm data + build the map on open, so
+   cover it with a spinner card until the map is up, instead of a blank/half-built screen. Fades out
+   and is click-through once hidden; a safety timeout force-hides it so it can never trap the UI. */
+#appLoading{position:fixed;inset:0;z-index:99999;display:flex;align-items:center;justify-content:center;
+  background:rgba(8,12,22,.90);backdrop-filter:blur(2px);transition:opacity .4s ease}
+#appLoading.hide{opacity:0;pointer-events:none}
+#appLoading .al-box{display:flex;flex-direction:column;align-items:center;gap:15px;text-align:center;padding:0 24px}
+#appLoading .al-spin{width:44px;height:44px;border-radius:50%;border:3px solid #263a5e;border-top-color:#f0a500;
+  animation:alspin .8s linear infinite}
+@keyframes alspin{to{transform:rotate(360deg)}}
+#appLoading .al-title{color:#e9eef7;font:700 15px system-ui,sans-serif;letter-spacing:.02em}
+#appLoading .al-sub{color:#9fb3d9;font:400 12px system-ui,sans-serif}
 body.tz-arming .leaflet-container{cursor:crosshair}
 body.tz-arming::after{content:"Click the map to set the timezone";position:fixed;top:64px;left:50%;transform:translateX(-50%);
   z-index:3000;background:#e8430a;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.4)}
@@ -4096,7 +4108,26 @@ function scaleVectors(){
   walk(TMAP);
 }
 
+// Initial-load overlay. Shown the instant boot starts and dismissed once the map is up, so opening
+// TEMPEST reads as "loading data" instead of a blank/half-built screen. Idempotent + safety-timed.
+function showAppLoading(){
+  if(document.getElementById("appLoading")) return;
+  const d=document.createElement("div"); d.id="appLoading";
+  d.innerHTML="<div class='al-box'><div class='al-spin'></div>"
+    + "<div class='al-title'>Loading storm data\\u2026</div>"
+    + "<div class='al-sub'>detection \\u00b7 scoring \\u00b7 targeting</div></div>";
+  document.body.appendChild(d);
+  // never let it trap the UI: force-hide after 12s no matter what boot does.
+  setTimeout(hideAppLoading, 12000);
+}
+function hideAppLoading(){
+  const d=document.getElementById("appLoading"); if(!d || d.classList.contains("hide")) return;
+  d.classList.add("hide");
+  setTimeout(()=>{ if(d.parentNode) d.parentNode.removeChild(d); }, 500);   // remove after the fade
+}
+
 async function boot(){
+  showAppLoading();      // cover the app with a spinner until the map is up (dismissed after renderMap)
   if(matchMedia("(pointer:coarse)").matches || /Android|iPhone|iPad|iPod|Mobile|Silk/i.test(navigator.userAgent))
     document.body.classList.add("mobile");
   wlPreloadPins();       // fire the watched-pins fetch+build NOW, in parallel with the whole boot, so
@@ -4161,6 +4192,7 @@ async function boot(){
   renderTornadoChips(D);                                        // Core-3: gate verdict / miss-recovery / pricing chips
   renderMap(D);
   setBaseStreet();
+  hideAppLoading();        // the map + data are up -> drop the loading overlay (panels fill in under it)
   paintRankedTargets(D);   // #6 additive: payout-score rank badges (no-op if no data)
   // Smooth the engine hail swath (the §3 SwathLayer canvas in swathPane) the same way the
   // live radar is smoothed: a zoom-scaled blur softens the per-MESH-cell blocks into a
