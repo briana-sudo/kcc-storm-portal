@@ -2665,12 +2665,34 @@ const SOLVE_API = (CFG.solveApi || "").replace(/\/$/, "") ||
 let SG_STATE = { sol: null }, SG_GRP = null, SG_BASEGRP = null;
 let SG_PERIL = "hail";           // active Spend-Dial peril (hail | tornado). Wind is not solvable yet.
 const SG_BANDS = [["1.125-1.5", "b0"], ["1.5-1.8", "b1"], ["1.8-2.0", "b2"], ["2.0+", "b3"]];
-async function sgApi(body){
+// ASYNC SOLVE (2026-07-21): the first solve of a COLD date takes ~200s server-side, which used to
+// blow the ~30s gateway timeout and surface in the browser as "Failed to fetch". The engine now
+// answers {status:"warming"} INSTANTLY for a cold date (warming the core in the background) and the
+// result once it lands; sgApi POLLS this same endpoint until it stops warming, so no request ever
+// runs long enough to time out. A warm date returns the result on the first call (no polling).
+async function sgApiOnce(body){
   if(!SOLVE_API) throw new Error("no solve-geometry endpoint configured");
   const r = await fetch(SOLVE_API, { method:"POST", headers:{ "Content-Type":"application/json" },
     body: JSON.stringify(body) });
   if(!r.ok) throw new Error("HTTP " + r.status);
   return await r.json();
+}
+async function sgApi(body, onWarm){
+  const DEADLINE = Date.now() + 300000;   // 5-min ceiling: a cold solve is ~200s; never hang forever
+  let waited = false;
+  while(true){
+    const j = await sgApiOnce(body);
+    if(j && j.status === "warming"){
+      waited = true;
+      if(typeof onWarm === "function") onWarm();
+      if(Date.now() > DEADLINE) throw new Error("solve timed out while warming (>5 min) — try again");
+      await new Promise(res=>setTimeout(res, 4000));       // poll every 4s while the core warms
+      continue;
+    }
+    if(j && j.status === "error") throw new Error(j.error || "solve error");
+    if(waited && j && typeof j === "object") j.warmed_from_cold = true;   // note for the caller/UI
+    return j;
+  }
 }
 // ── MERGED SOLVE-LAYER engine: ONE panel, one loop. Any dial re-prices the sdTable; solves persist as
 //    snapshots (Stage-3 compare precondition). SG_OFF = deselected ring idxs (manual + cap/jobs). ──
@@ -2682,10 +2704,16 @@ async function sgSolveFresh(){   // hail floor / date -> FRESH geometry from the
   const w = document.getElementById("sgWork"), v = document.getElementById("sdVerdict");
   if(w){ w.style.display="block"; w.innerHTML="Solving\u2026 <span class='warm'>(warming index if cold \u2014 first solve of a date is slow)</span>"; }
   if(v){ v.textContent="Solving\u2026"; v.className="sd-verdict"; }
+  const t0 = Date.now();
+  // while a cold date warms, keep the operator informed with an elapsed counter instead of a frozen
+  // "Solving…" (the poll can run a couple of minutes on a never-before-solved date).
+  const onWarm = () => { const s = Math.round((Date.now()-t0)/1000);
+    if(w) w.innerHTML="Warming this date\u2026 <span class='warm'>first solve builds the parcel cores (~2-3 min) \u00b7 "+s+"s</span>";
+    if(v) v.textContent="Warming this date\u2026 "+s+"s"; };
   try {
     const sol = await sgApi({ date:getDate(), peril:SG_PERIL,
       hail_floor:+document.getElementById("sdHail").value,   // ignored server-side for tornado (fixed corridor)
-      spend_cap:+document.getElementById("sdCapR").value });
+      spend_cap:+document.getElementById("sdCapR").value }, onWarm);
     SG_STATE.sol = sol; SG_MANUAL = new Set();
     sgApplyDials(); sgSnapPush(sol); sgRenderAll();
   } catch(e){ if(w) w.textContent="Solve unavailable \u2014 "+e.message;
