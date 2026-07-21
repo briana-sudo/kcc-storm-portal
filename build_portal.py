@@ -4130,8 +4130,11 @@ async function boot(){
   showAppLoading();      // cover the app with a spinner until the map is up (dismissed after renderMap)
   if(matchMedia("(pointer:coarse)").matches || /Android|iPhone|iPad|iPod|Mobile|Silk/i.test(navigator.userAgent))
     document.body.classList.add("mobile");
-  wlPreloadPins();       // fire the watched-pins fetch+build NOW, in parallel with the whole boot, so
-                         // the toggle is instant by the time the operator can click it (loaded, hidden)
+  const pinsReady = wlPreloadPins();   // fire the watched-pins fetch+build NOW, in parallel with the
+                         // whole boot. Captured so the loading overlay can stay up until BOTH the map
+                         // AND the pins are ready -- the operator asked it not to clear on storm data
+                         // alone. wlPreloadPins never rejects (it retries then resolves), so the hide
+                         // below always fires; the 12s safety timeout is the backstop.
   const date = getDate();
   document.getElementById("navDateBtn").textContent = fmtDate(date)+" \\u25be";
   document.getElementById("navDateBtn").onclick = e => { e.stopPropagation(); toggleCal(); };
@@ -4192,7 +4195,10 @@ async function boot(){
   renderTornadoChips(D);                                        // Core-3: gate verdict / miss-recovery / pricing chips
   renderMap(D);
   setBaseStreet();
-  hideAppLoading();        // the map + data are up -> drop the loading overlay (panels fill in under it)
+  // The map + storm data are up; keep the overlay until the PIN preload also finishes, so the app
+  // reveals with the pins already loaded (a first toggle is instant) rather than clearing on storm
+  // data alone. pinsReady always resolves; the 12s safety timeout in showAppLoading is the backstop.
+  Promise.resolve(pinsReady).finally(hideAppLoading);
   paintRankedTargets(D);   // #6 additive: payout-score rank badges (no-op if no data)
   // Smooth the engine hail swath (the §3 SwathLayer canvas in swathPane) the same way the
   // live radar is smoothed: a zoom-scaled blur softens the per-MESH-cell blocks into a
