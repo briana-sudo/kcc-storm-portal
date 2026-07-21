@@ -1499,7 +1499,12 @@ function wlInject(){
     border-radius:6px;padding:5px 7px;font:12px system-ui}
   #wlPop .wl-in.wl-num{max-width:110px}
   #wlPop .wl-chk{display:flex;align-items:center;gap:5px;color:#9ca3af;font-size:11px;white-space:nowrap}
-  #wlPop .wl-fnote{color:#9ca3af;font-size:11px}`;
+  #wlPop .wl-fnote{color:#9ca3af;font-size:11px}
+  /* Part J: filing-window key */
+  #wlPop .wl-legend{margin-top:6px;padding:8px;background:#0b111c;border:1px solid #263041;border-radius:6px}
+  #wlPop .wl-lgrow{display:flex;align-items:center;gap:8px;margin-bottom:5px;font-size:11px;color:#c7d0dc}
+  #wlPop .wl-lgrow .wl-cw{flex-shrink:0;min-width:74px;text-align:center}
+  #wlPop .wl-lnote{color:#8b97a8;font-size:10.5px;margin-top:4px;line-height:1.4}`;
   document.head.appendChild(st);
   const d=document.createElement("div"); d.id="wlPop";
   d.innerHTML = "<div class='wl-bar' id='wlBar'><span class='wl-grip'>&#8942;&#8942;</span>"
@@ -1709,7 +1714,25 @@ function wlFilterBar(shown, total){
     + "</div>"
     + "<div class='wl-fnote'>"+shown+" of "+total+" shown"
     +   (active?" \\u00b7 <button class='wl-back' id='wlClearF2'>clear filters</button>":"")
-    +   " \\u00b7 <span class='wl-na'>filing windows are estimated \\u2014 carrier and policy govern</span></div>"
+    +   " \\u00b7 <button class='wl-back' id='wlLegToggle'>filing window key</button></div>"
+    // Part J: a plain-language key for the D3 claim-window chips, collapsed by default so it never
+    // crowds the bar. Without it a correct grey (window closed / no qualifying hail) is
+    // indistinguishable from a broken one at a glance. Each row shows the actual chip so the key and
+    // the column cannot drift -- same tone classes, one definition.
+    + "<div class='wl-legend' id='wlLegend' style='display:none'>"
+    +   "<div class='wl-lgrow'><span class='wl-cw wl-cw-green'>N mo left</span>"
+    +     "<span>active window \\u2014 months remaining from the most recent qualifying hail</span></div>"
+    +   "<div class='wl-lgrow'><span class='wl-cw wl-cw-amber'>closes soon</span>"
+    +     "<span>window closing within a month \\u2014 act now</span></div>"
+    +   "<div class='wl-lgrow'><span class='wl-cw wl-cw-grey'>window closed</span>"
+    +     "<span>past the estimated filing deadline</span></div>"
+    +   "<div class='wl-lgrow'><span class='wl-cw wl-cw-grey'>no qualifying hail</span>"
+    +     "<span>no hail \\u2265 1.00\\u2033 recorded at this address \\u2014 nothing to file on</span></div>"
+    +   "<div class='wl-lgrow'><span class='wl-cw wl-cw-grey'>classify</span>"
+    +     "<span>use class unknown \\u2014 no parcel signal; set it on the address</span></div>"
+    +   "<div class='wl-lnote'>Residential 12 mo \\u00b7 commercial 24 mo, from the date of loss. "
+    +     "Estimated only \\u2014 the carrier and the policy set the real deadline.</div>"
+    + "</div>"
     + "</div>";
 }
 function wlWireFilterBar(){
@@ -1725,6 +1748,14 @@ function wlWireFilterBar(){
   on("wlVUnk","change",e=>{ WL_F.vunknown = e.target.checked; wlRenderRows(); });
   const clear=()=>{ WL_F={q:"",peril:"",win:"",sort:"addr",vmin:null,vmax:null,vunknown:true}; wlRenderRows(); };
   on("wlClearF","click",clear); on("wlClearF2","click",clear);
+  // Part J: the legend is collapsed by default; toggle without re-rendering the whole list, and
+  // remember the operator's choice so it stays open across refreshes if they opened it.
+  on("wlLegToggle","click",()=>{ const lg=document.getElementById("wlLegend"); if(!lg) return;
+    const open = lg.style.display==="none"; lg.style.display=open?"block":"none";
+    try{ localStorage.setItem("wlLegendOpen", open?"1":"0"); }catch(_){}
+  });
+  const lg=document.getElementById("wlLegend");
+  if(lg){ try{ if(localStorage.getItem("wlLegendOpen")==="1") lg.style.display="block"; }catch(_){} }
 }
 
 // build the pinned photo pair (a) — omit a null photo gracefully, never a broken img
@@ -3074,7 +3105,16 @@ function addLiveLayers(){
   const ST_LOUIS=[38.63,-90.23];
   const lc=L.control({position:"topleft"});
   lc.onAdd=function(){ const d=L.DomUtil.create("div","leaflet-bar locate-ctl");
-    d.innerHTML='<a href="#" title="My location / re-centre on St. Louis">\\u25ce</a>';
+    // Part K fix: the icon was the bare font glyph ◎ (BULLSEYE). It renders here, but glyph
+    // availability is font/OS-dependent -- on a viewer whose font stack lacks it, the <a> falls back
+    // to tofu/blank and the 30x30 white control reads as "a plain empty white box" floating in the
+    // top-left over the satellite tiles (the operator's report). The +/- zoom buttons beside it are
+    // immune because they are ASCII. An inline SVG bullseye removes the font dependency entirely --
+    // same lesson as the Part G teardrop pin: draw the mark, never depend on a glyph being present.
+    d.innerHTML='<a href="#" title="My location / re-centre on St. Louis" aria-label="My location">'
+      +'<svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true">'
+      +'<circle cx="10" cy="10" r="7" fill="none" stroke="currentColor" stroke-width="1.6"/>'
+      +'<circle cx="10" cy="10" r="2.4" fill="currentColor"/></svg></a>';
     L.DomEvent.disableClickPropagation(d);
     d.querySelector("a").addEventListener("click",ev=>{ ev.preventDefault();
       if(navigator.geolocation){ navigator.geolocation.getCurrentPosition(
