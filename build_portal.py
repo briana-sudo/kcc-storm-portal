@@ -1391,35 +1391,57 @@ function msActMsg(txt, err){
   const el=document.getElementById("msActMsg"); if(!el) return;
   el.textContent=txt||""; el.className="ms-actmsg"+(err?" err":"");
 }
+// Q2 (2026-07-22): report generation is now FIRE-AND-POLL. The engine returns a job_id instantly and
+// generates (geocode+PDF+email) in the background; we poll the READ-ONLY report_status query until the
+// email is CONFIRMED sent (address) / the PDF is saved (watchlist) / it errors — so the UI reflects the
+// REAL outcome, never whether the browser connection happened to survive the ~30s gateway. Same shape
+// as the Spend-Dial solve poll and the /storm_pull poll. UNIQUE job_id per fire => two report requests
+// are two jobs / two emails, never deduplicated.
+function pollReport(job, label, setMsg, onDone){
+  setMsg("Report is generating\\u2026 (geocode \\u00b7 5-yr history \\u00b7 PDF \\u00b7 email). This can take up to ~3 min; you can keep working \\u2014 it finishes in the background.");
+  const t0=Date.now(), CAP=240000;   // > the engine's 180s report budget, so a real run always resolves
+  const poll=async()=>{
+    if(Date.now()-t0>CAP){
+      setMsg("Report is taking longer than usual \\u2014 it's still generating and will arrive by email. If it doesn't in a few minutes, try again.");
+      if(onDone)onDone("timeout"); return;
+    }
+    let s=null; try{ const rows=await pquery("storm_report_status",{job_id:job}); s=(rows&&rows[0])||null; }catch(e){}
+    // absent (job hasn't written its 'running' marker yet) or 'running' -> keep waiting; terminal -> act.
+    if(s && s.state==="sent"){  setMsg("\\u2713 Report emailed \\u2014 "+label);                 if(onDone)onDone("sent");  return; }
+    if(s && s.state==="saved"){ setMsg("\\u2713 Report saved onto the address \\u2014 "+label);   if(onDone)onDone("saved"); return; }
+    if(s && s.state==="error"){ setMsg("Failed \\u2014 "+(s.error||"report generation failed"), true); if(onDone)onDone("error"); return; }
+    setTimeout(poll, 4000);
+  };
+  setTimeout(poll, 3000);
+}
 async function msAddrAction(kind){
   const box=document.getElementById("msAddr"); const addr=(box&&box.value||"").trim();
   if(!addr){ msActMsg("Type an address first (with the city).", true); return; }
   const btn=document.getElementById(kind==="report"?"msReport":"msWatch");
   if(btn) btn.disabled=true;
-  msActMsg(kind==="report" ? "Building report… (geocode · 5-yr history · PDF · email)"
-                           : "Adding to watchlist…");
-  try{
-    const cmd = (kind==="report") ? "address-report" : "watchlist-add";
-    const res = await sdApi(cmd, { address: addr });
-    if(res && res.ok === false){                       // geocode failed -> states-why, never a guess
-      msActMsg(res.states_why || "Address did not resolve.", true);
-    } else if(kind==="report"){
-      // a non-qualifying address gets NO document — the finding rides in the email body instead
-      msActMsg(res.qualifies ? ("✓ Report emailed — " + (res.address||addr))
-                             : ("✓ Emailed — no qualifying events, so no document was produced"));
-    } else {
-      msActMsg("✓ Watching — " + (res.address||addr));
-      // Part L: the open list panel and the pin layer refresh immediately -- no close/reopen or reload.
-      await wlReflectChange();
+
+  if(kind==="report"){
+    let fired;
+    try{ fired = await sdApi("address-report", { address: addr }); }   // 202 {status:generating, job_id}
+    catch(e){
+      // The FIRE is instant (202), so a drop here is unusual; still tell the truth (it may have fired).
+      if(/no response reached the page/.test(e.message||""))
+        msActMsg("Report is generating and will arrive by email shortly. If it doesn't in a few minutes, try again.");
+      else msActMsg("Failed — " + e.message, true);
+      if(btn) btn.disabled=false; return;
     }
-  }catch(e){
-    // A slow report drops the browser->gateway connection at ~30s while the engine (180s budget)
-    // keeps generating and EMAILS the PDF. sdApi tags that dropped-connection case; for a report,
-    // report it as "still generating", NOT a hard Failed (which was false — the email arrives).
-    if(kind==="report" && /no response reached the page/.test(e.message||""))
-      msActMsg("Report is generating and will arrive by email shortly (it takes longer than the page can wait). If it doesn't arrive in a few minutes, try again.");
-    else msActMsg("Failed — " + e.message, true);
+    if(!fired || !fired.job_id){ msActMsg("Failed — " + ((fired&&fired.error)||"no job id from the server"), true); if(btn) btn.disabled=false; return; }
+    pollReport(fired.job_id, addr, msActMsg, ()=>{ if(btn) btn.disabled=false; });   // 'sent' == email confirmed
+    return;
   }
+
+  // watch: fast synchronous add (unchanged)
+  msActMsg("Adding to watchlist…");
+  try{
+    const res = await sdApi("watchlist-add", { address: addr });
+    if(res && res.ok === false){ msActMsg(res.states_why || "Address did not resolve.", true); }
+    else { msActMsg("✓ Watching — " + (res.address||addr)); await wlReflectChange(); }
+  }catch(e){ msActMsg("Failed — " + e.message, true); }
   finally{ if(btn) btn.disabled=false; }
 }
 
@@ -2115,14 +2137,19 @@ async function wlDetail(pid){
   document.getElementById("wlBackfill").onclick = async ()=>{ msg("Refreshing parcel + Solar (one Solar call)…");
     try{ const rr=await sdApi("watchlist-backfill",{property_id:pid}); msg("\\u2713 parcel="+rr.parcel_status+" solar="+rr.solar_status); setTimeout(()=>wlDetail(pid),700); }
     catch(e){ msg("Failed — "+e.message,true); } };
-  document.getElementById("wlReport").onclick = async ()=>{ msg("Building report + saving PDF onto the address…");
-    try{ const rr=await sdApi("watchlist-report",{property_id:pid}); msg(rr.ok?("\\u2713 saved "+(rr.report_id||"")):(rr.reason||"no qualifying events")); setTimeout(()=>wlDetail(pid),700); }
+  document.getElementById("wlReport").onclick = async ()=>{
+    let fired;
+    try{ fired = await sdApi("watchlist-report",{property_id:pid}); }   // 202 {status:generating, job_id}
     catch(e){
-      // Dropped-connection (gateway timeout) != failure: the engine finishes and emails + saves the PDF.
       if(/no response reached the page/.test(e.message||""))
-        msg("Report is generating; it will be emailed and saved onto the address shortly. Reopen this address in a few minutes to see the saved PDF.");
+        msg("Report is generating; reopen this address in a few minutes to see the saved PDF.");
       else msg("Failed — "+e.message,true);
-    } };
+      return;
+    }
+    if(!fired || !fired.job_id){ msg("Failed — "+((fired&&fired.error)||"no job id from the server"),true); return; }
+    // poll to 'saved'; on success refresh the detail view so the newly saved PDF appears
+    pollReport(fired.job_id, (r.address||"this address"), msg, (state)=>{ if(state==="saved"||state==="sent") setTimeout(()=>wlDetail(pid),800); });
+  };
   document.getElementById("wlRemove").onclick = async ()=>{
     if(!confirm("Un-watch "+(r.address||"this address")+"? History is kept (the record is deactivated, not deleted).")) return;
     msg("Removing…");
