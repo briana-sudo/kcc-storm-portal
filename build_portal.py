@@ -1543,7 +1543,26 @@ function wlInject(){
   #wlPop .wl-legend{margin-top:6px;padding:8px;background:#0b111c;border:1px solid #263041;border-radius:6px}
   #wlPop .wl-lgrow{display:flex;align-items:center;gap:8px;margin-bottom:5px;font-size:11px;color:#c7d0dc}
   #wlPop .wl-lgrow .wl-cw{flex-shrink:0;min-width:74px;text-align:center}
-  #wlPop .wl-lnote{color:#8b97a8;font-size:10.5px;margin-top:4px;line-height:1.4}`;
+  #wlPop .wl-lnote{color:#8b97a8;font-size:10.5px;margin-top:4px;line-height:1.4}
+  /* Part 5 (browser): CSV bulk-import view */
+  #wlPop .wl-imp{display:flex;flex-direction:column;gap:10px;padding:2px}
+  #wlPop .wl-imp-dz{border:1.5px dashed #33415a;border-radius:8px;padding:18px;text-align:center;color:#9ca3af;font-size:12px;background:#0b111c}
+  #wlPop .wl-imp-drop.drag .wl-imp-dz{border-color:#60a5fa;background:#0e1626;color:#c7d0dc}
+  #wlPop .wl-imp-hint{color:#8b97a8;font-size:10.5px;margin-top:6px;line-height:1.4}
+  #wlPop .wl-imp-meta{font-size:12px;color:#c7d0dc}
+  #wlPop .wl-imp-hdr{color:#8b97a8;font-size:11px;margin-top:4px}
+  #wlPop .wl-imp-ok{color:#34d399}
+  #wlPop .wl-imp-bad{color:#f87171}
+  #wlPop .wl-imp-actions{display:flex;gap:8px}
+  #wlPop .wl-imp-btn{background:#1a2537;color:#c7d0dc;border:1px solid #33415a;border-radius:6px;padding:6px 12px;font:12px system-ui;cursor:pointer}
+  #wlPop .wl-imp-btn:disabled{opacity:.45;cursor:default}
+  #wlPop .wl-imp-go{background:#164e34;border-color:#1f6f49;color:#d1fae5}
+  #wlPop .wl-imp-msg{font-size:11.5px;color:#9ca3af;min-height:14px}
+  #wlPop .wl-imp-cost{font-size:12px;color:#e5c07b;font-weight:600}
+  #wlPop .wl-imp-warn{font-size:11px;color:#f0a860;margin-top:4px}
+  #wlPop .wl-imp-done{font-size:13px;color:#d1fae5;font-weight:600;margin-bottom:6px}
+  #wlPop .wl-imp-tbl{width:100%;border-collapse:collapse;font-size:11px}
+  #wlPop .wl-imp-tbl th,#wlPop .wl-imp-tbl td{text-align:left;padding:3px 6px;border-bottom:1px solid #1c2636}`;
   document.head.appendChild(st);
   const d=document.createElement("div"); d.id="wlPop";
   d.innerHTML = "<div class='wl-bar' id='wlBar'><span class='wl-grip'>&#8942;&#8942;</span>"
@@ -1618,8 +1637,10 @@ async function wlRenderList(){
   wlSetTitle("Watchlist \\u2014 "+rows.length+" address"+(rows.length===1?"":"es"));
   let h = "<div class='wl-list'>";
   if(!rows.length){
-    h += "<div class='wl-msg'>No addresses watched yet. Use the &#128065; Watch button on an address to add one.</div></div>";
-    b.innerHTML=h; return;
+    h += "<div class='wl-msg'>No addresses watched yet. Use the &#128065; Watch button on an address to add one, or <button class='wl-back' id='wlImportBtnE'>&#128228; import a CSV</button>.</div></div>";
+    b.innerHTML=h;
+    const ie=document.getElementById("wlImportBtnE"); if(ie) ie.onclick=wlImportView;
+    return;
   }
   WL_ROWS = rows;                       // D4 filters/sorts operate on this cached set, client-side
   wlRenderRows();
@@ -1753,7 +1774,8 @@ function wlFilterBar(shown, total){
     + "</div>"
     + "<div class='wl-fnote'>"+shown+" of "+total+" shown"
     +   (active?" \\u00b7 <button class='wl-back' id='wlClearF2'>clear filters</button>":"")
-    +   " \\u00b7 <button class='wl-back' id='wlLegToggle'>filing window key</button></div>"
+    +   " \\u00b7 <button class='wl-back' id='wlLegToggle'>filing window key</button>"
+    +   " \\u00b7 <button class='wl-back' id='wlImportBtn'>&#128228; import CSV</button></div>"
     // Part J: a plain-language key for the D3 claim-window chips, collapsed by default so it never
     // crowds the bar. Without it a correct grey (window closed / no qualifying hail) is
     // indistinguishable from a broken one at a glance. Each row shows the actual chip so the key and
@@ -1787,6 +1809,7 @@ function wlWireFilterBar(){
   on("wlVUnk","change",e=>{ WL_F.vunknown = e.target.checked; wlRenderRows(); });
   const clear=()=>{ WL_F={q:"",peril:"",win:"",sort:"addr",vmin:null,vmax:null,vunknown:true}; wlRenderRows(); };
   on("wlClearF","click",clear); on("wlClearF2","click",clear);
+  on("wlImportBtn","click",wlImportView);   // Part 5: open the CSV bulk-import view
   // Part J: the legend is collapsed by default; toggle without re-rendering the whole list, and
   // remember the operator's choice so it stays open across refreshes if they opened it.
   on("wlLegToggle","click",()=>{ const lg=document.getElementById("wlLegend"); if(!lg) return;
@@ -1795,6 +1818,118 @@ function wlWireFilterBar(){
   });
   const lg=document.getElementById("wlLegend");
   if(lg){ try{ if(localStorage.getItem("wlLegendOpen")==="1") lg.style.display="block"; }catch(_){} }
+}
+
+// ── CSV BULK IMPORT (Watchlist v2 Part 5, browser surface) ─────────────────────────────
+// The backend chain (netlify storm-csv-import -> KCCStormAPI /csv_import) shipped with Part 5;
+// this is the operator UI for it, reached from the Watchlist manager. dry_run is FREE (parse +
+// cost only: no geocode, no Solar, no writes); the real import is WRITE and costs a one-time
+// Solar + Address-Validation call per row, so the operator ALWAYS sees the cost preview before
+// the Import button will fire. Uses the existing sdApi("csv-import", ...) path (declared in
+// SD_COMMANDS + redirect-covered) -- no new endpoint.
+let WL_IMP_CSV = "";     // the loaded CSV text (Preview and Import send the exact same bytes)
+let WL_IMP_ROWS = 0;     // parsed row count from the last dry-run; gates the Import button
+function wlImportView(){
+  const b=document.getElementById("wlBody"); if(!b) return;
+  wlSetTitle("Watchlist \\u2014 import CSV");
+  WL_IMP_CSV=""; WL_IMP_ROWS=0;
+  b.innerHTML =
+    "<button class='wl-back' id='wlImpBack'>\\u2190 back to list</button>"
+    + "<div class='wl-imp'>"
+    +   "<div class='wl-imp-drop' id='wlImpDrop'>"
+    +     "<input id='wlImpFile' type='file' accept='.csv,text/csv' style='display:none'>"
+    +     "<div class='wl-imp-dz' id='wlImpDz'>Drop a CSV here, or <button class='wl-back' id='wlImpPick'>choose a file</button>"
+    +       "<div class='wl-imp-hint'>One row per address. A header row with an <b>address</b> column is required; "
+    +         "owner / insurance / roof columns are optional and matched case-insensitively.</div></div>"
+    +   "</div>"
+    +   "<div id='wlImpMeta' class='wl-imp-meta'></div>"
+    +   "<div class='wl-imp-actions'>"
+    +     "<button id='wlImpPreview' class='wl-imp-btn' disabled>Preview &amp; cost</button>"
+    +     "<button id='wlImpRun' class='wl-imp-btn wl-imp-go' disabled>Import</button>"
+    +   "</div>"
+    +   "<div id='wlImpMsg' class='wl-imp-msg'></div>"
+    +   "<div id='wlImpOut' class='wl-imp-out'></div>"
+    + "</div>";
+  document.getElementById("wlImpBack").onclick = wlOpen;   // back to the (refreshed) list
+  const fileEl=document.getElementById("wlImpFile");
+  document.getElementById("wlImpPick").onclick=()=>fileEl.click();
+  const dz=document.getElementById("wlImpDrop");
+  dz.addEventListener("dragover", e=>{ e.preventDefault(); dz.classList.add("drag"); });
+  dz.addEventListener("dragleave", ()=>dz.classList.remove("drag"));
+  dz.addEventListener("drop", e=>{ e.preventDefault(); dz.classList.remove("drag");
+    const f=e.dataTransfer.files && e.dataTransfer.files[0]; if(f) wlImpLoad(f); });
+  fileEl.addEventListener("change", ()=>{ const f=fileEl.files && fileEl.files[0]; if(f) wlImpLoad(f); });
+  document.getElementById("wlImpPreview").onclick=wlImpPreview;
+  document.getElementById("wlImpRun").onclick=wlImpRun;
+}
+function wlImpLoad(file){
+  const meta=document.getElementById("wlImpMeta");
+  const rd=new FileReader();
+  rd.onload=()=>{
+    WL_IMP_CSV=String(rd.result||""); WL_IMP_ROWS=0;
+    const lines=WL_IMP_CSV.split(/\\r?\\n/).filter(l=>l.trim().length);
+    const dataRows=Math.max(0, lines.length-1);
+    const header=(lines[0]||"").split(",").map(s=>s.trim()).filter(Boolean);
+    const hasAddr=header.some(h=>/address|addr/i.test(h));
+    meta.innerHTML="<b>"+wlEsc(file.name)+"</b> \\u00b7 "+(file.size/1024).toFixed(1)+" KB \\u00b7 "
+      + dataRows+" data row"+(dataRows===1?"":"s")
+      + "<div class='wl-imp-hdr'>Header: "+(header.length? wlEsc(header.join(", ")) : "<i>none detected</i>")
+      + (hasAddr? " <span class='wl-imp-ok'>\\u2713 address column</span>"
+               : " <span class='wl-imp-bad'>\\u2717 no address column found</span>")+"</div>";
+    document.getElementById("wlImpPreview").disabled = !(WL_IMP_CSV.trim() && hasAddr);
+    document.getElementById("wlImpRun").disabled = true;   // must Preview (see the cost) before Import
+    document.getElementById("wlImpOut").innerHTML="";
+    document.getElementById("wlImpMsg").textContent = hasAddr? "" : "No column named 'address' \\u2014 the import needs one.";
+  };
+  rd.onerror=()=>{ meta.textContent="Could not read that file."; };
+  rd.readAsText(file);
+}
+async function wlImpPreview(){
+  if(!WL_IMP_CSV.trim()) return;
+  const msg=document.getElementById("wlImpMsg"); msg.textContent="Parsing &amp; pricing\\u2026";
+  document.getElementById("wlImpPreview").disabled=true;
+  try{
+    const res=await sdApi("csv-import", {csv:WL_IMP_CSV, dry_run:true});   // FREE: parse + cost only
+    WL_IMP_ROWS = (res && res.rows) || 0;
+    const cost=(res && res.cost) || {};
+    const parsed=(res && res.parsed) || [];
+    const blank=parsed.filter(r=>!r.address).length;
+    let h="<div class='wl-imp-cost'>"+wlEsc(cost.line||(WL_IMP_ROWS+" rows"))+"</div>";
+    if(blank) h+="<div class='wl-imp-warn'>"+blank+" row"+(blank===1?"":"s")+" have no address value and will be skipped.</div>";
+    const ign=(parsed[0] && parsed[0].ignored_columns) || [];
+    if(ign.length) h+="<div class='wl-imp-warn'>Ignored columns (not watchlist fields): "+wlEsc(ign.join(", "))+"</div>";
+    document.getElementById("wlImpOut").innerHTML=h;
+    msg.textContent="";
+    const run=document.getElementById("wlImpRun");
+    run.disabled = !(WL_IMP_ROWS>0);
+    run.textContent = "Import "+WL_IMP_ROWS+" address"+(WL_IMP_ROWS===1?"":"es");
+  }catch(e){ msg.textContent="Preview failed \\u2014 "+e.message; }
+  finally{ document.getElementById("wlImpPreview").disabled=false; }
+}
+async function wlImpRun(){
+  if(!(WL_IMP_ROWS>0)) return;
+  if(!confirm("Import "+WL_IMP_ROWS+" address"+(WL_IMP_ROWS===1?"":"es")+"? This geocodes and makes a "
+    +"one-time Solar call per address (see the cost above) and adds each to the watchlist.")) return;
+  const msg=document.getElementById("wlImpMsg");
+  msg.textContent="Importing "+WL_IMP_ROWS+" addresses\\u2026 (geocode \\u00b7 parcel \\u00b7 Solar per row; this can take a while)";
+  document.getElementById("wlImpRun").disabled=true; document.getElementById("wlImpPreview").disabled=true;
+  try{
+    // confirm_cost:true because the operator saw the cost preview and explicitly clicked Import
+    const res=await sdApi("csv-import", {csv:WL_IMP_CSV, do_validate:true, confirm_cost:true});
+    if(res && res.refused){ msg.textContent="Refused \\u2014 "+(res.reason||"cost gate"); document.getElementById("wlImpPreview").disabled=false; return; }
+    const results=(res && res.results) || [];
+    const added=(res && res.added) || 0, errors=(res && res.errors) || 0;
+    let h="<div class='wl-imp-done'>Added "+added+" \\u00b7 "+errors+" error"+(errors===1?"":"s")+"</div>";
+    h+="<table class='wl-imp-tbl'><thead><tr><th>#</th><th>Address</th><th>Status</th></tr></thead><tbody>";
+    for(const r of results){
+      const ok=r.status==="added";
+      h+="<tr><td>"+wlEsc(r.row_num)+"</td><td>"+wlEsc(r.address||"")+"</td>"
+        +"<td class='"+(ok?"wl-imp-ok":"wl-imp-bad")+"'>"+(ok?"added":("error \\u2014 "+wlEsc(r.error||"")))+"</td></tr>";
+    }
+    h+="</tbody></table><button class='wl-back' id='wlImpDone'>\\u2190 back to list</button>";
+    document.getElementById("wlImpOut").innerHTML=h; msg.textContent="";
+    const done=document.getElementById("wlImpDone"); if(done) done.onclick=wlOpen;
+  }catch(e){ msg.textContent="Import failed \\u2014 "+e.message; document.getElementById("wlImpPreview").disabled=false; }
 }
 
 // build the pinned photo pair (a) — omit a null photo gracefully, never a broken img
