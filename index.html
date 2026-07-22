@@ -1923,7 +1923,14 @@ async function msAddrAction(kind){
       // Part L: the open list panel and the pin layer refresh immediately -- no close/reopen or reload.
       await wlReflectChange();
     }
-  }catch(e){ msActMsg("Failed — " + e.message, true); }
+  }catch(e){
+    // A slow report drops the browser->gateway connection at ~30s while the engine (180s budget)
+    // keeps generating and EMAILS the PDF. sdApi tags that dropped-connection case; for a report,
+    // report it as "still generating", NOT a hard Failed (which was false — the email arrives).
+    if(kind==="report" && /no response reached the page/.test(e.message||""))
+      msActMsg("Report is generating and will arrive by email shortly (it takes longer than the page can wait). If it doesn't arrive in a few minutes, try again.");
+    else msActMsg("Failed — " + e.message, true);
+  }
   finally{ if(btn) btn.disabled=false; }
 }
 
@@ -2073,7 +2080,10 @@ function wlInject(){
   #wlPop .wl-imp-warn{font-size:11px;color:#f0a860;margin-top:4px}
   #wlPop .wl-imp-done{font-size:13px;color:#d1fae5;font-weight:600;margin-bottom:6px}
   #wlPop .wl-imp-tbl{width:100%;border-collapse:collapse;font-size:11px}
-  #wlPop .wl-imp-tbl th,#wlPop .wl-imp-tbl td{text-align:left;padding:3px 6px;border-bottom:1px solid #1c2636}`;
+  #wlPop .wl-imp-tbl th,#wlPop .wl-imp-tbl td{text-align:left;padding:3px 6px;border-bottom:1px solid #1c2636}
+  /* Part P: hail magnitude labels on storm-hit chips (same >=1.00" threshold as the PDF report) */
+  #wlPop .wl-hailq{color:#7dd3a8;font-weight:600}
+  #wlPop .wl-hailsub{color:#8b97a8;font-style:italic}`;
   document.head.appendChild(st);
   const d=document.createElement("div"); d.id="wlPop";
   d.innerHTML = "<div class='wl-bar' id='wlBar'><span class='wl-grip'>&#8942;&#8942;</span>"
@@ -2550,7 +2560,19 @@ async function wlDetail(pid){
   h += wlRoofIntel(r);
   h += "<div class='wl-sec'><h4>Storm hits ("+hits.length+")</h4>";
   if(!hits.length) h += "<span class='wl-msg'>none in the 5-year window</span>";
-  for(const x of hits) h += "<span class='wl-chip'><span class='wl-date' data-d='"+wlEsc(x.date)+"'>"+wlEsc(x.date)+"</span> &middot; "+wlEsc((x.perils||[]).join(", "))+"</span>";
+  // Storm-hit chips carry the POINT hail magnitude + the report's OWN >=1.00" qualifying flag
+  // (watchlist.storm_hits_on_record -> report.hail_history: same source as the PDF + claim_window),
+  // so a sub-1.00" hail day reads as "below threshold" on screen and can't look like a qualifying hit.
+  for(const x of hits){
+    let mag = "";
+    if(x.hail_size_in != null){
+      const s = Number(x.hail_size_in).toFixed(2);
+      mag = x.hail_reportable
+        ? " &middot; <span class='wl-hailq' title='Qualifying hail (\u2265 1.00\u2033 at the address)'>"+s+"\u2033</span>"
+        : " &middot; <span class='wl-hailsub' title='Below the 1.00\u2033 qualifying threshold'>"+s+"\u2033 below threshold</span>";
+    }
+    h += "<span class='wl-chip'><span class='wl-date' data-d='"+wlEsc(x.date)+"'>"+wlEsc(x.date)+"</span> &middot; "+wlEsc((x.perils||[]).join(", "))+mag+"</span>";
+  }
   h += "</div></div>";
   // Parcel (e)
   h += "<div class='wl-tab' data-tab='pc'>"+wlParcelFull(r.parcel_full)+"</div>";
@@ -2606,7 +2628,12 @@ async function wlDetail(pid){
     catch(e){ msg("Failed — "+e.message,true); } };
   document.getElementById("wlReport").onclick = async ()=>{ msg("Building report + saving PDF onto the address…");
     try{ const rr=await sdApi("watchlist-report",{property_id:pid}); msg(rr.ok?("\u2713 saved "+(rr.report_id||"")):(rr.reason||"no qualifying events")); setTimeout(()=>wlDetail(pid),700); }
-    catch(e){ msg("Failed — "+e.message,true); } };
+    catch(e){
+      // Dropped-connection (gateway timeout) != failure: the engine finishes and emails + saves the PDF.
+      if(/no response reached the page/.test(e.message||""))
+        msg("Report is generating; it will be emailed and saved onto the address shortly. Reopen this address in a few minutes to see the saved PDF.");
+      else msg("Failed — "+e.message,true);
+    } };
   document.getElementById("wlRemove").onclick = async ()=>{
     if(!confirm("Un-watch "+(r.address||"this address")+"? History is kept (the record is deactivated, not deleted).")) return;
     msg("Removing…");
