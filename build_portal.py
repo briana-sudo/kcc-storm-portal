@@ -1522,6 +1522,19 @@ function wlInject(){
   #wlPop .wl-tier{font-weight:700}#wlPop .wl-tier.BASE{color:#f59e0b}
   #wlPop .wl-caveat{color:#f59e0b;font-size:12px;margin-top:4px}
   #wlPop .wl-chip{display:inline-block;background:#1e293b;border-radius:12px;padding:3px 9px;margin:2px 4px 2px 0;font-size:12px}
+  #wlPop .wl-hgt-hint{font-weight:400;font-size:11px;color:#94a3b8}
+  #wlPop .wl-hgt{width:100%;border-collapse:collapse;margin-top:6px;font-size:12px}
+  #wlPop .wl-hgt th{text-align:left;color:#94a3b8;font-size:9px;text-transform:uppercase;letter-spacing:.04em;padding:2px 6px;border-bottom:1px solid #263041}
+  #wlPop .wl-hgt td{padding:3px 6px;border-bottom:1px solid #1b2431}
+  #wlPop .wl-hgt-sec{font-weight:700;color:#94a3b8}
+  #wlPop .wl-hgt-st{display:inline-block;min-width:26px;text-align:center;font-size:10px;font-weight:700;color:#fff;padding:1px 5px;border-radius:4px}
+  #wlPop .wl-hgt-st.s1{background:#166534}
+  #wlPop .wl-hgt-st.s2{background:#a05a00}
+  #wlPop .wl-hgt-st.s3{background:#991b1b}
+  #wlPop .wl-hgt-st.sx{background:#475569}
+  #wlPop .wl-flat{color:#4ade80;font-weight:700}
+  #wlPop .wl-steep{color:#fb923c;font-weight:700}
+  #wlPop .wl-hgt-src{color:#64748b;font-size:10px;margin-top:6px}
   #wlPop .wl-date{color:#60a5fa;cursor:pointer;text-decoration:underline}
   #wlPop .wl-ptable{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px}
   #wlPop .wl-ptable td{padding:4px 6px;border-bottom:1px solid #1c2637}
@@ -2007,6 +2020,51 @@ function wlRoofIntel(r){
   h += "</div></div>";
   return h;
 }
+// height & access (3DEP height stack, backfill_intel do_height) — per-side eave/max heights, per-side
+// story, per-side lift-setup flatness, whole-building peak, commercial parapet. INTERNAL surface. Every
+// value is an aerial ESTIMATE (disclosure on the header); a refused/absent read shows NO height, never a
+// number. Sides/flatness arrive snake_case from the graph (eave_ft/max_ft/story, grade_pct/flat_enough).
+function wlHgtReason(s){
+  return ({refused_occlusion:"insufficient open ground / tree occlusion",
+    dtm_unavailable:"no LiDAR elevation coverage under the roof",
+    refused_geocode:"address did not resolve to a building",
+    not_found:"no building detected",no_key:"imagery not configured",
+    error:"could not be computed",geocode_error:"address lookup failed"})[s] || "not run";
+}
+function wlHeightAccess(r){
+  let h = "<div class='wl-sec'><h4>Height &amp; access <span class='wl-hgt-hint'>estimated from aerial data &mdash; verify on site</span></h4><div class='wl-intel'>";
+  if(r.height_status!=="ok"){
+    h += "<div class='wl-line'><span class='wl-msg'>"+wlEsc(wlHgtReason(r.height_status))+" &mdash; verify on site</span></div>";
+    return h+"</div></div>";
+  }
+  h += "<div class='wl-line'><b>Story:</b> "+wlEsc(r.height_story||"—")
+     + " &nbsp; <b>Peak:</b> "+wlFmt(r.height_peak_ft,"f1")+" ft";
+  if(r.height_parapet_ft) h += " &nbsp; <b>Parapet:</b> "+wlFmt(r.height_parapet_ft,"f1")+" ft";
+  h += "</div>";
+  let sides={}, flat={};
+  try{ sides=JSON.parse(r.height_sides_json||"{}"); }catch(_){ sides={}; }
+  try{ flat=JSON.parse(r.height_flatness_json||"{}"); }catch(_){ flat={}; }
+  const order=["N","NE","E","SE","S","SW","W","NW"];
+  let rows="";
+  for(const sec of order){
+    const v=sides[sec]; if(!v) continue;
+    const f=flat[sec];
+    const setup = !f ? "<span class='wl-na'>&mdash;</span>"
+                     : (f.flat_enough ? "<span class='wl-flat'>flat</span>"
+                                      : "<span class='wl-steep'>"+wlFmt(f.grade_pct,"n")+"%</span>");
+    const sc = v.story==="1"?"s1":(v.story==="2"?"s2":(v.story==="3+/tall"?"s3":"sx"));
+    rows += "<tr><td class='wl-hgt-sec'>"+sec+"</td><td>"+wlFmt(v.eave_ft,"n")+"'</td><td>"+wlFmt(v.max_ft,"n")
+          + "'</td><td><span class='wl-hgt-st "+sc+"'>"+wlEsc(v.story)+"</span></td><td>"+setup+"</td></tr>";
+  }
+  if(rows) h += "<table class='wl-hgt'><thead><tr><th>Side</th><th>Eave</th><th>Max</th><th>Story</th><th>Lift setup</th></tr></thead><tbody>"+rows+"</tbody></table>";
+  const dq=[];
+  if(r.height_imagery_quality) dq.push("Google "+wlEsc(r.height_imagery_quality)+(r.height_imagery_date?" "+wlEsc(r.height_imagery_date):""));
+  if(r.height_collection) dq.push("3DEP "+wlEsc(r.height_collection));
+  if(r.height_offset_spread_cm!=null && r.height_offset_spread_cm!=="") dq.push("datum &plusmn;"+wlFmt(r.height_offset_spread_cm,"f1")+" cm");
+  if(dq.length) h += "<div class='wl-hgt-src'>"+dq.join(" &middot; ")+"</div>";
+  h += "</div></div>";
+  return h;
+}
 // parcel full (e) — Valuation/Building/Land&use expanded, Identifiers + long tail under an expander
 function wlParcelFull(pf){
   if(!pf || !pf.groups || !pf.groups.length){
@@ -2069,6 +2127,7 @@ async function wlDetail(pid){
   // Overview: roof intel (c) + storm hits (d)
   h += "<div class='wl-tab on' data-tab='ov'>";
   h += wlRoofIntel(r);
+  h += wlHeightAccess(r);
   h += "<div class='wl-sec'><h4>Storm hits ("+hits.length+")</h4>";
   if(!hits.length) h += "<span class='wl-msg'>none in the 5-year window</span>";
   // Storm-hit chips carry the POINT hail magnitude + the report's OWN >=1.00" qualifying flag
