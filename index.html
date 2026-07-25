@@ -2046,6 +2046,7 @@ function wlInject(){
   #wlPop .wl-flat{color:#4ade80;font-weight:700}
   #wlPop .wl-steep{color:#fb923c;font-weight:700}
   #wlPop .wl-hgt-src{color:#64748b;font-size:10px;margin-top:6px}
+  #wlPop .wl-hgt-noread{color:#94a3b8;font-style:italic}
   #wlPop .wl-date{color:#60a5fa;cursor:pointer;text-decoration:underline}
   #wlPop .wl-ptable{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px}
   #wlPop .wl-ptable td{padding:4px 6px;border-bottom:1px solid #1c2637}
@@ -2559,6 +2560,11 @@ function wlHeightAccess(r){
   let rows="";
   for(const sec of order){
     const v=sides[sec]; if(!v) continue;
+    if(v.eave_ft==null){   // per-side refused - a tree over the rear does not blank the front
+      const why = v.status==="no_ground" ? "no ground data" : "occluded";
+      rows += "<tr><td class='wl-hgt-sec'>"+sec+"</td><td colspan='4' class='wl-hgt-noread'>no reliable read &mdash; "+why+", verify on site</td></tr>";
+      continue;
+    }
     const f=flat[sec];
     const setup = !f ? "<span class='wl-na'>&mdash;</span>"
                      : (f.flat_enough ? "<span class='wl-flat'>flat</span>"
