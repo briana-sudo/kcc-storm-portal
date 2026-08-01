@@ -174,6 +174,25 @@ body.fullmap #fmExit:hover{background:#1e2b46}
 .ms-sugg{position:absolute;left:0;top:calc(100% + 4px);z-index:1400;min-width:360px;max-width:440px;background:#fff;border:1px solid #c9d2dd;
   border-radius:6px;box-shadow:0 12px 28px rgba(0,0,0,.45);max-height:320px;overflow:auto}
 .ms-sugg:empty{display:none}
+/* TEMP ADDRESS CARD (2026-07-31): search -> card; per-address actions hang off it. Banner keeps global only. */
+#tbar .hdr-search #msReport, #tbar .hdr-search #msWatch{display:none}   /* migrated into #tempCard */
+#tempCard{position:fixed;left:50%;top:60px;transform:translateX(-50%);z-index:1600;width:min(380px,94vw);
+  background:#fff;border:1px solid #c9d2dd;border-radius:10px;box-shadow:0 10px 34px rgba(0,0,0,.30);
+  font:13px/1.45 system-ui,-apple-system,sans-serif;overflow:hidden}
+#tempCard.hidden{display:none}
+#tempCard .tc-hd{display:flex;align-items:center;gap:8px;padding:9px 12px;background:#1F3A5F;color:#fff}
+#tempCard .tc-hd b{flex:1 1 auto;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#tempCard .tc-hd .tc-x{background:none;border:1px solid rgba(255,255,255,.45);color:#fff;border-radius:4px;cursor:pointer;padding:1px 8px;font-size:15px;line-height:1}
+#tempCard .tc-thumb{width:100%;height:148px;object-fit:cover;background:#eef2f7;display:block}
+#tempCard .tc-body{padding:10px 12px}
+#tempCard .tc-temp{font-size:11px;color:#8a94a3;margin-bottom:8px}
+#tempCard .tc-btns{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+#tempCard .tc-btns button{padding:9px 8px;border:1px solid #c9d2dd;background:#f6f8fb;border-radius:6px;cursor:pointer;font-size:12.5px;color:#223}
+#tempCard .tc-btns button:hover{border-color:#1F3A5F}
+#tempCard .tc-btns .tc-price{grid-column:1 / -1;background:#C1121F;color:#fff;border-color:#C1121F;font-weight:600}
+#tempCard .tc-btns .tc-price:disabled{opacity:.6;cursor:default}
+#tempCard .tc-msg{margin-top:8px;font-size:12px;color:#334;min-height:15px}
+#tempCard .tc-msg.err{color:#C1121F}
 .ms-sg{display:block;width:100%;text-align:left;background:none;border:none;border-bottom:1px solid #eef1f5;
   padding:7px 10px;font-size:12.5px;line-height:1.35;cursor:pointer;color:#223;white-space:normal}
 .ms-sg:hover{background:#eef3ff}
@@ -742,6 +761,22 @@ SHELL_HEAD = """  <div id="tbar">
 """
 
 SHELL_NODATA = """    <div id="banner" class="hidden"></div>
+    <!-- TEMP ADDRESS CARD: appears when an address resolves; TEMP (not saved) until an action warrants -->
+    <div id="tempCard" class="hidden">
+      <div class="tc-hd"><b id="tcAddr"></b><button class="tc-x" type="button" id="tcClose" title="Discard">&times;</button></div>
+      <img id="tcThumb" class="tc-thumb" alt="aerial view">
+      <div class="tc-body">
+        <div class="tc-temp">Temporary &mdash; nothing is saved unless you add it to the watchlist.</div>
+        <div class="tc-btns">
+          <button id="tcWatch" type="button">&#10133; Watchlist</button>
+          <button id="tcReport" type="button">&#128196; Report</button>
+          <button id="tcStorm" type="button">&#9928;&#65039; Storm dates</button>
+          <button id="tcParcel" type="button">&#127968; Parcel</button>
+          <button id="tcPrice" class="tc-price" type="button">&#128176; INSTANT PRICE</button>
+        </div>
+        <div id="tcMsg" class="tc-msg"></div>
+      </div>
+    </div>
   </div>
 """
 
@@ -1370,8 +1405,11 @@ async function sdApi(action, body){
   console.log("[sdApi] POST " + url, body);
   let r;
   try{
-    r = await fetch(url, { method:"POST",
-      headers:{ "Content-Type":"application/json" }, body: JSON.stringify(body) });
+    const _hdrs = { "Content-Type":"application/json" };
+    // non-secret portal marker ONLY on the packet lane (its functions allow it in CORS; adding it to every
+    // storm call would break the other functions' Content-Type-only preflight).
+    if(action==="packet" || action==="packet-status") _hdrs["X-KCC-Portal"]="kcc-storm-portal";
+    r = await fetch(url, { method:"POST", headers:_hdrs, body: JSON.stringify(body) });
   }catch(e){
     // TypeError here = no response ever reached the page: DNS, timeout, or a cross-origin
     // response blocked for want of Access-Control-Allow-Origin (a missing Netlify redirect
@@ -1447,6 +1485,97 @@ async function msAddrAction(kind){
     else { msActMsg("✓ Watching — " + (res.address||addr)); await wlReflectChange(); }
   }catch(e){ msActMsg("Failed — " + e.message, true); }
   finally{ if(btn) btn.disabled=false; }
+}
+
+// ── TEMP ADDRESS CARD (2026-07-31): search -> card; per-address actions hang off it. TEMP = not
+//    persisted (Add-to-Watchlist persists; close discards). INSTANT PRICE PRE-WARMS on resolve
+//    (operator rider) via /api/spend-packet (async fire) -> poll /api/spend-packet-status -> open PDF. ──
+let TC_ADDR="", TC_JOB=null, TC_PDF=null, TC_STATE="idle";
+let TC_ONWATCH=false, TC_PID="";     // card <-> watchlist state (2026-08-01): reflect existing membership
+function tcThumbUrl(lat,lng){ // ESRI World Imagery tile (no key), z18 slippy tile containing the point
+  const z=18, n=Math.pow(2,z);
+  const x=Math.floor((lng+180)/360*n);
+  const la=lat*Math.PI/180;
+  const y=Math.floor((1-Math.log(Math.tan(la)+1/Math.cos(la))/Math.PI)/2*n);
+  return "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/"+z+"/"+y+"/"+x;
+}
+function tcMsg(t,err){ const el=document.getElementById("tcMsg"); if(el){ el.textContent=t||""; el.className="tc-msg"+(err?" err":""); } }
+function tcResetPrice(){ const b=document.getElementById("tcPrice"); if(b){ b.disabled=false; b.textContent="💰 INSTANT PRICE"; } }
+function tcClose(){ const c=document.getElementById("tempCard"); if(c) c.classList.add("hidden"); TC_JOB=null; TC_PDF=null; TC_STATE="idle"; }
+function tcOpenPdf(){ if(!TC_PDF) return; try{ const bin=atob(TC_PDF); const u8=new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
+  const url=URL.createObjectURL(new Blob([u8],{type:"application/pdf"})); window.open(url,"_blank"); }catch(e){ tcMsg("Could not open the PDF.",true); } }
+function tcPollPrice(){
+  if(!TC_JOB) return;
+  const t0=Date.now(), CAP=90000;
+  const poll=async()=>{
+    if(!TC_JOB) return;                                   // card closed -> stop
+    if(Date.now()-t0>CAP){ TC_STATE="idle"; tcMsg("Pricing is taking longer than usual — tap INSTANT PRICE to retry.",true); tcResetPrice(); return; }
+    let s=null; try{ s=await sdApi("packet-status",{job_id:TC_JOB}); }catch(e){}
+    if(s && s.status==="done"){ TC_PDF=s.pdf_base64||null; TC_STATE="ready";
+      const b=document.getElementById("tcPrice"); const rng=(s.budget&&s.budget.length===2)?("$"+s.budget[0].toLocaleString()+"–$"+s.budget[1].toLocaleString()):"PDF";
+      if(b){ b.disabled=false; b.textContent="📄 Open budget ("+rng+")"; }
+      tcMsg("Ready in "+(s.seconds!=null?s.seconds+"s":"a moment")+". Tap to open the budget estimate."); return; }
+    if(s && s.status==="error"){ TC_STATE="idle"; tcMsg("Could not price: "+(s.detail||s.error||"unknown"),true); tcResetPrice(); return; }
+    setTimeout(poll, 2500);                               // generating / unknown -> keep polling
+  };
+  setTimeout(poll, 2000);
+}
+async function tcFirePrice(){
+  if(!TC_ADDR) return;
+  if(TC_STATE==="ready"){ tcOpenPdf(); return; }          // already have the PDF
+  if(TC_STATE==="pricing") return;                        // already running (pre-warm in flight)
+  TC_STATE="pricing"; TC_PDF=null;
+  const b=document.getElementById("tcPrice"); if(b){ b.disabled=true; b.textContent="⏳ Pricing…"; }
+  tcMsg("Measuring the roof and pricing… (~20s for a new address).");
+  try{ const f=await sdApi("packet",{address:TC_ADDR});
+    if(f && f.job_id){ TC_JOB=f.job_id; tcPollPrice(); } else { throw new Error((f&&f.error)||"no job id from server"); } }
+  catch(e){ TC_STATE="idle"; tcMsg("Could not start pricing: "+e.message,true); tcResetPrice(); }
+}
+function tcRenderWatch(){   // reflect watchlist membership on the Watch button (no duplicate add)
+  const b=document.getElementById("tcWatch"); if(!b) return;
+  if(TC_ONWATCH){ b.innerHTML="✓ On watchlist"; b.classList.add("tc-onwatch"); b.title="Already watched — tap to open its watchlist entry (no duplicate is added)."; }
+  else { b.innerHTML="➕ Watchlist"; b.classList.remove("tc-onwatch"); b.title="Add this address to the operator watchlist."; }
+}
+function showTempCard(addr, lat, lng, opts){
+  opts=opts||{};
+  TC_ADDR=addr; TC_JOB=null; TC_PDF=null; TC_STATE="idle";
+  TC_ONWATCH=!!opts.onWatch; TC_PID=opts.propertyId||"";
+  const c=document.getElementById("tempCard"); if(!c) return;
+  if(!c.dataset.wired){ c.dataset.wired="1";
+    document.getElementById("tcClose").addEventListener("click", tcClose);
+    document.getElementById("tcPrice").addEventListener("click", tcFirePrice);
+    // WATCH: round-trips. If already watched -> open the existing entry (never a duplicate add). If not ->
+    // add, then flip this card's state to "on watchlist" in place, without re-searching the address.
+    document.getElementById("tcWatch").addEventListener("click", async()=>{
+      if(TC_ONWATCH){
+        if(typeof wlOpen==="function") wlOpen();
+        if(TC_PID && typeof wlDetail==="function") wlDetail(TC_PID);
+        tcMsg("On the watchlist — opened its entry."); return;
+      }
+      const btn=document.getElementById("tcWatch"); if(btn) btn.disabled=true;
+      tcMsg("Adding to watchlist…");
+      try{
+        const res=await sdApi("watchlist-add",{address:TC_ADDR});
+        if(res && res.ok===false){ tcMsg(res.states_why||"Address did not resolve.",true); }
+        else { TC_ONWATCH=true; TC_PID=(res&&res.property_id)||TC_PID; tcRenderWatch();
+               tcMsg("✓ Added to watchlist — now saved.");
+               if(typeof wlReflectChange==="function") await wlReflectChange(); }
+      }catch(e){ tcMsg("Failed — "+e.message,true); }
+      finally{ if(btn) btn.disabled=false; }
+    });
+    document.getElementById("tcReport").addEventListener("click", ()=>{ const box=document.getElementById("msAddr"); if(box) box.value=TC_ADDR;
+      msAddrAction("report"); tcMsg("Report firing — it emails when ready."); });
+    document.getElementById("tcStorm").addEventListener("click", ()=>{ tcClose(); });   // map already flew to the address; storm swaths are the base view
+    document.getElementById("tcParcel").addEventListener("click", ()=>{ tcMsg("Parcel of record: "+TC_ADDR+" (full parcel/MSBF panel is queued)."); });
+  }
+  document.getElementById("tcAddr").textContent=addr;
+  tcRenderWatch();
+  const th=document.getElementById("tcThumb");
+  if(th){ if(lat!=null && lng!=null){ th.src=tcThumbUrl(lat,lng); th.style.display="block"; th.onerror=()=>{ th.style.display="none"; }; } else { th.style.display="none"; } }
+  tcResetPrice(); tcMsg(opts.approx ? "Live imagery is approximate here — the exact parcel could not be verified." : "");
+  c.classList.remove("hidden");
+  tcFirePrice();   // PRE-WARM (rider): fire the packet job on resolve so the tap is instant
 }
 
 // ── WATCHLIST v2.1 MANAGEMENT SURFACE (Part C, 2026-07-17) ─────────────────────────────────────
@@ -4140,8 +4269,25 @@ function addMapSearch(){
   }
   async function addrGo(query){ const v=(query||addrEl.value).trim(); if(!v) return; suggEl.innerHTML="";
     const old=addrEl.placeholder; addrEl.placeholder="Looking up\\u2026";
-    const loc=await resolveAddress(v); addrEl.placeholder=old;
-    if(loc){ addrEl.value=loc.label||v; flyToSearch(loc, 17); } else { addrEl.placeholder="address not found \\u2014 add the city"; } }
+    // (a) client geocode (keyless) -> instant map fly + a label to show while the locked resolver runs.
+    const loc=await resolveAddress(v);
+    let label=(loc&&loc.label)||v;
+    if(loc){ addrEl.value=label; flyToSearch(loc, 17); }
+    // (b) LOCKED resolver (Google Address Validation, server-side) -> the ROOFTOP/premise pin the card
+    //     renders its imagery from, plus watchlist membership. Coordinate-integrity: the card's aerial
+    //     thumb MUST sit on this pin, never the client Census/Photon interpolation used only for the fly.
+    let rr=null; try{ rr=await sdApi("resolve",{address:v}); }catch(e){}
+    addrEl.placeholder=old;
+    if(rr && rr.ok && rr.pin_lat!=null && rr.pin_lon!=null){
+      label=rr.formatted||label; addrEl.value=label;
+      flyToSearch({lat:rr.pin_lat,lng:rr.pin_lon,label:label}, 18);   // re-center on the verified rooftop pin
+      showTempCard(label, rr.pin_lat, rr.pin_lon, {onWatch:!!rr.on_watchlist, propertyId:rr.property_id||"", basis:rr.basis||""});
+    } else if(loc){
+      // resolver unavailable -> still show the card, but on the client point and SAY the imagery is approximate.
+      showTempCard(label, loc.lat, loc.lng, {approx:true});
+    } else {
+      addrEl.placeholder="address not found \\u2014 add the city";
+    } }
   addrEl.addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); addrGo(); } });
   // TYPEAHEAD (Lane B, 2026-07-17): Google Places (New) Autocomplete, HARD-bounded to the metro
   // geofence server-side (the key never reaches the browser). Supersedes the old Photon ranking — its
