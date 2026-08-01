@@ -789,7 +789,6 @@ body:not(.mobile) #wxBtn{display:none}   /* desktop: Weather lives on row 2; mob
       <button class="ms-clear" type="button" data-clear="msCity" title="Clear">&times;</button>
       <button id="msCityGo" class="ms-go" type="button">Go</button>
       <div class="ms-addrwrap"><input id="msAddr" type="text" placeholder="Address, City ST &mdash; Enter" autocomplete="off" title="Type the address WITH the city, then Enter (or pick a suggestion)"><button class="ms-clear" type="button" data-clear="msAddr" title="Clear">&times;</button><div id="msSugg" class="ms-sugg"></div></div>
-      <button id="msCardBtn" class="ms-act" type="button" title="Re-open the address card for the resolved address" style="display:none">&#128196; Card</button>
       <button id="msReport" class="ms-act" type="button" title="Build the 5-year storm report for this address and email it (PDF). A no-history address gets the finding in the email body — no document.">&#128196; Report</button>
       <button id="msWatch" class="ms-act" type="button" title="Add this address to the operator watchlist. Future storms sweep it and digest the hits to you. No homeowner is ever contacted.">&#128065; Watch</button>
       <button id="wlBtn" class="ms-act" type="button" title="Open the watchlist manager — every monitored address, owner/insurance details, roof intel, storm hits, saved reports.">&#128203; Watchlist</button>
@@ -2057,8 +2056,7 @@ function showTempCard(addr, lat, lng, opts){
   opts=opts||{};
   TC_ADDR=addr; TC_JOB=null; TC_PDF=null; TC_STATE="idle";
   TC_ONWATCH=!!opts.onWatch; TC_PID=opts.propertyId||"";
-  TC_LAST={addr:addr, lat:lat, lng:lng, opts:opts};   // retained for the Card relaunch button (no re-resolve)
-  const _cb=document.getElementById("msCardBtn"); if(_cb) _cb.style.display="";
+  TC_LAST={addr:addr, lat:lat, lng:lng, opts:opts};   // retained for the map-pin popup card icon (no re-resolve)
   const c=document.getElementById("tempCard"); if(!c) return;
   if(!c.dataset.wired){ c.dataset.wired="1";
     document.getElementById("tcClose").addEventListener("click", tcClose);
@@ -4738,12 +4736,26 @@ function censusGeocode(addr){ return new Promise(res=>{ const cb="__msgc"+(++_gc
   function cleanup(){ try{ delete window[cb]; s.remove(); }catch(e){} }
   document.body.appendChild(s); setTimeout(()=>{ if(window[cb]){ cleanup(); res(null); } }, 7000); }); }
 let SEARCH_MARKER = null;
-function flyToSearch(loc, zoom){
+function flyToSearch(loc, zoom, showCard){
   if(!TMAP) return;
   TMAP.setView([loc.lat, loc.lng], zoom);
   if(SEARCH_MARKER) TMAP.removeLayer(SEARCH_MARKER);
-  SEARCH_MARKER = L.marker([loc.lat, loc.lng]).addTo(TMAP)
-    .bindPopup(loc.label||"searched location", {autoPan:false}).openPopup();   // keep the building centered
+  SEARCH_MARKER = L.marker([loc.lat, loc.lng]).addTo(TMAP);
+  const lbl = loc.label||"searched location";
+  if(showCard){
+    // ADDRESS PIN POPUP (2026-08-01): [address] [card icon] + Leaflet's own X. The card icon re-opens the
+    // TEMP ADDRESS CARD INSTANTLY from retained state (TC_LAST) — no re-search, no re-resolve, no spinner.
+    const el = document.createElement("div"); el.className = "pin-pop";
+    const sp = document.createElement("span"); sp.textContent = lbl; sp.style.marginRight = "6px";
+    const btn = document.createElement("button"); btn.type = "button"; btn.className = "pin-card-btn";
+    btn.title = "Open the address card"; btn.innerHTML = "&#128196;";
+    btn.style.cssText = "border:1px solid #c9d2dd;background:#f6f8fb;border-radius:5px;cursor:pointer;padding:1px 6px;font-size:13px";
+    btn.addEventListener("click", ()=>{ if(TC_LAST) showTempCard(TC_LAST.addr, TC_LAST.lat, TC_LAST.lng, TC_LAST.opts); });
+    el.appendChild(sp); el.appendChild(btn);
+    SEARCH_MARKER.bindPopup(el, {autoPan:false}).openPopup();
+  } else {
+    SEARCH_MARKER.bindPopup(lbl, {autoPan:false}).openPopup();   // city/plain search — no card
+  }
 }
 function addMapSearch(){
   // Wires the TOP-BANNER search inputs (#msCity / #msAddr). Navigation only — moves
@@ -4758,14 +4770,8 @@ function addMapSearch(){
   if(watEl) watEl.addEventListener("click", ()=>msAddrAction("watch"));
   const wlEl=document.getElementById("wlBtn"); if(wlEl) wlEl.addEventListener("click", wlOpen);
   const wlPinsEl=document.getElementById("wlPinsBtn"); if(wlPinsEl) wlPinsEl.addEventListener("click", wlTogglePins);
-  // CARD RELAUNCH (2026-08-01): re-open the card from the RETAINED resolve state — no re-search, no re-resolve
-  // unless the field text no longer matches the resolved address (stale).
-  const cardBtn=document.getElementById("msCardBtn");
-  if(cardBtn) cardBtn.addEventListener("click", ()=>{
-    if(TC_LAST && addrEl.value.trim()===String(TC_LAST.addr).trim())
-      showTempCard(TC_LAST.addr, TC_LAST.lat, TC_LAST.lng, TC_LAST.opts);   // retained state
-    else if(addrEl.value.trim()) addrGo();                                  // stale -> re-resolve
-  });
+  // CARD RELAUNCH (2026-08-01): the affordance lives in the MAP PIN'S popup ([address] [card icon] + X),
+  // wired in flyToSearch — NOT in the banner (banner stays global-only per the card design).
   // OPERATOR CODE (2026-08-01): one-time per-device prompt; stored in localStorage, sent as X-KCC-Operator on
   // the packet lane. Never in the repo or page source — only Netlify env (server) + this browser.
   const gear=document.getElementById("opGear");
@@ -4781,7 +4787,7 @@ function addMapSearch(){
   document.querySelectorAll("#tbar .hdr-search .ms-clear").forEach(btn=>btn.addEventListener("click",()=>{
     const t=document.getElementById(btn.dataset.clear); if(t){ t.value=""; t.focus(); }
     if(btn.dataset.clear==="msAddr"){ suggEl.innerHTML="";
-      TC_LAST=null; const cb=document.getElementById("msCardBtn"); if(cb) cb.style.display="none";
+      TC_LAST=null;
       if(typeof tcClose==="function") tcClose(); }               // X clears the retained card state + closes it
     if(SEARCH_MARKER && TMAP){ TMAP.removeLayer(SEARCH_MARKER); SEARCH_MARKER=null; } }));
   // (1) CITY/STATE: forward geocode the first match, pan/zoom to it
@@ -4818,7 +4824,7 @@ function addMapSearch(){
     addrEl.placeholder=old;
     if(rr && rr.ok && rr.pin_lat!=null && rr.pin_lon!=null){
       label=rr.formatted||label; addrEl.value=label;
-      flyToSearch({lat:rr.pin_lat,lng:rr.pin_lon,label:label}, 18);   // re-center on the verified rooftop pin
+      flyToSearch({lat:rr.pin_lat,lng:rr.pin_lon,label:label}, 18, true);   // rooftop pin; popup carries the card icon
       showTempCard(label, rr.pin_lat, rr.pin_lon, {onWatch:!!rr.on_watchlist, propertyId:rr.property_id||"", basis:rr.basis||""});
     } else if(loc){
       // resolver unavailable -> still show the card, but on the client point and SAY the imagery is approximate.
