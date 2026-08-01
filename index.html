@@ -1905,7 +1905,9 @@ const SD_COMMANDS = ["solve", "active-promotion", "promote-solve", "send-promote
                      // v7 lookup (2026-07-17): Places autocomplete + CSV bulk import
                      "autocomplete", "csv-import",
                      // INSTANT PRICE (2026-07-31): async fire + status poll -> /api/spend-packet[-status]
-                     "packet", "packet-status"];
+                     "packet", "packet-status",
+                     // CARD RESOLVE (2026-08-01): locked-resolver rooftop pin + watchlist membership (read)
+                     "resolve"];
 async function sdApi(action, body){
   if(!SPEND_API) throw new Error("no spend endpoint configured (v2 proxy wiring)");
   if(!SD_COMMANDS.includes(action))
@@ -2000,6 +2002,7 @@ async function msAddrAction(kind){
 //    persisted (Add-to-Watchlist persists; close discards). INSTANT PRICE PRE-WARMS on resolve
 //    (operator rider) via /api/spend-packet (async fire) -> poll /api/spend-packet-status -> open PDF. ──
 let TC_ADDR="", TC_JOB=null, TC_PDF=null, TC_STATE="idle";
+let TC_ONWATCH=false, TC_PID="";     // card <-> watchlist state (2026-08-01): reflect existing membership
 function tcThumbUrl(lat,lng){ // ESRI World Imagery tile (no key), z18 slippy tile containing the point
   const z=18, n=Math.pow(2,z);
   const x=Math.floor((lng+180)/360*n);
@@ -2040,23 +2043,48 @@ async function tcFirePrice(){
     if(f && f.job_id){ TC_JOB=f.job_id; tcPollPrice(); } else { throw new Error((f&&f.error)||"no job id from server"); } }
   catch(e){ TC_STATE="idle"; tcMsg("Could not start pricing: "+e.message,true); tcResetPrice(); }
 }
-function showTempCard(addr, lat, lng){
+function tcRenderWatch(){   // reflect watchlist membership on the Watch button (no duplicate add)
+  const b=document.getElementById("tcWatch"); if(!b) return;
+  if(TC_ONWATCH){ b.innerHTML="✓ On watchlist"; b.classList.add("tc-onwatch"); b.title="Already watched — tap to open its watchlist entry (no duplicate is added)."; }
+  else { b.innerHTML="➕ Watchlist"; b.classList.remove("tc-onwatch"); b.title="Add this address to the operator watchlist."; }
+}
+function showTempCard(addr, lat, lng, opts){
+  opts=opts||{};
   TC_ADDR=addr; TC_JOB=null; TC_PDF=null; TC_STATE="idle";
+  TC_ONWATCH=!!opts.onWatch; TC_PID=opts.propertyId||"";
   const c=document.getElementById("tempCard"); if(!c) return;
   if(!c.dataset.wired){ c.dataset.wired="1";
     document.getElementById("tcClose").addEventListener("click", tcClose);
     document.getElementById("tcPrice").addEventListener("click", tcFirePrice);
-    document.getElementById("tcWatch").addEventListener("click", async()=>{ const box=document.getElementById("msAddr"); if(box) box.value=TC_ADDR;
-      await msAddrAction("watch"); tcMsg("Added to watchlist — now saved."); });
+    // WATCH: round-trips. If already watched -> open the existing entry (never a duplicate add). If not ->
+    // add, then flip this card's state to "on watchlist" in place, without re-searching the address.
+    document.getElementById("tcWatch").addEventListener("click", async()=>{
+      if(TC_ONWATCH){
+        if(typeof wlOpen==="function") wlOpen();
+        if(TC_PID && typeof wlDetail==="function") wlDetail(TC_PID);
+        tcMsg("On the watchlist — opened its entry."); return;
+      }
+      const btn=document.getElementById("tcWatch"); if(btn) btn.disabled=true;
+      tcMsg("Adding to watchlist…");
+      try{
+        const res=await sdApi("watchlist-add",{address:TC_ADDR});
+        if(res && res.ok===false){ tcMsg(res.states_why||"Address did not resolve.",true); }
+        else { TC_ONWATCH=true; TC_PID=(res&&res.property_id)||TC_PID; tcRenderWatch();
+               tcMsg("✓ Added to watchlist — now saved.");
+               if(typeof wlReflectChange==="function") await wlReflectChange(); }
+      }catch(e){ tcMsg("Failed — "+e.message,true); }
+      finally{ if(btn) btn.disabled=false; }
+    });
     document.getElementById("tcReport").addEventListener("click", ()=>{ const box=document.getElementById("msAddr"); if(box) box.value=TC_ADDR;
       msAddrAction("report"); tcMsg("Report firing — it emails when ready."); });
     document.getElementById("tcStorm").addEventListener("click", ()=>{ tcClose(); });   // map already flew to the address; storm swaths are the base view
     document.getElementById("tcParcel").addEventListener("click", ()=>{ tcMsg("Parcel of record: "+TC_ADDR+" (full parcel/MSBF panel is queued)."); });
   }
   document.getElementById("tcAddr").textContent=addr;
+  tcRenderWatch();
   const th=document.getElementById("tcThumb");
   if(th){ if(lat!=null && lng!=null){ th.src=tcThumbUrl(lat,lng); th.style.display="block"; th.onerror=()=>{ th.style.display="none"; }; } else { th.style.display="none"; } }
-  tcResetPrice(); tcMsg("");
+  tcResetPrice(); tcMsg(opts.approx ? "Live imagery is approximate here — the exact parcel could not be verified." : "");
   c.classList.remove("hidden");
   tcFirePrice();   // PRE-WARM (rider): fire the packet job on resolve so the tap is instant
 }
@@ -4752,8 +4780,25 @@ function addMapSearch(){
   }
   async function addrGo(query){ const v=(query||addrEl.value).trim(); if(!v) return; suggEl.innerHTML="";
     const old=addrEl.placeholder; addrEl.placeholder="Looking up\u2026";
-    const loc=await resolveAddress(v); addrEl.placeholder=old;
-    if(loc){ addrEl.value=loc.label||v; flyToSearch(loc, 17); showTempCard(loc.label||v, loc.lat, loc.lng); } else { addrEl.placeholder="address not found \u2014 add the city"; } }
+    // (a) client geocode (keyless) -> instant map fly + a label to show while the locked resolver runs.
+    const loc=await resolveAddress(v);
+    let label=(loc&&loc.label)||v;
+    if(loc){ addrEl.value=label; flyToSearch(loc, 17); }
+    // (b) LOCKED resolver (Google Address Validation, server-side) -> the ROOFTOP/premise pin the card
+    //     renders its imagery from, plus watchlist membership. Coordinate-integrity: the card's aerial
+    //     thumb MUST sit on this pin, never the client Census/Photon interpolation used only for the fly.
+    let rr=null; try{ rr=await sdApi("resolve",{address:v}); }catch(e){}
+    addrEl.placeholder=old;
+    if(rr && rr.ok && rr.pin_lat!=null && rr.pin_lon!=null){
+      label=rr.formatted||label; addrEl.value=label;
+      flyToSearch({lat:rr.pin_lat,lng:rr.pin_lon,label:label}, 18);   // re-center on the verified rooftop pin
+      showTempCard(label, rr.pin_lat, rr.pin_lon, {onWatch:!!rr.on_watchlist, propertyId:rr.property_id||"", basis:rr.basis||""});
+    } else if(loc){
+      // resolver unavailable -> still show the card, but on the client point and SAY the imagery is approximate.
+      showTempCard(label, loc.lat, loc.lng, {approx:true});
+    } else {
+      addrEl.placeholder="address not found \u2014 add the city";
+    } }
   addrEl.addEventListener("keydown", e=>{ if(e.key==="Enter"){ e.preventDefault(); addrGo(); } });
   // TYPEAHEAD (Lane B, 2026-07-17): Google Places (New) Autocomplete, HARD-bounded to the metro
   // geofence server-side (the key never reaches the browser). Supersedes the old Photon ranking — its

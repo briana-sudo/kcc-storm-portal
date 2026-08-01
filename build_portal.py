@@ -1357,7 +1357,11 @@ const SD_COMMANDS = ["solve", "active-promotion", "promote-solve", "send-promote
                      "watchlist-list", "watchlist-get", "watchlist-update", "watchlist-backfill",
                      "watchlist-report", "watchlist-remove",
                      // v7 lookup (2026-07-17): Places autocomplete + CSV bulk import
-                     "autocomplete", "csv-import"];
+                     "autocomplete", "csv-import",
+                     // INSTANT PRICE (2026-07-31): async fire + status poll -> /api/spend-packet[-status]
+                     "packet", "packet-status",
+                     // CARD RESOLVE (2026-08-01): locked-resolver rooftop pin + watchlist membership (read)
+                     "resolve"];
 async function sdApi(action, body){
   if(!SPEND_API) throw new Error("no spend endpoint configured (v2 proxy wiring)");
   if(!SD_COMMANDS.includes(action))
