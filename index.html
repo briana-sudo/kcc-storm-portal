@@ -249,7 +249,9 @@ body.mobile #tbar .hdr-search{flex-wrap:wrap;max-width:100%}
 body.mobile #tbar .hdr-search .ms-addrwrap{flex:1 1 100%}
 body.mobile #tbar .hdr-search #msAddr{flex:1 1 auto;width:auto;min-width:0}
 body.mobile #tbar .hdr-search .ms-act{flex:0 0 auto}
-/* ── PULL (item 10): on-demand 150mi capture. Header button + a floating confirm bar. ── */
+/* -- PULL (item 10): on-demand POLYGON capture. Header button + a floating draw bar +
+   a committed-pulls list. Operator draws a polygon (click vertices, close, Confirm);
+   committed polygons STACK, each a distinct colour, deletable one-by-one or all. -- */
 #tbar #pullBtn{background:#143a2a;color:#bdf0d6;border:1px solid #2c6e4c;border-radius:6px;padding:5px 10px;font-size:13px;cursor:pointer}
 #tbar #pullBtn:hover{background:#1a5038}
 body.pull-armed #tbar #pullBtn{background:#2c6e4c;color:#fff}
@@ -259,13 +261,23 @@ body.pull-armed #tbar #pullBtn{background:#2c6e4c;color:#fff}
 #pullPanel .pp-txt{font-weight:600}
 #pullPanel .pp-go{background:#1a7a4f;color:#fff;border:none;border-radius:6px;padding:6px 12px;font-weight:700;cursor:pointer}
 #pullPanel .pp-go:disabled{opacity:.6;cursor:default}
+#pullPanel .pp-close{background:#243a5e;color:#dbe6ff;border:1px solid #365a8c;border-radius:6px;padding:6px 11px;cursor:pointer}
+#pullPanel .pp-close:disabled{opacity:.5;cursor:default}
 #pullPanel .pp-x{background:#1e2b46;color:#cdd8ee;border:1px solid #2c3c5e;border-radius:6px;padding:6px 11px;cursor:pointer}
 #pullPanel .pp-status{font-size:12px;color:#ffd28a}
-/* center crosshair = the pull circle's center / aim point (over the map center) */
-#pullCrosshair{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:48px;height:48px;z-index:1100;pointer-events:none}
-#pullCrosshair .ch-h{position:absolute;left:0;right:0;top:50%;height:2px;background:#2f6fe0;transform:translateY(-50%);box-shadow:0 0 2px #fff,0 0 2px #fff}
-#pullCrosshair .ch-v{position:absolute;top:0;bottom:0;left:50%;width:2px;background:#2f6fe0;transform:translateX(-50%);box-shadow:0 0 2px #fff,0 0 2px #fff}
-#pullCrosshair .ch-dot{position:absolute;left:50%;top:50%;width:9px;height:9px;border-radius:50%;background:#2f6fe0;border:2px solid #fff;transform:translate(-50%,-50%);box-shadow:0 0 3px rgba(0,0,0,.4)}
+#pullPanel .hidden{display:none}
+/* committed-pulls list: a floating panel of the polygons the operator has locked in */
+#pullList{position:absolute;right:12px;top:96px;z-index:2400;width:210px;max-width:60vw;
+  background:rgba(11,18,32,.96);color:#e9eef7;border:1px solid #2c6e4c;border-radius:9px;padding:9px 11px;font-size:12px;
+  box-shadow:0 8px 24px rgba(0,0,0,.5)}
+#pullList .pl-hd{display:flex;align-items:center;justify-content:space-between;gap:8px;border-bottom:1px solid #24406a;padding-bottom:6px;margin-bottom:6px}
+#pullList .pl-hd b{font-size:11px;letter-spacing:.4px;text-transform:uppercase;color:#bdf0d6}
+#pullList .pl-clear{background:#3a1620;color:#ffd0da;border:1px solid #7a2c3c;border-radius:6px;padding:3px 8px;cursor:pointer;font-size:11px}
+#pullList .pl-row{display:flex;align-items:center;gap:8px;padding:4px 0}
+#pullList .pl-sw{width:13px;height:13px;border-radius:3px;border:1px solid rgba(255,255,255,.55);flex:0 0 auto}
+#pullList .pl-nm{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#pullList .pl-x{background:#1e2b46;color:#ffd0da;border:1px solid #2c3c5e;border-radius:5px;width:22px;height:22px;line-height:1;cursor:pointer;flex:0 0 auto}
+#pullList .pl-x:hover{background:#3a1620}
 /* ── LIVE (current) awareness group (item 7 ext): NEXRAD loop + NWS warnings +
    storm-track cones. Three independent toggles + opacity dials, visually separated
    from the engine's date-driven scored layers. All display-only, in-memory only. ── */
@@ -799,7 +811,7 @@ body:not(.mobile) #wxBtn{display:none}   /* desktop: Weather lives on row 2; mob
     <button id="wxBtn" title="Rain forecast for job scheduling">&#127783; Weather</button>
     <button id="expandBtn" title="Full-screen radar">&#9974; Full-screen radar</button>
     <button id="statusBtn" title="Service health (is Tempest alive)"><span class="hbdot"></span>Status</button>
-    <button id="pullBtn" title="Pull on-demand storm data for a 150mi circle">&#10515; Pull</button>
+    <button id="pullBtn" title="Draw a polygon to pull on-demand storm data for that area (stackable; multiple pulls)">&#10515; Pull</button>
     <button id="alertBtn" title="Tap to enable push alerts on this device">&#128276; Enable alerts</button>
     <div class="status" id="connStatus"></div>
   </div>
@@ -1301,6 +1313,11 @@ const API = (CFG.api || "").replace(/\/$/, "");
 // Item 10 PULL write endpoint (separate from the read /api/storm). Token is held
 // server-side in the Netlify function; this bundle carries NO credential.
 const PULL_API = CFG.pullApi || API.replace(/\/api\/storm$/, "/api/storm-pull");
+// POLYGON PULL (Phase 2): store / delete a per-date operator-drawn capture polygon. Write token
+// held server-side in the Netlify functions; this bundle carries NO credential. LIST rides the
+// read /api/storm -> /query whitelist (name "storm_pull_areas") via pquery().
+const PULL_STORE_API  = CFG.pullStoreApi  || API.replace(/\/api\/storm$/, "/api/storm-pull-store");
+const PULL_DELETE_API = CFG.pullDeleteApi || API.replace(/\/api\/storm$/, "/api/storm-pull-delete");
 const ARCHIVE_START = "2020-10-14";
 const MONTHS = ["January","February","March","April","May","June","July","August","September","October","November","December"];
 let AVAIL = {};        // {date: [perils]} for the storm-aware calendar
@@ -4859,79 +4876,210 @@ function addMapSearch(){
     if(w && !w.contains(e.target)) suggEl.innerHTML=""; });
 }
 
-// ── PULL (item 10): the FIRST portal WRITE. Click PULL -> a FIXED 150mi circle draws
-//    at the map center and follows pan (radius not resizable — it's the guardrail).
-//    Aim it, CONFIRM -> POST {center, radius=150, date} to the SECURED write endpoint
-//    (token server-side). On success, reload so the new chase data renders. NEVER moves
-//    the map on its own; renderMap's §3 core is untouched. ──
+// -- PULL (item 10, POLYGON rev 2026-08): the operator DRAWS the capture area instead of
+//    aiming a fixed circle. Click PULL -> draw mode: click map points to lay a polygon
+//    (live polyline + vertex dots); click near the first vertex OR press Close to seal the
+//    ring into a filled polygon; Confirm COMMITS it. Committed polygons STACK - each keeps
+//    a distinct colour, is listed in a side panel, and is deletable one-by-one (X in the
+//    list, or click the polygon) or all at once. Pull again to add another.
+//    Phase 1 = the draw/commit/manage INTERACTION only; committed rings are held in
+//    window._pulls for a later phase to submit + score (see TODO(phase2)). No fixed
+//    circle, no radius slider, no crosshair. Hand-rolled on vanilla Leaflet (no draw lib);
+//    NEVER moves the map on its own; renderMap's section-3 core is untouched. --
 function addPull(){
   const btn=document.getElementById("pullBtn"); if(!btn || !TMAP || btn.dataset.wired) return;
   btn.dataset.wired="1";
-  let circle=null, panel=null, recenter=null, crosshair=null;
-  function exitPull(){ document.body.classList.remove("pull-armed");
-    if(recenter){ TMAP.off("move", recenter); recenter=null; }
-    if(circle){ TMAP.removeLayer(circle); circle=null; }
-    if(crosshair){ crosshair.remove(); crosshair=null; }
-    if(panel){ panel.remove(); panel=null; } }
-  btn.addEventListener("click", ()=>{
-    if(circle){ exitPull(); return; }                          // toggle off
-    document.body.classList.add("pull-armed");
-    const R=150*1609.344;
-    circle=L.circle(TMAP.getCenter(), {radius:R, color:"#2f6fe0", weight:3, opacity:0.95, dashArray:"9,6",
-      fillColor:"#2f6fe0", fillOpacity:0.08, interactive:false}).addTo(TMAP);
-    // The 150mi circle (300mi across) is bigger than the default view, so its outline
-    // sits off-screen. Reveal it with a FIXED zoom (keeps center) instead of fitBounds:
-    // fitBounds needs a correct map pixel size, which can read 0 mid-render. At CONUS
-    // latitudes zoom 6 renders the full circle ~250px wide -> visible on phone + desktop.
-    if(TMAP.getZoom()>6){ try{ TMAP.setView(TMAP.getCenter(), 6, {animate:false}); }catch(e){} }
-    recenter=()=>circle.setLatLng(TMAP.getCenter());          // follows pan; radius FIXED
-    TMAP.on("move", recenter);
-    // center crosshair at the map center = the circle's center = the aim point
-    const mapEl=document.getElementById("map");
-    crosshair=document.createElement("div"); crosshair.id="pullCrosshair";
-    crosshair.innerHTML='<span class="ch-h"></span><span class="ch-v"></span><span class="ch-dot"></span>';
-    if(mapEl) mapEl.appendChild(crosshair);
+  // Committed pulls live here so a later phase can submit them. Each record:
+  //   { id:string, latlngs:[[lat,lng],...] (the ring, no repeated closing point),
+  //     color:"#rrggbb", layer:L.polygon }
+  window._pulls = window._pulls || [];
+  const PALETTE=["#f59e0b","#22d3aa","#a855f7","#ef476f","#38bdf8","#84cc16","#fb7185","#eab308"];
+  let colorIx=0;
+  const nextColor=()=>PALETTE[(colorIx++)%PALETTE.length];
+  const SNAP_PX=13;                                            // click within 13px of vertex 0 => close ring
+
+  // ---- draw-mode transient state (one polygon being drawn) ----
+  let drawing=false, verts=[], line=null, dots=[], sealed=null, panel=null, clickH=null;
+
+  function redrawLine(){
+    if(line){ TMAP.removeLayer(line); line=null; }
+    if(verts.length>=2){
+      line=L.polyline(verts, {color:"#2f6fe0", weight:2, opacity:0.9, dashArray:"6,5", interactive:false}).addTo(TMAP);
+    }
+  }
+  function clearDrawTemp(){
+    if(line){ TMAP.removeLayer(line); line=null; }
+    dots.forEach(d=>TMAP.removeLayer(d)); dots=[];
+    if(sealed){ TMAP.removeLayer(sealed); sealed=null; }
+    verts=[];
+  }
+  function exitDraw(){
+    drawing=false; document.body.classList.remove("pull-armed");
+    if(clickH){ TMAP.off("click", clickH); clickH=null; }
+    clearDrawTemp();
+    if(panel){ panel.remove(); panel=null; }
+  }
+  function renderPanel(){
+    if(!panel) return;
+    const txt=panel.querySelector(".pp-txt"), closeB=panel.querySelector(".pp-close"),
+          goB=panel.querySelector(".pp-go"), st=panel.querySelector(".pp-status");
+    if(sealed){
+      txt.textContent="Polygon closed. Confirm to commit this pull, or Cancel.";
+      closeB.classList.add("hidden"); goB.classList.remove("hidden");
+      st.textContent="";
+    }else{
+      txt.textContent="Click points to draw a polygon; click the first point (or Close) to finish. ("+verts.length+" pts)";
+      goB.classList.add("hidden"); closeB.classList.remove("hidden");
+      closeB.disabled = verts.length<3;
+    }
+  }
+  function closeRing(){
+    if(sealed || verts.length<3) return;
+    if(line){ TMAP.removeLayer(line); line=null; }
+    sealed=L.polygon(verts, {color:"#2f6fe0", weight:2, opacity:0.95,
+      fillColor:"#2f6fe0", fillOpacity:0.20, interactive:false}).addTo(TMAP);
+    renderPanel();
+  }
+  // Build a committed-pull leaflet layer (reused by commit() AND loadSaved()); wires the
+  // click-to-remove + tooltip. status is one of "saving"|"saved"|"error".
+  function mkPullLayer(rec){
+    const layer=L.polygon(rec.latlngs, {color:rec.color, weight:2, opacity:0.95,
+      fillColor:rec.color, fillOpacity:0.32, interactive:true}).addTo(TMAP);
+    rec.layer=layer;
+    layer.on("click", ()=>removePull(rec.id));
+    pullTip(rec);
+    return layer;
+  }
+  function pullTip(rec){
+    if(!rec.layer) return;
+    const s=rec.status==="saved" ? "saved for "+getDate()
+          : rec.status==="error" ? "NOT saved \u2014 "+(rec.err||"error")+" (click to remove)"
+          : rec.status==="saving" ? "saving\u2026"
+          : "committed pull";
+    rec.layer.bindTooltip("Pull \u2014 "+s+" \u00b7 click to remove", {sticky:true});
+  }
+  // POLYGON PULL (Phase 2): submit the committed ring to the per-date write endpoint. The ring
+  // is saved to getDate() (the date being VIEWED, not today). Fire-and-forget on the server
+  // (the grib compute runs detached); a 202 means the write is accepted + queued.
+  async function pullStore(rec){
+    rec.status="saving"; pullTip(rec); renderList();
+    try{
+      const r=await fetch(PULL_STORE_API, { method:"POST", headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ date:getDate(), id:rec.id, ring:rec.latlngs }) });
+      if(!r.ok){ throw new Error("HTTP "+r.status); }
+      rec.status="saved";
+    }catch(e){
+      rec.status="error"; rec.err=(e && e.message) || "network error";
+      console.error("[pull] store failed", e);
+    }
+    pullTip(rec); renderList();
+  }
+  function commit(){
+    if(!sealed) return;
+    const color=nextColor(), latlngs=verts.map(v=>[v[0], v[1]]);
+    const id="pull_"+Date.now().toString(36)+"_"+Math.floor(Math.random()*1e4).toString(36);
+    const rec={ id:id, latlngs:latlngs, color:color, layer:null, status:"saving" };
+    mkPullLayer(rec);
+    window._pulls.push(rec);
+    pullStore(rec);                                            // SUBMIT to the per-date endpoint
+    exitDraw();                                                // clears the draw temp (dots/sealed)
+    renderList();
+  }
+  // Fetch + render the polygons already saved to the date being VIEWED. Runs on load (addPull is
+  // wired once per page, and goDate() reloads the page), so returning to a date re-renders its
+  // pulls; a different date shows only ITS pulls. Reuses the committed-pull styling.
+  async function loadSaved(){
+    let rows=[];
+    try{ rows=await pquery("storm_pull_areas", { date:getDate() }); }
+    catch(e){ console.error("[pull] list failed", e); return; }
+    (rows||[]).forEach(row=>{
+      let ring=[]; try{ ring=JSON.parse(row.ring_json||"[]"); }catch(_){ ring=[]; }
+      if(!ring.length || window._pulls.some(r=>r.id===row.pull_id)) return;
+      const rec={ id:row.pull_id, latlngs:ring, color:nextColor(), layer:null, status:"saved" };
+      mkPullLayer(rec);
+      window._pulls.push(rec);
+    });
+    renderList();
+  }
+  function enterDraw(){
+    drawing=true; document.body.classList.add("pull-armed");
+    verts=[]; dots=[]; line=null; sealed=null;
     panel=document.createElement("div"); panel.id="pullPanel";
-    panel.innerHTML='<span class="pp-txt">Pan to aim the 150mi circle over a storm</span>'+
-      '<button class="pp-go" type="button">Confirm pull</button>'+
+    panel.innerHTML='<span class="pp-txt"></span>'+
+      '<button class="pp-close" type="button">Close</button>'+
+      '<button class="pp-go hidden" type="button">Confirm pull</button>'+
       '<button class="pp-x" type="button">Cancel</button><span class="pp-status"></span>';
     document.body.appendChild(panel);
-    panel.querySelector(".pp-x").onclick=exitPull;
-    panel.querySelector(".pp-go").onclick=async()=>{
-      const c=TMAP.getCenter(), st=panel.querySelector(".pp-status"), go=panel.querySelector(".pp-go");
-      go.disabled=true; st.textContent="Starting\u2026";
-      // FIRE: the compute is too slow for a synchronous request through the hosting
-      // chain, so /api/storm-pull returns a job_id immediately and computes in the
-      // background. We then POLL the read-only status until it lands, and refresh.
-      let job=null;
-      try{
-        const r=await fetch(PULL_API, { method:"POST", headers:{ "Content-Type":"application/json" },
-          body: JSON.stringify({ lat:+c.lat.toFixed(4), lon:+c.lng.toFixed(4), date:getDate(), radius_mi:150 }) });
-        let j={}; try{ j=await r.json(); }catch(e){}
-        if(!r.ok || j.status==="error" || !j.job_id){
-          st.textContent="\u26a0 "+(j.detail || j.error || ("HTTP "+r.status)); go.disabled=false; return; }
-        job=j.job_id;
-      }catch(e){ st.textContent="\u26a0 "+e.message; go.disabled=false; return; }
-      // POLL: storm_pull_status is a read-only whitelist query; polling never starts
-      // a compute. Absent or 'running' -> keep waiting; terminal -> act.
-      st.textContent="Computing in the background\u2026 you can keep working; this refreshes when ready";
-      const t0=Date.now(), CAP=240000;
-      const poll=async()=>{
-        if(Date.now()-t0>CAP){ st.textContent="\u26a0 still computing \u2014 reload in a moment to see it"; go.disabled=false; return; }
-        let s=null; try{ const rows=await pquery("storm_pull_status",{job_id:job}); s=(rows&&rows[0])||null; }catch(e){}
-        if(s && s.state==="done"){
-          st.textContent="\u2713 pulled "+s.circles+" circles \u00b7 "+s.swath_cells+" swath cells \u2014 refreshing\u2026";
-          if(recenter){ TMAP.off("move", recenter); recenter=null; }
-          setTimeout(()=>location.reload(), 1100); return; }
-        if(s && s.state==="empty"){
-          st.textContent="\u2713 no storm cells in this circle on "+getDate()+" \u2014 nothing to pull"; go.disabled=false; return; }
-        if(s && s.state==="error"){
-          st.textContent="\u26a0 "+(s.error||"pull failed"); go.disabled=false; return; }
-        setTimeout(poll, 4000);
-      };
-      setTimeout(poll, 3000);
+    panel.querySelector(".pp-close").onclick=closeRing;
+    panel.querySelector(".pp-go").onclick=commit;
+    panel.querySelector(".pp-x").onclick=exitDraw;
+    clickH=(e)=>{
+      if(sealed) return;                                       // ring already closed; await Confirm/Cancel
+      const p=e.latlng;
+      if(verts.length>=3){
+        const p0=TMAP.latLngToContainerPoint(L.latLng(verts[0][0], verts[0][1]));
+        const pc=TMAP.latLngToContainerPoint(p);
+        if(p0.distanceTo(pc)<=SNAP_PX){ closeRing(); return; } // clicked near first vertex -> seal
+      }
+      verts.push([p.lat, p.lng]);
+      dots.push(L.circleMarker(p, {radius:4, color:"#fff", weight:1,
+        fillColor:"#2f6fe0", fillOpacity:1, interactive:false}).addTo(TMAP));
+      redrawLine(); renderPanel();
     };
+    TMAP.on("click", clickH);
+    renderPanel();
+  }
+
+  // ---- committed-pulls list panel + deletion (backend-backed) ----
+  async function pullDelete(body){
+    try{
+      const r=await fetch(PULL_DELETE_API, { method:"POST", headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify(body) });
+      if(!r.ok) throw new Error("HTTP "+r.status);
+    }catch(e){ console.error("[pull] delete failed", e); }   // map/local state is removed regardless
+  }
+  function removePull(id){
+    const i=window._pulls.findIndex(r=>r.id===id); if(i<0) return;
+    const rec=window._pulls[i];
+    if(rec.layer){ TMAP.removeLayer(rec.layer); }
+    window._pulls.splice(i,1);
+    renderList();
+    pullDelete({ date:getDate(), id:id });                    // delete this polygon + its cluster
+  }
+  function clearAll(){
+    window._pulls.forEach(r=>{ if(r.layer) TMAP.removeLayer(r.layer); });
+    window._pulls.length=0;
+    renderList();
+    pullDelete({ date:getDate(), all:true });                 // delete every polygon for this date
+  }
+  function renderList(){
+    let el=document.getElementById("pullList");
+    if(!window._pulls.length){ if(el) el.remove(); return; }
+    if(!el){ el=document.createElement("div"); el.id="pullList"; document.body.appendChild(el); }
+    let rows="";
+    window._pulls.forEach((r,ix)=>{
+      const st = r.status==="saved" ? ' \u00b7 \u2713 saved'
+               : r.status==="error" ? ' \u00b7 \u26a0 not saved'
+               : r.status==="saving" ? ' \u00b7 saving\u2026' : '';
+      rows+='<div class="pl-row" data-id="'+r.id+'">'+
+        '<span class="pl-sw" style="background:'+r.color+'"></span>'+
+        '<span class="pl-nm">Pull '+(ix+1)+' \u00b7 '+r.latlngs.length+' pts'+st+'</span>'+
+        '<button class="pl-x" type="button" title="Remove this pull">\u00d7</button></div>';
+    });
+    el.innerHTML='<div class="pl-hd"><b>Committed pulls ('+window._pulls.length+')</b>'+
+      '<button class="pl-clear" type="button">Clear all</button></div>'+rows;
+    el.querySelector(".pl-clear").onclick=clearAll;
+    el.querySelectorAll(".pl-row").forEach(row=>{
+      row.querySelector(".pl-x").onclick=()=>removePull(row.getAttribute("data-id"));
+    });
+  }
+
+  btn.addEventListener("click", ()=>{
+    if(drawing){ exitDraw(); return; }                         // toggle off draw mode
+    enterDraw();
   });
+
+  loadSaved();          // render the polygons already saved to the date being viewed (per-date)
 }
 
 // ── CONTOUR PROTOTYPE (Option A): render the hail swath as smooth filled isobands
