@@ -2694,9 +2694,15 @@ function sgDrawSel(sol){          // teal solve circles; greyed = deselected (ca
   if(SG_GRP){ TMAP.removeLayer(SG_GRP); SG_GRP=null; }
   const layers=[];
   (sol.circles||[]).forEach(c=>{ const funded=(c.damaged||0)>0, off=SG_OFF.has(c.idx);
-    layers.push(L.circle([c.center_lat,c.center_lng],{pane:"solveCirc",radius:(c.radius_mi||1)*1609.344,
+    const circ=L.circle([c.center_lat,c.center_lng],{pane:"solveCirc",radius:(c.radius_mi||1)*1609.344,
       color: off?"#94a3b8":"#0d9488", weight:(funded&&!off)?2.5:1.5, opacity: off?.5:.95,
-      dashArray:(funded&&!off)?null:"5,4", fill:(funded&&!off), fillColor:"#14b8a6", fillOpacity:(funded&&!off)?.13:0 })); });
+      dashArray:(funded&&!off)?null:"5,4", fill:(funded&&!off), fillColor:"#14b8a6", fillOpacity:(funded&&!off)?.13:0 });
+    // PUNCH-LIST: hover shows the RING NUMBER next to the hail size (+ damaged), so a ring on the map
+    // maps unambiguously to its #idx row in the table below.
+    const _mh=(c.max_hail!=null)?(+c.max_hail).toFixed(2):"\\u2014";
+    circ.bindTooltip("#"+c.idx+" \\u00b7 max "+_mh+"\\u2033 \\u00b7 dmg "+(c.damaged||0).toLocaleString(),
+      {direction:"top", sticky:true, className:"sg-ring-tip"});
+    layers.push(circ); });
   SG_GRP=L.layerGroup(layers).addTo(TMAP);
 }
 function sgSnapPush(sol){         // persist a snapshot: floor + dial state + timestamp
