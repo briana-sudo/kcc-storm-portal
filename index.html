@@ -569,6 +569,7 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .cmp-pill.on-pace{background:#15301f;color:#7fe0a0;box-shadow:inset 0 0 0 1px #2b6a45}
 .cmp-pill.over-pace{background:#3a1b1b;color:#ff8a8a;box-shadow:inset 0 0 0 1px #7a2b2b}
 .cmp-pill.under-pace{background:#1b2740;color:#9fb3d9;box-shadow:inset 0 0 0 1px #34496e}
+.cmp-pill.too-early{background:#241b30;color:#c0a8e0;box-shadow:inset 0 0 0 1px #4a3a6a}
 .cmp-flags{margin-top:8px;display:flex;flex-direction:column;gap:5px}
 .cmp-flag{font-size:10.5px;border-radius:7px;padding:6px 8px;line-height:1.35}
 .cmp-flag.warn{background:#2e1c12;color:#ffbf9a;box-shadow:inset 0 0 0 1px #6a3a22}
@@ -4796,12 +4797,17 @@ function initCampaigns(){
        '<span>Impr <b>'+num(r.impressions)+'</b></span>'+
        '<span>Clicks <b>'+num(r.clicks)+'</b></span>'+
        '<span>CTR <b>'+pct(r.ctr)+'</b></span>'+
-       '<span>IS <b>'+pct(r.impression_share)+'</b></span>'+
+       '<span>Avg CPC (window) <b>'+money(r.avg_cpc)+'</b></span>'+
+       '<span>IS (today) <b>'+pct(r.impression_share)+'</b></span>'+
        '<span>Spend(win) <b>'+money(r.spend_window)+'</b></span>'+
        '</div>';
     const p=r.pacing;
-    if(p){ h+='<div class="cmp-pace">Today <b>'+money(p.spend_today)+'</b> / cap '+money(p.daily_budget)+
-       (p.label? ' <span class="cmp-pill '+p.label+'">'+p.label+(p.ratio!=null?" "+Math.round(p.ratio*100)+"%":"")+'</span>':'')+'</div>'; }
+    if(p){
+      // pacing pill: 'too-early' shows "too early" with no ratio (early-day false over-pace guard);
+      // real verdicts show the label + projected/cap ratio.
+      const plabel=(p.label==="too-early")?"too early":p.label;
+      h+='<div class="cmp-pace">Today <b>'+money(p.spend_today)+'</b> / cap '+money(p.daily_budget)+
+         (p.label? ' <span class="cmp-pill '+p.label+'">'+plabel+(p.ratio!=null?" "+Math.round(p.ratio*100)+"%":"")+'</span>':'')+'</div>'; }
     if(r.flags && r.flags.length){ h+='<div class="cmp-flags">';
       r.flags.forEach(function(f){ h+='<div class="cmp-flag '+(f.severity||"warn")+'"><span class="cmp-fk">'+esc((f.code||"").replace(/_/g," "))+'</span>'+esc(f.detail||"")+(f.modeled?' <span class="cmp-badge">proxy</span>':'')+'</div>'; });
       h+='</div>'; }
@@ -4902,7 +4908,10 @@ function initCampaigns(){
     h+='<div class="cmp-sec-t">Rings ('+rings.length+')</div>';
     if(!rings.length){ h+='<div class="cmp-empty">No per-ring metrics in the window.</div>'; }
     else { h+='<div class="cmp-rings">'; rings.forEach(function(r){
-      h+='<div class="cmp-ring"><span class="r-idx">#'+r.idx+'</span><span class="r-mets">Impr <b>'+num(r.impressions)+'</b> \u00b7 Clicks <b>'+num(r.clicks)+'</b> \u00b7 IS <b>'+pct(r.impression_share)+'</b></span><span>'+money(r.spend)+'</span></div>'; });
+      // per-ring budget-lost-IS is N/A: Google prohibits search_budget_lost_impression_share at
+      // ad_group granularity, so a per-ring value is unavailable (never a false 0). IS itself is legal.
+      const lostIs=(r.lost_is_budget==null)?"N/A":pct(r.lost_is_budget);
+      h+='<div class="cmp-ring"><span class="r-idx">#'+r.idx+'</span><span class="r-mets">Impr <b>'+num(r.impressions)+'</b> \u00b7 Clicks <b>'+num(r.clicks)+'</b> \u00b7 IS <b>'+pct(r.impression_share)+'</b> \u00b7 Lost-IS(budget) <b>'+lostIs+'</b></span><span>'+money(r.spend)+'</span></div>'; });
       h+='</div>'; }
     body.innerHTML=h;
     body.querySelector(".cmp-back").onclick=cmpLoad;
