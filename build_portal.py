@@ -1560,7 +1560,13 @@ const SD_COMMANDS = ["solve", "active-promotion", "promote-solve", "send-promote
                      // serving, update-live re-points the RUNNING campaign's daily budget to the re-solved
                      // recommendation (mutate-never-recreate, status untouched, budget-sanity gated), and
                      // wind-down drops the budget to the maintenance floor (budget-only). Both WRITE-gated.
-                     "update-live", "wind-down"];
+                     "update-live", "wind-down",
+                     // LIVE-CAMPAIGN GEO/PULL reconcile (Phase C, 2026-08-22): when a Pull WIDENED the
+                     // geometry, the Update-live tap reshapes the RUNNING campaign TARGETING in place
+                     // (adds pulled rings born ENABLED, updates changed geo/cpc, pauses dropped rings,
+                     // re-points the budget) - never touches campaign.status, never duplicates an ad
+                     // group. The Pull to Solve to Update-live route when the geometry changed.
+                     "update-live-geo"];
 async function sdApi(action, body){
   if(!SPEND_API) throw new Error("no spend endpoint configured (v2 proxy wiring)");
   if(!SD_COMMANDS.includes(action))
@@ -3506,29 +3512,62 @@ function sgLiveConfirm(opts){
     goBtn.textContent=opts.working||"Working\\u2026"; opts.onGo(close); };
 }
 
+// True when the date being viewed carries operator-drawn PULL polygons (saved/committed). A pull
+// WIDENS the geometry (a new ring for the captured area), so "Update live" must reshape TARGETING
+// (update-live-geo), not just the budget (update-live). window._pulls is the pull tool's in-session
+// store, loaded for the viewed date; empty/absent -> a pure budget change routes to update-live.
+function sgHasPulls(){
+  try{ return !!(window._pulls && window._pulls.some(function(p){
+    return p && (p.status==="saved" || p.status==="committed"); })); }
+  catch(e){ return false; }
+}
+
 async function sgUpdateLive(){
-  // Re-point the RUNNING campaign's daily budget to the re-solved recommendation. Requires a live
-  // campaign AND an active promotion (Approve the adjusted solve first). Confirmed + i_reviewed:true.
+  // Re-point the RUNNING campaign to the re-solved geometry. Requires a live campaign AND an active
+  // promotion (Approve the adjusted solve first). Confirmed + i_reviewed:true. When the date has PULL
+  // polygons the geometry changed, so this reshapes TARGETING in place (update-live-geo): adds the
+  // pulled rings (born ENABLED so they serve at once), updates changed geo/cpc, pauses dropped rings,
+  // re-points the budget - never touches status, never duplicates an ad group. Otherwise it is a pure
+  // budget re-point (update-live).
   if(!SG_LIVE) return;
   let info; try{ info=await sdApi("active-promotion",{date:getDate(), peril:SG_PERIL||"hail"}); }catch(e){ info=null; }
   const v=document.getElementById("sdVerdict");
   if(!info || !info.promoted){
     if(v){ v.textContent="Update live needs an active promotion \\u2014 adjust the dial, then Approve, then Update live."; v.className="sd-verdict warn"; }
     return; }
+  const geoReshape=sgHasPulls();
   const daily=Math.round(info.recommended_spend||0).toLocaleString();
   sgLiveConfirm({
-    title:"\\u26a0 Update live \\u2014 change live spend?", cls:"go", confirm:"Yes, update live", working:"Updating\\u2026",
+    title:(geoReshape?"\\u26a0 Update live \\u2014 reshape targeting + spend?":"\\u26a0 Update live \\u2014 change live spend?"),
+    cls:"go", confirm:"Yes, update live", working:"Updating\\u2026",
     rows:[["Storm", getDate()+" \\u00b7 "+(SG_PERIL||"hail")], ["New daily budget", "$"+daily],
-          ["Promotion", "v"+(info.promotion_version||"?")+" \\u00b7 "+(info.n_circles||0)+" rings"]],
-    warn:"This mutates the <b>running</b> campaign in place (never recreates it, keeps it serving) and "+
-         "<b>changes live spend</b> to the new daily budget shown. Confirm only if you have reviewed the spend.",
+          ["Promotion", "v"+(info.promotion_version||"?")+" \\u00b7 "+(info.n_circles||0)+" rings"]]
+         .concat(geoReshape?[["Change", "reshape targeting to pulled geometry (in place)"]]:[]),
+    warn:(geoReshape
+      ? "A Pull changed the geometry. This reshapes the <b>running</b> campaign's targeting in place \\u2014 "+
+        "it ADDS the new pulled rings (they start serving immediately), updates changed geo/cpc, and PAUSES "+
+        "any dropped rings. It <b>never recreates the campaign, never touches its status, and never duplicates "+
+        "an ad group</b>. It also <b>changes live spend</b> to the new daily budget. Confirm only if reviewed."
+      : "This mutates the <b>running</b> campaign in place (never recreates it, keeps it serving) and "+
+        "<b>changes live spend</b> to the new daily budget shown. Confirm only if you have reviewed the spend."),
     onGo:async function(done){
       let res;
-      try{ res=await sdApi("update-live",{date:getDate(), peril:SG_PERIL||"hail", i_reviewed:true}); }
+      // Explicit literal branch (not a variable): the budget-only path fires update-live; a Pull-widened
+      // geometry fires update-live-geo (reshape targeting in place). Both are SD_COMMANDS + redirect-covered.
+      try{ res = geoReshape
+             ? await sdApi("update-live-geo",{date:getDate(), peril:SG_PERIL||"hail", i_reviewed:true})
+             : await sdApi("update-live",{date:getDate(), peril:SG_PERIL||"hail", i_reviewed:true}); }
       catch(e){ done(); v.textContent="Update live failed \\u2014 "+e.message; v.className="sd-verdict warn"; sgRefreshLive(); return; }
       done();
       if(res && (res.ok===false || res.updated===false)){
         v.textContent="Update live refused \\u2014 "+(res.states_why||res.reason||res.error||"the server refused this action"); v.className="sd-verdict warn"; }
+      else if(geoReshape){
+        const added=(res&&res.rings_added&&res.rings_added.length)||0;
+        const changed=(res&&res.rings_changed&&res.rings_changed.length)||0;
+        const paused=(res&&res.rings_paused&&res.rings_paused.length)||0;
+        v.textContent="Live campaign reshaped \\u2014 "+added+" ring(s) added, "+changed+" changed, "+paused+
+          " paused \\u00b7 $"+Math.round((res&&res.daily_budget)||0).toLocaleString()+"/day for "+getDate()+".";
+        v.className="sd-verdict ok"; }
       else { v.textContent="Live budget updated \\u2014 $"+Math.round((res&&res.daily_budget)||0).toLocaleString()+"/day for "+getDate()+"."; v.className="sd-verdict ok"; }
       sgRefreshLive();
     }});
