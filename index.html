@@ -607,6 +607,37 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .cmp-stflag.junk{background:#3a1b1b;color:#ff8a8a}
 .cmp-st-mets{display:flex;gap:10px;flex-wrap:wrap;margin-top:5px;color:#aebcd4}.cmp-st-mets b{color:#e9eef7}
 .cmp-st-reason{margin-top:4px;font-size:10px;color:#8aa0c6}
+/* GO-LIVE / PAUSE controls (2026-08-22, punch-list #4): the SANCTIONED operator-gated ENABLE + off-switch */
+.cmp-golive{background:#13203c;border:1px solid #243352;border-radius:10px;padding:10px 12px;margin-bottom:10px}
+.cmp-golive .cmp-gl-hd{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.cmp-golive .cmp-gl-hd .cmp-gl-state{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:2px 8px;border-radius:20px}
+.cmp-gl-state.live{background:#15301f;color:#7fe0a0;box-shadow:inset 0 0 0 1px #2b6a45}
+.cmp-gl-state.paused{background:#1b2740;color:#9fb3d9;box-shadow:inset 0 0 0 1px #34496e}
+.cmp-golive .cmp-gl-sub{font-size:10.5px;color:#8aa0c6;margin-bottom:9px;line-height:1.35}
+.cmp-golive .cmp-gl-sub b{color:#e9eef7}
+.cmp-gl-btn{border:none;border-radius:7px;padding:9px 14px;font-size:12px;font-weight:800;letter-spacing:.3px;cursor:pointer;width:100%}
+.cmp-gl-btn.go{background:#c0392b;color:#fff}.cmp-gl-btn.go:hover{background:#d84636}
+.cmp-gl-btn.pause{background:#243352;color:#cdeafe}.cmp-gl-btn.pause:hover{background:#2f4a72}
+.cmp-gl-btn:disabled{opacity:.5;cursor:default}
+.cmp-gl-msg{margin-top:8px;font-size:10.5px;border-radius:7px;padding:7px 9px;line-height:1.4}
+.cmp-gl-msg.ok{background:#15301f;color:#7fe0a0;box-shadow:inset 0 0 0 1px #2b6a45}
+.cmp-gl-msg.err{background:#2e1c12;color:#ffbf9a;box-shadow:inset 0 0 0 1px #6a3a22}
+/* CONFIRM dialog — spends real money; a deliberate, unmissable gate */
+.cmp-confirm-bk{position:fixed;inset:0;z-index:2600;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:16px}
+.cmp-confirm{background:#0f1830;border:1px solid #34496e;border-radius:12px;max-width:420px;width:100%;padding:18px 18px 16px;box-shadow:0 12px 40px rgba(0,0,0,.55);color:#e9eef7}
+.cmp-confirm h3{margin:0 0 10px;font-size:15px;font-weight:800}
+.cmp-confirm h3.go{color:#ff8a7a}.cmp-confirm h3.pause{color:#9fb8e0}
+.cmp-confirm .cmp-cf-rows{background:#13203c;border-radius:9px;padding:10px 12px;margin-bottom:12px;font-size:12px}
+.cmp-confirm .cmp-cf-rows .r{display:flex;justify-content:space-between;gap:10px;padding:3px 0}
+.cmp-confirm .cmp-cf-rows .r span{color:#8aa0c6}.cmp-confirm .cmp-cf-rows .r b{color:#e9eef7;font-weight:800;text-align:right}
+.cmp-confirm .cmp-cf-warn{background:#2e1c12;color:#ffcbb0;border-radius:9px;padding:9px 11px;font-size:11.5px;line-height:1.45;margin-bottom:14px;box-shadow:inset 0 0 0 1px #6a3a22}
+.cmp-confirm .cmp-cf-warn b{color:#ffd7a0}
+.cmp-confirm .cmp-cf-btns{display:flex;gap:9px}
+.cmp-confirm .cmp-cf-btns button{flex:1;border:none;border-radius:8px;padding:10px;font-size:12px;font-weight:800;cursor:pointer}
+.cmp-confirm .cmp-cf-cancel{background:#243352;color:#cdeafe}.cmp-confirm .cmp-cf-cancel:hover{background:#2f4a72}
+.cmp-confirm .cmp-cf-go{background:#c0392b;color:#fff}.cmp-confirm .cmp-cf-go:hover{background:#d84636}
+.cmp-confirm .cmp-cf-go.pause{background:#2f6fe0}.cmp-confirm .cmp-cf-go.pause:hover{background:#3f7ef0}
+.cmp-confirm .cmp-cf-btns button:disabled{opacity:.55;cursor:default}
 @media(max-width:520px){.cmp-panel{width:100%}}
 
 /* map locate / re-centre control (matches the Leaflet zoom bar) */
@@ -2017,7 +2048,11 @@ const SD_COMMANDS = ["solve", "active-promotion", "promote-solve", "send-promote
                      // CARD RESOLVE (2026-08-01): locked-resolver rooftop pin + watchlist membership (read)
                      "resolve",
                      // CAMPAIGN MONITOR (2026-08-22): READ-ONLY portfolio rollup + per-campaign detail + banner (Design Lock v3 §13/§12)
-                     "campaign-status"];
+                     "campaign-status",
+                     // GO-LIVE / PAUSE (2026-08-22, punch-list #4): the SANCTIONED operator-gated ENABLE
+                     // (the ONE approved enable path; money-gate moved from Google's UI to the portal tap)
+                     // + the operator off-switch. Both WRITE-gated; go-live is i_reviewed + budget-sanity gated.
+                     "go-live", "pause"];
 async function sdApi(action, body){
   if(!SPEND_API) throw new Error("no spend endpoint configured (v2 proxy wiring)");
   if(!SD_COMMANDS.includes(action))
@@ -4742,6 +4777,7 @@ function initCampaigns(){
     body.scrollTop=keep;   // Rule 22: refresh must not jump the scroll position
   }
 
+  let glFlash=null;   // one-shot go-live/pause result message, rendered on the next detail draw (Rule 22-safe)
   function renderDetail(rep){
     const body=ov.querySelector(".cmp-body");
     const c=rep.campaign;
@@ -4749,6 +4785,22 @@ function initCampaigns(){
       body.querySelector(".cmp-back").onclick=cmpLoad; return; }
     let h='<div class="cmp-bar"><button class="cmp-back">\u2190 Portfolio</button><button class="cmp-refresh">\u21bb Refresh</button></div>';
     h+=rowHtml(c,false);
+    // ── GO-LIVE / PAUSE (2026-08-22, punch-list #4): the SANCTIONED operator-gated ENABLE + off-switch.
+    //    The human money-gate moved from Google's Ads UI to this tap; go-live spends real money and is
+    //    confirmed in a dialog + gated server-side (i_reviewed + budget-sanity vs the solve).
+    let flashHtml='';
+    if(glFlash && glFlash.campaign===c.campaign){
+      flashHtml='<div class="cmp-gl-msg '+(glFlash.err?"err":"ok")+'">'+esc(glFlash.text)+'</div>'; glFlash=null; }
+    h+='<div class="cmp-golive">'+
+       '<div class="cmp-gl-hd"><span class="cmp-sec-t" style="margin:0">Campaign control</span>'+
+       '<span class="cmp-gl-state '+(c.serving?"live":"paused")+'">'+(c.serving?"LIVE":"PAUSED")+'</span></div>'+
+       '<div class="cmp-gl-sub">Storm <b>'+esc(c.date)+'</b> \u00b7 '+esc(c.peril||"hail")+
+       ' \u00b7 daily budget <b>'+money(c.daily_budget)+'</b></div>'+
+       (c.serving
+         ? '<button class="cmp-gl-btn pause" data-gl="pause">\u23f8 Pause campaign (stop serving)</button>'
+         : '<button class="cmp-gl-btn go" data-gl="go">\u25b6 Go Live \u2014 start spending real money</button>')+
+       flashHtml+
+       '</div>';
     const bn=c.banner||{};
     h+='<div class="cmp-sec-t">Banner / RSA</div>';
     h+='<div class="cmp-bannerhd"><span>Ad strength</span><span class="cmp-adstr">'+esc(bn.ad_strength||c.ad_strength||"\u2014")+'</span></div>';
@@ -4793,7 +4845,51 @@ function initCampaigns(){
     body.innerHTML=h;
     body.querySelector(".cmp-back").onclick=cmpLoad;
     const rf=body.querySelector(".cmp-refresh"); if(rf) rf.onclick=function(){ cmpDrill(c.campaign); };
+    const glBtn=body.querySelector(".cmp-gl-btn");
+    if(glBtn){ glBtn.onclick=function(){ cmpConfirm(c, glBtn.dataset.gl); }; }
     body.scrollTop=0;   // drill-in is navigation to a new view -> top is correct
+  }
+
+  // CONFIRM dialog for the money-gate. Shows the storm, the daily budget, and an explicit real-money
+  // warning; only on the operator's confirm tap do we fire the WRITE (i_reviewed:true). Server still
+  // enforces budget-sanity + campaign-must-exist, so a refusal surfaces here as states-why.
+  function cmpConfirm(c, mode){
+    const isGo=(mode==="go");
+    const bk=document.createElement("div"); bk.className="cmp-confirm-bk";
+    const warn=isGo
+      ? 'This turns the campaign ON and <b>spends real money</b> \u2014 up to the daily budget shown, every day, until you pause it. Confirm only if you have reviewed the spend.'
+      : 'This pauses the campaign and stops all serving immediately. It does not delete the campaign or its Smart Bidding learning.';
+    bk.innerHTML=
+      '<div class="cmp-confirm">'+
+        '<h3 class="'+(isGo?"go":"pause")+'">'+(isGo?"\u26a0 Go Live \u2014 spend real money?":"Pause campaign?")+'</h3>'+
+        '<div class="cmp-cf-rows">'+
+          '<div class="r"><span>Campaign</span><b>'+esc(c.campaign)+'</b></div>'+
+          '<div class="r"><span>Storm</span><b>'+esc(c.date)+' \u00b7 '+esc(c.peril||"hail")+'</b></div>'+
+          '<div class="r"><span>Daily budget</span><b>'+money(c.daily_budget)+'</b></div>'+
+          '<div class="r"><span>Current status</span><b>'+esc(c.status||(c.serving?"ENABLED":"PAUSED"))+'</b></div>'+
+        '</div>'+
+        '<div class="cmp-cf-warn">'+warn+'</div>'+
+        '<div class="cmp-cf-btns"><button class="cmp-cf-cancel">Cancel</button>'+
+          '<button class="cmp-cf-go'+(isGo?"":" pause")+'">'+(isGo?"Yes, go live":"Yes, pause")+'</button></div>'+
+      '</div>';
+    document.body.appendChild(bk);
+    const close=function(){ if(bk.parentNode) bk.parentNode.removeChild(bk); };
+    bk.onclick=function(e){ if(e.target===bk) close(); };
+    bk.querySelector(".cmp-cf-cancel").onclick=close;
+    const goBtn=bk.querySelector(".cmp-cf-go");
+    goBtn.onclick=async function(){
+      goBtn.disabled=true; bk.querySelector(".cmp-cf-cancel").disabled=true;
+      goBtn.textContent=isGo?"Going live\u2026":"Pausing\u2026";
+      let res;
+      try{ res=await sdApi(isGo?"go-live":"pause",{date:c.date, peril:c.peril||"hail", i_reviewed:true}); }
+      catch(e){ glFlash={campaign:c.campaign, text:(isGo?"Go-live failed \u2014 ":"Pause failed \u2014 ")+((e&&e.message)||String(e)), err:true};
+        close(); cmpDrill(c.campaign); return; }
+      if(res && res.ok===false){
+        glFlash={campaign:c.campaign, text:"Refused \u2014 "+(res.reason||res.states_why||res.error||"the server refused this action"), err:true}; }
+      else {
+        glFlash={campaign:c.campaign, text:isGo?"Campaign is now LIVE \u2014 serving started.":"Campaign PAUSED \u2014 serving stopped.", err:false}; }
+      close(); cmpDrill(c.campaign);   // refresh so the LIVE/PAUSED state + budget reflect the change
+    };
   }
 
   async function cmpLoad(){
