@@ -588,6 +588,25 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .cmp-lbl{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;padding:2px 6px;border-radius:5px;text-align:center}
 .cmp-lbl.BEST{background:#15301f;color:#7fe0a0}.cmp-lbl.GOOD{background:#1b2740;color:#9fb8e0}
 .cmp-lbl.LOW{background:#3a1b1b;color:#ff8a8a}.cmp-lbl.LEARNING,.cmp-lbl.PENDING,.cmp-lbl.UNSPECIFIED{background:#241b30;color:#c0a8e0}
+/* §11 search-terms waste list */
+.cmp-stmeta{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:11px;color:#aebcd4;margin-bottom:6px}
+.cmp-stmeta b{color:#e9eef7;font-weight:800}
+.cmp-basis{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;padding:2px 7px;border-radius:20px}
+.cmp-basis.proxy{background:#241b30;color:#e6cf8a;box-shadow:inset 0 0 0 1px #6a5a2b}
+.cmp-basis.measured{background:#15301f;color:#7fe0a0;box-shadow:inset 0 0 0 1px #2b6a45}
+.cmp-stnote{font-size:10px;color:#e6cf8a;background:#241b30;border-radius:7px;padding:6px 8px;margin-bottom:8px;line-height:1.35;box-shadow:inset 0 0 0 1px #4a3a22}
+.cmp-stclasses{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
+.cmp-cls{font-size:9.5px;color:#c0a8e0;background:#1c1730;border-radius:20px;padding:2px 8px;box-shadow:inset 0 0 0 1px #3a2f52}.cmp-cls b{color:#e0d3f4}
+.cmp-sts{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.cmp-st{background:#13203c;border-radius:8px;padding:7px 10px;font-size:11px;box-shadow:inset 0 0 0 1px #243352}
+.cmp-st.waste{box-shadow:inset 0 0 0 1px #6a3a22}
+.cmp-st-top{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.cmp-st .st-term{font-weight:800;color:#cdeafe;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60%}
+.cmp-stflag{font-size:8.5px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;padding:2px 6px;border-radius:5px}
+.cmp-stflag.excl{background:#15301f;color:#7fe0a0}.cmp-stflag.added{background:#1b2740;color:#9fb8e0}
+.cmp-stflag.junk{background:#3a1b1b;color:#ff8a8a}
+.cmp-st-mets{display:flex;gap:10px;flex-wrap:wrap;margin-top:5px;color:#aebcd4}.cmp-st-mets b{color:#e9eef7}
+.cmp-st-reason{margin-top:4px;font-size:10px;color:#8aa0c6}
 @media(max-width:520px){.cmp-panel{width:100%}}
 
 /* map locate / re-centre control (matches the Leaflet zoom bar) */
@@ -4738,6 +4757,33 @@ function initCampaigns(){
     else { h+='<div class="cmp-assets">'; assets.forEach(function(a){ const lbl=String(a.performance_label||"").toUpperCase();
       h+='<div class="cmp-asset"><span class="a-ft">'+esc(a.field_type||"")+'</span><span class="cmp-lbl '+esc(lbl)+'">'+esc(lbl||"\u2014")+'</span><span class="a-txt" title="'+esc(a.text||"")+'">'+esc(a.text||"")+'</span></div>'; });
       h+='</div>'; }
+    // §11 SEARCH TERMS — read-only ranked waste list (proxy-labeled; conversions not flowing yet).
+    const st=c.search_terms||null;
+    h+='<div class="cmp-sec-t">Search terms \u2014 wasteful</div>';
+    if(!st || !(st.terms && st.terms.length)){ h+='<div class="cmp-empty">No search-term rows in the window.</div>'; }
+    else {
+      h+='<div class="cmp-stmeta">'+
+         '<span class="cmp-basis '+(st.proxy?"proxy":"measured")+'">'+(st.proxy?"proxy basis":"measured")+'</span>'+
+         '<span>Wasted spend <b>'+money(st.total_wasted_spend)+'</b></span>'+
+         '<span>'+num(st.n_terms)+' terms</span></div>';
+      if(st.proxy && st.proxy_note){ h+='<div class="cmp-stnote">'+esc(st.proxy_note)+'</div>'; }
+      const is=st.intent_summary||{}; const ks=Object.keys(is);
+      if(ks.length){ h+='<div class="cmp-stclasses">'; ks.forEach(function(k){
+        h+='<span class="cmp-cls">'+esc(k.replace(/_/g," "))+' <b>'+num(is[k].count)+'</b> \u00b7 '+money(is[k].spend)+'</span>'; });
+        h+='</div>'; }
+      h+='<div class="cmp-sts">';
+      st.terms.forEach(function(t){
+        let fl='';
+        if(t.already_excluded){ fl+='<span class="cmp-stflag excl">already negated</span>'; }
+        else if(t.already_added){ fl+='<span class="cmp-stflag added">keyword</span>'; }
+        if(t.junk){ fl+='<span class="cmp-stflag junk">junk intent</span>'; }
+        h+='<div class="cmp-st'+(t.wasteful?" waste":"")+'">'+
+           '<div class="cmp-st-top"><span class="st-term" title="'+esc(t.search_term)+'">'+esc(t.search_term)+'</span>'+fl+'</div>'+
+           '<div class="cmp-st-mets"><span>Spend <b>'+money(t.spend)+'</b></span><span>Clicks <b>'+num(t.clicks)+'</b></span><span>Impr <b>'+num(t.impressions)+'</b></span></div>'+
+           '<div class="cmp-st-reason">'+esc(t.reason)+'</div></div>';
+      });
+      h+='</div>';
+    }
     const rings=c.rings||[];
     h+='<div class="cmp-sec-t">Rings ('+rings.length+')</div>';
     if(!rings.length){ h+='<div class="cmp-empty">No per-ring metrics in the window.</div>'; }
