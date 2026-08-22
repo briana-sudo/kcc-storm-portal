@@ -596,6 +596,47 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .cmp-confirm .cmp-cf-go{background:#c0392b;color:#fff}.cmp-confirm .cmp-cf-go:hover{background:#d84636}
 .cmp-confirm .cmp-cf-go.pause{background:#2f6fe0}.cmp-confirm .cmp-cf-go.pause:hover{background:#3f7ef0}
 .cmp-confirm .cmp-cf-btns button:disabled{opacity:.55;cursor:default}
+/* ── Phase C card polish (2026-08-22 card review): stage-adaptive card pieces ── */
+.cmp-stg .cmp-dn{margin-left:5px;opacity:.85;font-weight:800}
+/* attention-triage strip (portfolio): the three anomalies to look at first */
+.cmp-triage{display:flex;flex-wrap:wrap;gap:7px;margin-bottom:12px}
+.cmp-tri{font-size:10px;font-weight:800;letter-spacing:.3px;padding:4px 9px;border-radius:20px;text-transform:uppercase}
+.cmp-tri b{font-weight:900}
+.cmp-tri.hot{background:#3a1b1b;color:#ff9a8a;box-shadow:inset 0 0 0 1px #7a2b2b}
+.cmp-tri.warn{background:#3a3320;color:#ffd27a;box-shadow:inset 0 0 0 1px #7a6a2b}
+.cmp-tri.calm{background:#15301f;color:#7fe0a0;box-shadow:inset 0 0 0 1px #2b6a45}
+/* modeled ROI read (est jobs + $/job) — always badged Modeled, never looks measured */
+.cmp-roi{display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:7px;font-size:11px;color:#e6cf8a}
+.cmp-roi b{color:#ffe6a0;font-weight:800}
+.cmp-roi .cmp-badge{background:#5a4a1e}
+/* measured lost-IS-to-budget lead number (SURGE) */
+.cmp-lostis{margin-top:7px;font-size:11.5px;color:#aebcd4}
+.cmp-lostis b{color:#ff9a8a;font-weight:800}
+.cmp-lostis.ok b{color:#7fe0a0}
+/* launched go-live readiness */
+.cmp-ready{margin-top:7px;font-size:11px;color:#9fb3d9}.cmp-ready b{color:#cdeafe}
+/* wind-down / close-out prompt (TAIL) */
+.cmp-close{margin-top:7px;font-size:11px;color:#aebcd4}.cmp-close b{color:#e9eef7}
+.cmp-winddown{margin-top:7px;font-size:10.5px;background:#2e1c12;color:#ffbf9a;box-shadow:inset 0 0 0 1px #6a3a22;border-radius:7px;padding:6px 8px;line-height:1.35}
+/* LOUD escalation for still-paused-after-approve (approved but not serving on/after the storm day) */
+.cmp-flag.loud{background:#3a1010;color:#ffd0c4;box-shadow:inset 0 0 0 2px #b53a2a;font-weight:700}
+.cmp-flag.loud .cmp-fk{color:#ff7a5a}
+/* decay sparkline (CROSSFADE / TAIL): clicks/day + spend/day mini-bars */
+.cmp-spark{margin-top:8px}
+.cmp-spark-t{font-size:9px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:#8aa0c6;margin-bottom:3px}
+.cmp-spark-row{display:flex;align-items:flex-end;gap:2px;height:26px;margin-bottom:3px}
+.cmp-spark-row .sp-lab{align-self:center;font-size:9.5px;color:#8aa0c6;min-width:64px}
+.cmp-spark-bars{display:flex;align-items:flex-end;gap:2px;height:26px;flex:1}
+.cmp-spark-bar{flex:1;min-width:3px;border-radius:2px 2px 0 0;background:#2f6fe0;opacity:.85}
+.cmp-spark-bar.spend{background:#e6cf8a}
+.cmp-spark-cur{font-size:9.5px;color:#aebcd4;align-self:center;min-width:52px;text-align:right}.cmp-spark-cur b{color:#e9eef7}
+/* wound-down: one-line archive row */
+.cmp-arch{display:flex;align-items:center;gap:9px;background:#11182b;border:1px solid #1e2a44;border-radius:8px;padding:7px 11px;margin-bottom:6px;font-size:11px;color:#8aa0c6;cursor:pointer}
+.cmp-arch:hover{background:#16203a}
+.cmp-arch .a-date{font-weight:800;color:#b7c6e0}
+.cmp-arch .a-stg{font-size:8.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;padding:1px 6px;border-radius:20px;background:#241b30;color:#c0a8e0}
+.cmp-arch .a-sp{margin-left:auto}.cmp-arch .a-sp b{color:#cdeafe}
+.cmp-arch .a-jobs{color:#e6cf8a}
 @media(max-width:520px){.cmp-panel{width:100%}}
 
 /* map locate / re-centre control (matches the Leaflet zoom bar) */
@@ -4479,29 +4520,114 @@ function initCampaigns(){
     ov.querySelector(".cmp-modeled").innerHTML='<span class="cmp-badge">Modeled</span> '+esc(rep.modeled_note||"");
   }
 
+  // ── Phase C card pieces (2026-08-22 card review). Each stage shows what matters + hides noise.
+  const jobsFmt=n=>(n==null||Number(n)<=0)?"\\u2014":num(n);
+  const modeledJobs=r=>(r.est_jobs_modeled!=null?r.est_jobs_modeled:r.conversions_modeled);
+  const modeledCpj=r=>(r.cost_per_job_modeled!=null?r.cost_per_job_modeled:r.cpl_modeled);
+
+  // MODELED ROI read — est jobs + $/job, ALWAYS badged Modeled (conversions aren't flowing yet; a
+  // modeled figure must never render as measured). Rule-1.
+  function modeledRoi(r){
+    return '<div class="cmp-roi"><span class="cmp-badge">Modeled</span>'+
+           '<span>Est jobs <b>'+jobsFmt(modeledJobs(r))+'</b></span>'+
+           '<span>$/job <b>'+money(modeledCpj(r))+'</b></span></div>';
+  }
+  // measured metrics line; showRates toggles the CTR/IS pair (hidden in TAIL as noise).
+  function metsLine(r,showRates){
+    let h='<div class="cmp-mets"><span>Impr <b>'+num(r.impressions)+'</b></span>'+
+          '<span>Clicks <b>'+num(r.clicks)+'</b></span>';
+    if(showRates){ h+='<span>CTR <b>'+pct(r.ctr)+'</b></span><span>IS (today) <b>'+pct(r.impression_share)+'</b></span>'; }
+    h+='<span>Avg CPC (window) <b>'+money(r.avg_cpc)+'</b></span>'+
+       '<span>Spend(win) <b>'+money(r.spend_window)+'</b></span></div>';
+    return h;
+  }
+  function pacingLine(r){
+    const p=r.pacing; if(!p) return '';
+    // 'too-early' shows "too early" with no ratio (early-day false over-pace guard); real verdicts show
+    // the label + projected/cap ratio.
+    const plabel=(p.label==="too-early")?"too early":p.label;
+    return '<div class="cmp-pace">Today <b>'+money(p.spend_today)+'</b> / cap '+money(p.daily_budget)+
+      (p.label? ' <span class="cmp-pill '+p.label+'">'+plabel+(p.ratio!=null?" "+Math.round(p.ratio*100)+"%":"")+'</span>':'')+'</div>';
+  }
+  function flagsBlock(r,skip){
+    if(!(r.flags && r.flags.length)) return '';
+    skip=skip||[];
+    let h='',n=0;
+    r.flags.forEach(function(f){
+      if(skip.indexOf(f.code)>=0) return;
+      // still_paused_after_approve = approved but not serving on/after the storm day -> escalate LOUD.
+      const loud=(f.code==="still_paused_after_approve")?" loud":"";
+      h+='<div class="cmp-flag '+(f.severity||"warn")+loud+'"><span class="cmp-fk">'+esc((f.code||"").replace(/_/g," "))+'</span>'+esc(f.detail||"")+(f.modeled?' <span class="cmp-badge">proxy</span>':'')+'</div>'; n++;
+    });
+    return n? '<div class="cmp-flags">'+h+'</div>':'';
+  }
+  // decay sparkline from the per-day series (clicks/day + spend/day) — CROSSFADE/TAIL trajectory.
+  function sparkline(r){
+    const s=r.daily_series||[];
+    if(s.length<2) return '';   // need >=2 days for a trajectory (never fake a single point)
+    const maxC=Math.max(1,...s.map(function(d){return d.clicks;}));
+    const maxS=Math.max(0.01,...s.map(function(d){return d.spend;}));
+    function bars(vals,mx,cls){ return vals.map(function(v){ const hh=Math.max(3,Math.round((v/mx)*100));
+      return '<span class="cmp-spark-bar'+(cls?" "+cls:"")+'" style="height:'+hh+'%" title="'+esc(v)+'"></span>'; }).join(''); }
+    const last=s[s.length-1];
+    return '<div class="cmp-spark"><div class="cmp-spark-t">Decay \\u00b7 last '+s.length+' days</div>'+
+      '<div class="cmp-spark-row"><span class="sp-lab">Clicks/day</span><span class="cmp-spark-bars">'+bars(s.map(function(d){return d.clicks;}),maxC,"")+'</span><span class="cmp-spark-cur">now <b>'+num(last.clicks)+'</b></span></div>'+
+      '<div class="cmp-spark-row"><span class="sp-lab">Spend/day</span><span class="cmp-spark-bars">'+bars(s.map(function(d){return d.spend;}),maxS,"spend")+'</span><span class="cmp-spark-cur">now <b>'+money(last.spend)+'</b></span></div></div>';
+  }
+
   function rowHtml(r,clickable){
-    const quiet=(r.stage==="TAIL"||r.stage==="wound-down")?" quiet":"";
+    const stage=r.stage;
+    // WOUND-DOWN -> collapse to a one-line archive row (date - total spend - modeled jobs).
+    if(stage==="wound-down"){
+      const tot=(r.spend_season!=null)?r.spend_season:r.spend_window;
+      return '<div class="cmp-arch"'+(clickable?(' data-camp="'+esc(r.campaign)+'"'):' style="cursor:default"')+'>'+
+        '<span class="a-date">'+esc(r.date)+'</span><span class="a-stg">wound-down</span>'+
+        '<span class="a-jobs">'+jobsFmt(modeledJobs(r))+' est jobs</span>'+
+        '<span class="a-sp">total <b>'+money(tot)+'</b></span></div>';
+    }
+    const dN=(r.days_since_storm!=null)?('<span class="cmp-dn">d+'+r.days_since_storm+'</span>'):'';
+    const quiet=(stage==="TAIL")?" quiet":"";
     let h='<div class="cmp-row'+quiet+'"'+(clickable?(' data-camp="'+esc(r.campaign)+'"'):' style="cursor:default"')+'>';
     h+='<div class="cmp-row-top"><span class="cmp-name">'+esc(r.campaign)+'</span>'+
-       '<span class="cmp-stg '+stgCls(r.stage)+'">'+esc(r.stage)+'</span></div>';
-    h+='<div class="cmp-mets">'+
-       '<span>Impr <b>'+num(r.impressions)+'</b></span>'+
-       '<span>Clicks <b>'+num(r.clicks)+'</b></span>'+
-       '<span>CTR <b>'+pct(r.ctr)+'</b></span>'+
-       '<span>Avg CPC (window) <b>'+money(r.avg_cpc)+'</b></span>'+
-       '<span>IS (today) <b>'+pct(r.impression_share)+'</b></span>'+
-       '<span>Spend(win) <b>'+money(r.spend_window)+'</b></span>'+
-       '</div>';
-    const p=r.pacing;
-    if(p){
-      // pacing pill: 'too-early' shows "too early" with no ratio (early-day false over-pace guard);
-      // real verdicts show the label + projected/cap ratio.
-      const plabel=(p.label==="too-early")?"too early":p.label;
-      h+='<div class="cmp-pace">Today <b>'+money(p.spend_today)+'</b> / cap '+money(p.daily_budget)+
-         (p.label? ' <span class="cmp-pill '+p.label+'">'+plabel+(p.ratio!=null?" "+Math.round(p.ratio*100)+"%":"")+'</span>':'')+'</div>'; }
-    if(r.flags && r.flags.length){ h+='<div class="cmp-flags">';
-      r.flags.forEach(function(f){ h+='<div class="cmp-flag '+(f.severity||"warn")+'"><span class="cmp-fk">'+esc((f.code||"").replace(/_/g," "))+'</span>'+esc(f.detail||"")+(f.modeled?' <span class="cmp-badge">proxy</span>':'')+'</div>'; });
-      h+='</div>'; }
+       '<span class="cmp-stg '+stgCls(stage)+'">'+esc(stage)+dN+'</span></div>';
+
+    if(stage==="Launched"){
+      // paused/pre-storm: HIDE the zero-metric line; show go-live readiness + modeled justification.
+      h+='<div class="cmp-ready">Ready \\u00b7 daily budget <b>'+money(r.daily_budget)+'</b>'+
+         (r.serving?'':' \\u00b7 <b>PAUSED</b>')+'</div>';
+      if(Number(modeledJobs(r))>0){ h+=modeledRoi(r); }   // justification only when the model has one
+      h+=flagsBlock(r);                                    // still_paused_after_approve renders LOUD
+    }
+    else if(stage==="SURGE"){
+      // lead with pacing + the measured lost-IS-to-budget NUMBER + CTR; flags carry cap/underspend.
+      h+=pacingLine(r);
+      const lostPct=(r.lost_is_budget==null)?null:Math.round(Number(r.lost_is_budget)*100);
+      const okCls=(lostPct!=null && lostPct<=5)?" ok":"";
+      h+='<div class="cmp-lostis'+okCls+'">Lost IS to budget <b>'+(lostPct==null?"\\u2014":lostPct+"%")+'</b> (measured) \\u00b7 CTR <b>'+pct(r.ctr)+'</b></div>';
+      h+=modeledRoi(r);
+      h+=flagsBlock(r);
+    }
+    else if(stage==="CROSSFADE"){
+      // decay trajectory + de-emphasize go-live; prompt the search-terms waste review (list on drill-in).
+      h+=metsLine(r,true);
+      h+=sparkline(r);
+      h+=modeledRoi(r);
+      if(clickable){ h+='<div class="cmp-close">Search-terms waste review due \\u2014 open to review negatives</div>'; }
+      h+=flagsBlock(r);
+    }
+    else if(stage==="TAIL"){
+      // wind-down prompt + close-out (window/season cumulative + modeled jobs); HIDE IS/CTR/RSA noise.
+      h+=sparkline(r);
+      h+='<div class="cmp-close">Close-out \\u00b7 window <b>'+money(r.spend_window)+'</b>'+
+         (r.spend_season!=null?(' \\u00b7 season <b>'+money(r.spend_season)+'</b>'):'')+
+         ' \\u00b7 <span class="cmp-badge">Modeled</span> '+jobsFmt(modeledJobs(r))+' est jobs</div>';
+      if(r.flags && r.flags.some(function(f){return f.code==="tail_above_wind_down_floor";})){
+        h+='<div class="cmp-winddown">Still at <b>'+money(r.daily_budget)+'</b>/day in the tail \\u2014 wind down to the maintenance floor.</div>'; }
+      h+=flagsBlock(r,["tail_above_wind_down_floor"]);   // shown as the prompt above, not doubled here
+    }
+    else {   // safe default for any unexpected stage
+      h+=metsLine(r,true); h+=pacingLine(r); h+=modeledRoi(r); h+=flagsBlock(r);
+    }
     h+='</div>';
     return h;
   }
@@ -4509,24 +4635,44 @@ function initCampaigns(){
   function tcard(k,v,sub){ return '<div class="cmp-tcard"><div class="cmp-tk">'+k+'</div><div class="cmp-tv">'+v+'</div>'+(sub?'<div class="cmp-tsub">'+esc(sub)+'</div>':'')+'</div>'; }
   function statusLine(bs){ if(!bs) return ""; return Object.keys(bs).map(function(k){ return k.toLowerCase()+": "+bs[k]; }).join(" \\u00b7 "); }
   function stageLine(bs){ if(!bs) return ""; return Object.keys(bs).map(function(k){ return k+": "+bs[k]; }).join(" \\u00b7 "); }
+  // ATTENTION-TRIAGE strip (2026-08-22 card review): the anomalies to look at first, from engine totals.
+  // Only nonzero items show (calm "all clear" when the book is clean); counts come from the per-row flags.
+  function triageStrip(t){
+    const tr=t.triage||{};
+    const items=[["capped",tr.capped,"hot"],["underspending",tr.underspending_surge,"warn"],
+                 ["paused-after-approve",tr.paused_after_approve,"hot"],["not-serving",tr.not_serving,"warn"],
+                 ["wind-down due",tr.wind_down_due,"warn"]];
+    const active=items.filter(function(x){ return (x[1]||0)>0; });
+    let h='<div class="cmp-triage">';
+    if(!active.length){ h+='<span class="cmp-tri calm"><b>\\u2713</b> all clear</span>'; }
+    else { active.forEach(function(x){ h+='<span class="cmp-tri '+x[2]+'"><b>'+x[1]+'</b> '+esc(x[0])+'</span>'; }); }
+    return h+'</div>';
+  }
 
   function renderPortfolio(rep){
     const body=ov.querySelector(".cmp-body");
     const keep=body.scrollTop;
     const pf=rep.portfolio||{}, t=pf.totals||{}, rows=pf.rows||[];
+    // season cumulative: "N/A" when the season query degraded (never a fabricated 0).
+    const seasonV=(t.season_available===false)?"N/A":money(t.spend_season_total);
     let h='<div class="cmp-bar"><button class="cmp-refresh">\\u21bb Refresh</button></div>';
+    h+=triageStrip(t);
     h+='<div class="cmp-tot">'+
        tcard("Live daily spend", money(t.live_daily_spend), (t.serving||0)+" serving now")+
        tcard("Daily budget", money(t.daily_budget_total), "sum of solve caps")+
-       tcard("Campaigns", (t.campaigns||0), statusLine(t.by_status))+
        tcard("Window spend", money(t.spend_window_total), stageLine(t.by_stage))+
+       tcard("Season spend", seasonV, "year-to-date \\u00b7 all storms")+
+       tcard("Campaigns", (t.campaigns||0), statusLine(t.by_status))+
+       // Remaining annual capacity is operator state (manual, kept out of the engine, addendum 16.9) —
+       // stubbed as a slot, not fabricated, until an operator-capacity source is wired (flagged follow-up).
+       '<div class="cmp-tcard" title="'+esc(t.remaining_annual_capacity_note||"operator state \\u2014 not wired to the portfolio yet")+'"><div class="cmp-tk">Annual capacity</div><div class="cmp-tv">\\u2014</div><div class="cmp-tsub">operator state \\u2014 not wired</div></div>'+
        '</div>';
     h+='<div class="cmp-sec-t">Campaigns by stage</div>';
     if(!rows.length){ h+='<div class="cmp-empty">No CAMP-* campaigns in the account yet.</div>'; }
     else { rows.forEach(function(r){ h+=rowHtml(r,true); }); }
     body.innerHTML=h;
     body.querySelector(".cmp-refresh").onclick=cmpLoad;
-    body.querySelectorAll(".cmp-row[data-camp]").forEach(function(el){ el.onclick=function(){ cmpDrill(el.dataset.camp); }; });
+    body.querySelectorAll(".cmp-row[data-camp],.cmp-arch[data-camp]").forEach(function(el){ el.onclick=function(){ cmpDrill(el.dataset.camp); }; });
     body.scrollTop=keep;   // Rule 22: refresh must not jump the scroll position
   }
 
