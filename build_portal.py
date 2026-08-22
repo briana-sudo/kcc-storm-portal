@@ -725,6 +725,14 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 #sdApprove:disabled{background:#c3b29f;cursor:default}
 #sdSend{background:#1a7a4f;color:#fff}#sdSend:hover{background:#1f9160}
 #sdSend:disabled{background:#9fb3a8;cursor:default}
+/* Phase B LIVE-CAMPAIGN dial: the LIVE badge + the state-aware live-action row (Update live / Wind down / Pause). */
+.sd-live{margin:8px 0 2px;padding:7px 10px;border-radius:7px;font-size:11.5px;font-weight:700;line-height:1.35;background:#eaf7ef;border-left:4px solid #1a7a4f;color:#1c4a32}
+.sd-live .badge{display:inline-block;background:#1a7a4f;color:#fff;font-size:10px;font-weight:800;letter-spacing:.4px;padding:2px 7px;border-radius:9px;margin-right:6px;vertical-align:1px}
+.sd-live-actions{flex-wrap:wrap}
+#sdUpdateLive{background:#1a7a4f;color:#fff}#sdUpdateLive:hover{background:#1f9160}
+#sdWindDown{background:#7a4f19;color:#fff}#sdWindDown:hover{background:#94611f}
+#sdPauseDial{background:#8a2b2b;color:#fff}#sdPauseDial:hover{background:#a63333}
+.sd-live-actions button:disabled{background:#b9c2bd;cursor:default}
 .sd-promo{margin:7px 0 0;padding:7px 10px;border-radius:7px;font-size:11.5px;font-weight:700;line-height:1.35}
 .sd-promo.none{background:#f4f5f7;border-left:4px solid #9fb3a8;color:#4a5a52}
 .sd-promo.live{background:#eef3ff;border-left:4px solid #2b5cc6;color:#1e2b46}
@@ -1547,7 +1555,12 @@ const SD_COMMANDS = ["solve", "active-promotion", "promote-solve", "send-promote
                      "go-live", "pause-campaign",
                      // SINGLE DIAL LAUNCH (2026-08-22): CREATE-then-ENABLE in one tap from the Spend Dial
                      // (the ONE command that turns a promoted solve into live spend). i_reviewed + budget-sanity gated.
-                     "launch-golive"];
+                     "launch-golive",
+                     // LIVE-CAMPAIGN dial (Phase B, 2026-08-22): when the storm's campaign is already
+                     // serving, update-live re-points the RUNNING campaign's daily budget to the re-solved
+                     // recommendation (mutate-never-recreate, status untouched, budget-sanity gated), and
+                     // wind-down drops the budget to the maintenance floor (budget-only). Both WRITE-gated.
+                     "update-live", "wind-down"];
 async function sdApi(action, body){
   if(!SPEND_API) throw new Error("no spend endpoint configured (v2 proxy wiring)");
   if(!SD_COMMANDS.includes(action))
@@ -2703,6 +2716,8 @@ const SOLVE_API = (CFG.solveApi || "").replace(/\\/$/, "") ||
                   (API ? API.replace(/\\/api\\/storm$/, "/api/solve-geometry") : "");
 let SG_STATE = { sol: null }, SG_GRP = null, SG_BASEGRP = null;
 let SG_PERIL = "hail";           // active Spend-Dial peril (hail | tornado). Wind is not solvable yet.
+let SG_LIVE = null;              // Phase B: the storm's LIVE (serving) campaign detail, or null (drives
+                                 // the LIVE badge + state-aware dial buttons: Update live / Wind down / Pause).
 const SG_BANDS = [["1.125-1.5", "b0"], ["1.5-1.8", "b1"], ["1.8-2.0", "b2"], ["2.0+", "b3"]];
 // ASYNC SOLVE (2026-07-21): the first solve of a COLD date takes ~200s server-side, which used to
 // blow the ~30s gateway timeout and surface in the browser as "Failed to fetch". The engine now
@@ -2936,6 +2951,7 @@ function sdSetPeril(peril, D){
   sdBuildCircles(peril, D);
   sgSolveFresh();                                                  // reprice for the new peril
   if(typeof sgRefreshPromotion === "function") sgRefreshPromotion();   // Approve/Send state for this peril
+  if(typeof sgRefreshLive === "function") sgRefreshLive();         // LIVE badge + buttons for this peril's campaign
 }
 // ── STORM TOTAL (2026-07-13): multi-peril nights on ONE screen. On a date with 2+ FUNDABLE perils
 //    (in-market fundable hail + tornado gate fired), one click runs BOTH solves — each through its OWN
@@ -3065,6 +3081,8 @@ function sdEnterTotal(D){
   ["sdVerdict","sgWork","sdTable","sdPromo"].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display="none"; });
   const act=document.querySelector("#spendPanel .sd-actions button#sdApprove"), snd=document.getElementById("sdSend");
   if(act) act.style.display="none"; if(snd) snd.style.display="none";
+  const la=document.getElementById("sdLiveActions"), lb=document.getElementById("sdLive");   // Phase B: no single campaign in total mode
+  if(la) la.style.display="none"; if(lb) lb.style.display="none";
   sgTotalSolve(D);
 }
 function sdExitTotal(){
@@ -3074,6 +3092,7 @@ function sdExitTotal(){
   ["sdVerdict","sgWork","sdTable"].forEach(id=>{ const e=document.getElementById(id); if(e) e.style.display=""; });
   const ap=document.getElementById("sdApprove"), snd=document.getElementById("sdSend");
   if(ap) ap.style.display=""; if(snd) snd.style.display="";
+  if(typeof sgRefreshLive === "function") sgRefreshLive();   // Phase B: restore the LIVE badge/buttons for the single peril
 }
 function setupSpendDial(D){
   if(document.getElementById("spendPanel")) return;
@@ -3096,6 +3115,14 @@ function setupSpendDial(D){
     + '<div class="sd-actions"><button id="sdSolve">Solve</button>'
     + '<button id="sdApprove" disabled title="Promote the dialed solve to this storm\\u2019s active campaign geometry (graph only \\u2014 never touches Google)">Approve</button>'
     + '<button id="sdSend" disabled title="CREATE + ENABLE this storm\\u2019s campaign on Google \\u2014 starts LIVE SPEND. Approve (promote) a snapshot first.">Go Live \\u2014 start spending</button></div>'
+    // Phase B LIVE-CAMPAIGN row: shown only when this storm’s campaign is already serving. Update live
+    // re-points the RUNNING campaign’s budget to the re-solved recommendation (mutate-never-recreate,
+    // status untouched); Wind down drops the budget to the maintenance floor; Pause hard-stops serving.
+    + '<div class="sd-live" id="sdLive" style="display:none"></div>'            // LIVE badge (serving state)
+    + '<div class="sd-actions sd-live-actions" id="sdLiveActions" style="display:none">'
+    + '<button id="sdUpdateLive" title="Re-point the RUNNING campaign\\u2019s daily budget to the re-solved recommendation \\u2014 mutates the live campaign in place (never recreates), keeps it serving. Adjust the dial + Approve first.">Update live</button>'
+    + '<button id="sdWindDown" title="Drop the daily budget to the maintenance floor (demand is spent by day 3). Budget-only \\u2014 never pauses, keeps Smart Bidding learning alive at a trickle.">Wind down</button>'
+    + '<button id="sdPauseDial" title="Pause the campaign \\u2014 hard-stops serving immediately. Does not delete the campaign or its Smart Bidding learning.">Pause</button></div>'
     + '<div class="sd-promo" id="sdPromo" style="display:none"></div>'          // inline promotion state / badge (no popups)
     + '<div class="sd-verdict" id="sdVerdict">Move a dial and hit Solve \\u2014 the table below prices the live solve geometry.</div>'
     + '<div class="sg-work" id="sgWork" style="display:none"></div>'          // headline strip = column sums
@@ -3150,9 +3177,14 @@ function setupSpendDial(D){
   });
   document.getElementById("sdApprove").onclick = sgApproveInline;   // promote the dialed solve (inline, no popup)
   document.getElementById("sdSend").onclick = sgGoLiveLaunch;       // CREATE + ENABLE this storm's campaign (LIVE SPEND, money-gated)
+  // Phase B live-campaign buttons (shown by sgRefreshLive only when the storm's campaign is serving).
+  document.getElementById("sdUpdateLive").onclick = sgUpdateLive;   // mutate the RUNNING budget (in place)
+  document.getElementById("sdWindDown").onclick = sgWindDown;       // budget -> maintenance floor
+  document.getElementById("sdPauseDial").onclick = sgPauseDial;     // hard-stop serving
   const bt = document.getElementById("sgBaseToggle");
   if(bt) bt.onchange = e => sgDrawBase(e.target.checked, D);
   sgRefreshPromotion();                                             // set Approve/Send state from the graph
+  sgRefreshLive();                                                  // LIVE badge + state-aware buttons
 }
 async function sdSolve(){
   const sp = document.getElementById("spendPanel"); if(sp && sp.classList.contains("sd-nostorm")) return;   // grayed: nothing to fund
@@ -3411,6 +3443,137 @@ async function sgGoLiveLaunch(){
     }
     sgRefreshPromotion();
   };
+}
+
+// ── PHASE B LIVE-CAMPAIGN dial (2026-08-22): when this storm's campaign is already SERVING, the dial
+//    reflects what's live and swaps the button set. sgRefreshLive reads campaign-status for the date,
+//    loads the spend-cap dial to the live daily budget, shows a LIVE badge, and toggles the button rows:
+//      no campaign / paused -> "Go Live" (sdSend, promotion-gated, existing)
+//      LIVE (serving)       -> "Update live" + "Wind down" + "Pause" (sdLiveActions); Go Live hidden.
+//    Solve + Approve stay in both states. READ-ONLY (campaign-status writes nothing).
+function sgLiveEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+async function sgRefreshLive(){
+  const upd=document.getElementById("sdUpdateLive"), wd=document.getElementById("sdWindDown"),
+        pz=document.getElementById("sdPauseDial"), snd=document.getElementById("sdSend"),
+        lv=document.getElementById("sdLive"), acts=document.getElementById("sdLiveActions");
+  if(!upd||!wd||!pz||!snd||!acts) return;
+  if(SG_TOTAL_MODE){ acts.style.display="none"; if(lv) lv.style.display="none"; return; }   // total mode has no single campaign
+  let rep; try{ rep=await sdApi("campaign-status",{date:getDate(), peril:SG_PERIL||"hail"}); }
+  catch(e){ rep=null; }   // read-only; a failure just leaves the default (Go Live) button state
+  const c=(rep && rep.ok!==false) ? rep.campaign : null;
+  const live=!!(c && c.serving);
+  SG_LIVE = live ? c : null;
+  if(live){
+    // Load the dial to what's RUNNING: the spend cap reflects the live daily budget (clamped to the
+    // slider range). Setting .value does NOT fire oninput, so this never triggers a re-solve.
+    if(c.daily_budget!=null){
+      const capr=document.getElementById("sdCapR"), capv=document.getElementById("sdCapV");
+      if(capr){ const mn=+capr.min||1000, mx=+capr.max||100000;
+        const v=Math.min(Math.max(Math.round(c.daily_budget), mn), mx);
+        capr.value=v; if(capv) capv.textContent="$"+(+v).toLocaleString(); }
+    }
+    if(lv){ lv.style.display="block";
+      lv.innerHTML="<span class='badge'>LIVE</span> "+sgLiveEsc(c.campaign)+" \\u00b7 $"
+        +Math.round(c.daily_budget||0).toLocaleString()+"/day \\u00b7 serving"; }
+    acts.style.display="flex"; snd.style.display="none";
+  } else {
+    if(lv) lv.style.display="none";
+    acts.style.display="none"; snd.style.display="";
+  }
+}
+
+// Shared money-gate confirm dialog for the live-campaign actions (mirrors sgGoLiveLaunch's dialog).
+// Renders storm + new budget + a "changes live spend" warning; only the operator's confirm fires the
+// WRITE (i_reviewed:true). onGo(runFn) is called with a done() the caller uses to close + report.
+function sgLiveConfirm(opts){
+  const bk=document.createElement("div"); bk.className="cmp-confirm-bk";
+  bk.innerHTML=
+    '<div class="cmp-confirm">'+
+      '<h3 class="'+(opts.cls||"go")+'">'+sgLiveEsc(opts.title)+'</h3>'+
+      '<div class="cmp-cf-rows">'+(opts.rows||[]).map(function(r){
+        return '<div class="r"><span>'+sgLiveEsc(r[0])+'</span><b>'+sgLiveEsc(r[1])+'</b></div>'; }).join("")+
+      '</div>'+
+      '<div class="cmp-cf-warn">'+opts.warn+'</div>'+
+      '<div class="cmp-cf-btns"><button class="cmp-cf-cancel">Cancel</button>'+
+        '<button class="cmp-cf-go'+(opts.cls==="pause"?" pause":"")+'">'+sgLiveEsc(opts.confirm||"Confirm")+'</button></div>'+
+    '</div>';
+  document.body.appendChild(bk);
+  const close=function(){ if(bk.parentNode) bk.parentNode.removeChild(bk); };
+  bk.onclick=function(e){ if(e.target===bk) close(); };
+  bk.querySelector(".cmp-cf-cancel").onclick=close;
+  const goBtn=bk.querySelector(".cmp-cf-go");
+  goBtn.onclick=function(){ goBtn.disabled=true; bk.querySelector(".cmp-cf-cancel").disabled=true;
+    goBtn.textContent=opts.working||"Working\\u2026"; opts.onGo(close); };
+}
+
+async function sgUpdateLive(){
+  // Re-point the RUNNING campaign's daily budget to the re-solved recommendation. Requires a live
+  // campaign AND an active promotion (Approve the adjusted solve first). Confirmed + i_reviewed:true.
+  if(!SG_LIVE) return;
+  let info; try{ info=await sdApi("active-promotion",{date:getDate(), peril:SG_PERIL||"hail"}); }catch(e){ info=null; }
+  const v=document.getElementById("sdVerdict");
+  if(!info || !info.promoted){
+    if(v){ v.textContent="Update live needs an active promotion \\u2014 adjust the dial, then Approve, then Update live."; v.className="sd-verdict warn"; }
+    return; }
+  const daily=Math.round(info.recommended_spend||0).toLocaleString();
+  sgLiveConfirm({
+    title:"\\u26a0 Update live \\u2014 change live spend?", cls:"go", confirm:"Yes, update live", working:"Updating\\u2026",
+    rows:[["Storm", getDate()+" \\u00b7 "+(SG_PERIL||"hail")], ["New daily budget", "$"+daily],
+          ["Promotion", "v"+(info.promotion_version||"?")+" \\u00b7 "+(info.n_circles||0)+" rings"]],
+    warn:"This mutates the <b>running</b> campaign in place (never recreates it, keeps it serving) and "+
+         "<b>changes live spend</b> to the new daily budget shown. Confirm only if you have reviewed the spend.",
+    onGo:async function(done){
+      let res;
+      try{ res=await sdApi("update-live",{date:getDate(), peril:SG_PERIL||"hail", i_reviewed:true}); }
+      catch(e){ done(); v.textContent="Update live failed \\u2014 "+e.message; v.className="sd-verdict warn"; sgRefreshLive(); return; }
+      done();
+      if(res && (res.ok===false || res.updated===false)){
+        v.textContent="Update live refused \\u2014 "+(res.states_why||res.reason||res.error||"the server refused this action"); v.className="sd-verdict warn"; }
+      else { v.textContent="Live budget updated \\u2014 $"+Math.round((res&&res.daily_budget)||0).toLocaleString()+"/day for "+getDate()+"."; v.className="sd-verdict ok"; }
+      sgRefreshLive();
+    }});
+}
+
+async function sgWindDown(){
+  // Drop the running campaign's daily budget to the maintenance floor (budget-only, never pauses).
+  if(!SG_LIVE) return;
+  const v=document.getElementById("sdVerdict");
+  sgLiveConfirm({
+    title:"Wind down the campaign?", cls:"go", confirm:"Yes, wind down", working:"Winding down\\u2026",
+    rows:[["Storm", getDate()+" \\u00b7 "+(SG_PERIL||"hail")], ["Campaign", (SG_LIVE.campaign||"")],
+          ["New daily budget", "maintenance floor ($5/day)"]],
+    warn:"This lowers the daily budget to the maintenance floor (demand is spent by day 3). It is "+
+         "<b>budget-only</b> \\u2014 it never pauses the campaign and keeps its Smart Bidding learning alive at a trickle.",
+    onGo:async function(done){
+      let res;
+      try{ res=await sdApi("wind-down",{date:getDate(), peril:SG_PERIL||"hail", i_reviewed:true}); }
+      catch(e){ done(); v.textContent="Wind down failed \\u2014 "+e.message; v.className="sd-verdict warn"; sgRefreshLive(); return; }
+      done();
+      if(res && res.ok===false){ v.textContent="Wind down refused \\u2014 "+(res.states_why||res.reason||res.error||"the server refused this action"); v.className="sd-verdict warn"; }
+      else { v.textContent="Campaign wound down \\u2014 budget at the maintenance floor for "+getDate()+"."; v.className="sd-verdict ok"; }
+      sgRefreshLive();
+    }});
+}
+
+async function sgPauseDial(){
+  // Hard-stop serving (distinct from wind-down). Reuses the sanctioned pause-campaign command.
+  if(!SG_LIVE) return;
+  const v=document.getElementById("sdVerdict");
+  sgLiveConfirm({
+    title:"Pause the campaign?", cls:"pause", confirm:"Yes, pause", working:"Pausing\\u2026",
+    rows:[["Storm", getDate()+" \\u00b7 "+(SG_PERIL||"hail")], ["Campaign", (SG_LIVE.campaign||"")],
+          ["Daily budget", "$"+Math.round(SG_LIVE.daily_budget||0).toLocaleString()]],
+    warn:"This pauses the campaign and <b>stops all serving immediately</b>. It does not delete the "+
+         "campaign or its Smart Bidding learning.",
+    onGo:async function(done){
+      let res;
+      try{ res=await sdApi("pause-campaign",{date:getDate(), peril:SG_PERIL||"hail", i_reviewed:true}); }
+      catch(e){ done(); v.textContent="Pause failed \\u2014 "+e.message; v.className="sd-verdict warn"; sgRefreshLive(); return; }
+      done();
+      if(res && res.ok===false){ v.textContent="Pause refused \\u2014 "+(res.reason||res.states_why||res.error||"the server refused this action"); v.className="sd-verdict warn"; }
+      else { v.textContent="Campaign PAUSED \\u2014 serving stopped for "+getDate()+"."; v.className="sd-verdict ok"; }
+      sgRefreshLive();
+    }});
 }
 
 // ── PWA PUSH subscribe + RE-SUBSCRIBE-ON-OPEN (iOS self-heal). Push is the rich layer;
