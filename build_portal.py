@@ -1541,7 +1541,12 @@ const SD_COMMANDS = ["solve", "active-promotion", "promote-solve", "send-promote
                      // GO-LIVE / PAUSE (2026-08-22, punch-list #4): the SANCTIONED operator-gated ENABLE
                      // (the ONE approved enable path; money-gate moved from Google's UI to the portal tap)
                      // + the operator off-switch. Both WRITE-gated; go-live is i_reviewed + budget-sanity gated.
-                     "go-live", "pause"];
+                     // pause-campaign is the SAME name end-to-end (this SD_COMMANDS entry == the
+                     // /api/spend-<action> redirect suffix == the engine command) so the off-switch resolves.
+                     "go-live", "pause-campaign",
+                     // SINGLE DIAL LAUNCH (2026-08-22): CREATE-then-ENABLE in one tap from the Spend Dial
+                     // (the ONE command that turns a promoted solve into live spend). i_reviewed + budget-sanity gated.
+                     "launch-golive"];
 async function sdApi(action, body){
   if(!SPEND_API) throw new Error("no spend endpoint configured (v2 proxy wiring)");
   if(!SD_COMMANDS.includes(action))
@@ -3089,7 +3094,7 @@ function setupSpendDial(D){
     + '<div class="sd-row"><label>Spend cap</label><input id="sdCapR" type="range" min="1000" max="100000" step="1000" value="30000"><span class="val" id="sdCapV">$30,000</span></div>'
     + '<div class="sd-actions"><button id="sdSolve">Solve</button>'
     + '<button id="sdApprove" disabled title="Promote the dialed solve to this storm\\u2019s active campaign geometry (graph only \\u2014 never touches Google)">Approve</button>'
-    + '<button id="sdSend" disabled title="Feeds the ACTIVE PROMOTED geometry to the push lane. Approve a snapshot first.">Send promoted &rarr;</button></div>'
+    + '<button id="sdSend" disabled title="CREATE + ENABLE this storm\\u2019s campaign on Google \\u2014 starts LIVE SPEND. Approve (promote) a snapshot first.">Go Live \\u2014 start spending</button></div>'
     + '<div class="sd-promo" id="sdPromo" style="display:none"></div>'          // inline promotion state / badge (no popups)
     + '<div class="sd-verdict" id="sdVerdict">Move a dial and hit Solve \\u2014 the table below prices the live solve geometry.</div>'
     + '<div class="sg-work" id="sgWork" style="display:none"></div>'          // headline strip = column sums
@@ -3143,7 +3148,7 @@ function setupSpendDial(D){
       sdSetPeril(btn.dataset.peril, D); };
   });
   document.getElementById("sdApprove").onclick = sgApproveInline;   // promote the dialed solve (inline, no popup)
-  document.getElementById("sdSend").onclick = sgSendPromoted;       // feed the ACTIVE promoted geometry to push
+  document.getElementById("sdSend").onclick = sgGoLiveLaunch;       // CREATE + ENABLE this storm's campaign (LIVE SPEND, money-gated)
   const bt = document.getElementById("sgBaseToggle");
   if(bt) bt.onchange = e => sgDrawBase(e.target.checked, D);
   sgRefreshPromotion();                                             // set Approve/Send state from the graph
@@ -3298,11 +3303,13 @@ async function sgRefreshPromotion(){
   const send=document.getElementById("sdSend"), pr=document.getElementById("sdPromo"); if(!send||!pr) return;
   let info; try { info = await sdApi("active-promotion", { date:getDate(), peril:SG_PERIL }); }
   catch(e){ send.disabled=true; send.title="Promotion state unavailable \\u2014 "+e.message; return; }
+  // NOTE: this gate drives the Go Live button's disabled state — enabled ONLY when an active promotion
+  // exists (Go Live builds + enables the promoted geometry; there is nothing to launch without one).
   const _pi = (info && info.passes_incomplete)   // Part 1 warning chip: pricing passes failed at finalization
     ? "<span class='mc'>\\u26a0 PRICING INCOMPLETE \\u2014 pass chain failed; costs may be stale/fallback (best-effort-then-fix)</span>" : "";
   if(info && info.promoted){
     send.disabled=false;
-    send.title="Feeds the active promoted geometry (v"+info.promotion_version+") to the push lane.";
+    send.title="Go Live: CREATE + ENABLE the promoted geometry (v"+info.promotion_version+") on Google \\u2014 starts LIVE SPEND.";
     pr.style.display="block"; pr.className="sd-promo live"+(info.provisional?" provisional":"");
     pr.innerHTML="<span class='badge'>PROMOTED \\u00b7 v"+info.promotion_version+" \\u00b7 "+(info.promoted_at||"")+"</span>"
       +(info.provisional ? "<span class='prov'>PROVISIONAL \\u2014 pre-12:00Z detection</span>" : "")
@@ -3313,7 +3320,7 @@ async function sgRefreshPromotion(){
     send.disabled=true;
     send.title="No promoted solve \\u2014 Approve a snapshot first.";
     pr.style.display="block"; pr.className="sd-promo none";
-    pr.innerHTML="<b>Send disabled</b> \\u2014 "+((info&&info.states_why)||"no promoted solve \\u2014 Approve a snapshot first")+"."+_pi;
+    pr.innerHTML="<b>Go Live disabled</b> \\u2014 "+((info&&info.states_why)||"no promoted solve \\u2014 Approve a snapshot first")+"."+_pi;
   }
 }
 
@@ -3354,6 +3361,55 @@ async function sgSendPromoted(){
   } catch(e){ const v=document.getElementById("sdVerdict");
     v.textContent="Send failed \\u2014 "+e.message; v.className="sd-verdict warn"; }
   finally { send.textContent=t; sgRefreshPromotion(); }
+}
+
+// ── GO LIVE from the Spend Dial (2026-08-22): the ONE button that turns the promoted solve into LIVE
+//    SPEND. Replaces "Send promoted". Gated by the SAME promotion gate that drives sdSend.disabled
+//    (sgRefreshPromotion) — enabled only when an active promotion exists. On tap it opens the money-gate
+//    CONFIRM dialog (storm, daily budget = the promoted recommended_spend, "spends real money"); only on
+//    the operator's confirm does it fire sdApi("launch-golive",{...,i_reviewed:true}) -> CREATE-then-
+//    ENABLE. The server still gates (i_reviewed + budget-sanity vs the solve), so a refusal surfaces here.
+async function sgGoLiveLaunch(){
+  const send=document.getElementById("sdSend"); if(!send || send.disabled) return;
+  // Re-read the active promotion to (a) confirm it still exists and (b) get the daily budget to show.
+  let info; try{ info=await sdApi("active-promotion",{date:getDate(), peril:SG_PERIL}); }catch(e){ info=null; }
+  if(!info || !info.promoted){ sgRefreshPromotion(); return; }   // gate: nothing promoted -> nothing to launch
+  const daily=Math.round(info.recommended_spend||0).toLocaleString();
+  const bk=document.createElement("div"); bk.className="cmp-confirm-bk";
+  bk.innerHTML=
+    '<div class="cmp-confirm">'+
+      '<h3 class="go">\\u26a0 Go Live \\u2014 spend real money?</h3>'+
+      '<div class="cmp-cf-rows">'+
+        '<div class="r"><span>Storm</span><b>'+getDate()+' \\u00b7 '+(SG_PERIL||"hail")+'</b></div>'+
+        '<div class="r"><span>Daily budget</span><b>$'+daily+'</b></div>'+
+        '<div class="r"><span>Promotion</span><b>v'+(info.promotion_version||"?")+' \\u00b7 '+(info.n_circles||0)+' rings</b></div>'+
+      '</div>'+
+      '<div class="cmp-cf-warn">This CREATES the campaign on Google and turns it <b>ON</b> \\u2014 it <b>spends real money</b>, up to the daily budget shown, every day, until you pause it. Confirm only if you have reviewed the spend.</div>'+
+      '<div class="cmp-cf-btns"><button class="cmp-cf-cancel">Cancel</button>'+
+        '<button class="cmp-cf-go">Yes, go live</button></div>'+
+    '</div>';
+  document.body.appendChild(bk);
+  const close=function(){ if(bk.parentNode) bk.parentNode.removeChild(bk); };
+  bk.onclick=function(e){ if(e.target===bk) close(); };
+  bk.querySelector(".cmp-cf-cancel").onclick=close;
+  const goBtn=bk.querySelector(".cmp-cf-go");
+  goBtn.onclick=async function(){
+    goBtn.disabled=true; bk.querySelector(".cmp-cf-cancel").disabled=true; goBtn.textContent="Going live\\u2026";
+    const v=document.getElementById("sdVerdict");
+    let res;
+    // i_reviewed:true IS the confirm tap (the human money-gate). The server enforces budget-sanity + gates.
+    try{ res=await sdApi("launch-golive",{date:getDate(), peril:SG_PERIL||"hail", i_reviewed:true}); }
+    catch(e){ close(); v.textContent="Go Live failed \\u2014 "+e.message; v.className="sd-verdict warn"; sgRefreshPromotion(); return; }
+    close();
+    if(res && res.ok===false){
+      v.textContent="Go Live refused \\u2014 "+(res.states_why||res.error||"the server refused this action");
+      v.className="sd-verdict warn";
+    } else {
+      v.textContent="Campaign is now LIVE \\u2014 serving started for "+getDate()+(res&&res.created?" (created + enabled).":".");
+      v.className="sd-verdict ok";
+    }
+    sgRefreshPromotion();
+  };
 }
 
 // ── PWA PUSH subscribe + RE-SUBSCRIBE-ON-OPEN (iOS self-heal). Push is the rich layer;
@@ -4269,8 +4325,14 @@ function initCampaigns(){
   let glFlash=null;   // one-shot go-live/pause result message, rendered on the next detail draw (Rule 22-safe)
   function renderDetail(rep){
     const body=ov.querySelector(".cmp-body");
-    const c=rep.campaign;
-    if(!c){ body.innerHTML='<div class="cmp-bar"><button class="cmp-back">\\u2190 Portfolio</button></div><div class="cmp-empty">Campaign not found.</div>';
+    const c=rep&&rep.campaign;
+    if(!c){
+      // Surface the REAL reason instead of a blanket "Campaign not found." A detail read can come back
+      // with no `campaign` key for two reasons: an engine error body (ok:false / status:"error" — e.g. a
+      // detail-only query threw upstream) or a genuinely absent campaign. Show states_why/error when we
+      // have one so the operator sees the actual failure, never a masked one (the drill-in bug fix).
+      const why=(rep&&(rep.states_why||rep.error))||"Campaign not found.";
+      body.innerHTML='<div class="cmp-bar"><button class="cmp-back">\\u2190 Portfolio</button></div><div class="cmp-empty">'+esc(why)+'</div>';
       body.querySelector(".cmp-back").onclick=cmpLoad; return; }
     let h='<div class="cmp-bar"><button class="cmp-back">\\u2190 Portfolio</button><button class="cmp-refresh">\\u21bb Refresh</button></div>';
     h+=rowHtml(c,false);
@@ -4370,7 +4432,7 @@ function initCampaigns(){
       goBtn.disabled=true; bk.querySelector(".cmp-cf-cancel").disabled=true;
       goBtn.textContent=isGo?"Going live\\u2026":"Pausing\\u2026";
       let res;
-      try{ res=await sdApi(isGo?"go-live":"pause",{date:c.date, peril:c.peril||"hail", i_reviewed:true}); }
+      try{ res=await sdApi(isGo?"go-live":"pause-campaign",{date:c.date, peril:c.peril||"hail", i_reviewed:true}); }
       catch(e){ glFlash={campaign:c.campaign, text:(isGo?"Go-live failed \\u2014 ":"Pause failed \\u2014 ")+((e&&e.message)||String(e)), err:true};
         close(); cmpDrill(c.campaign); return; }
       if(res && res.ok===false){
@@ -4395,6 +4457,14 @@ function initCampaigns(){
     let rep;
     try{ rep=await sdApi("campaign-status",{campaign:camp}); }
     catch(e){ body.innerHTML='<div class="cmp-err">Couldn\\'t load '+esc(camp)+'.<br>'+esc((e&&e.message)||e)+'</div>'; return; }
+    // MIRROR cmpLoad (the drill-in bug fix): the engine can return HTTP 200 with an ERROR BODY
+    // (ok:false / status:"error") — the transport succeeded but the read failed. cmpLoad already checks
+    // this; cmpDrill did not, so an error body fell through to renderDetail and showed a blanket
+    // "Campaign not found," masking the real failure. Surface the states-why/error here instead.
+    if(rep && (rep.ok===false || rep.status==="error")){
+      body.innerHTML='<div class="cmp-bar"><button class="cmp-back">\\u2190 Portfolio</button></div>'+
+        '<div class="cmp-err">'+esc(rep.states_why||rep.error||("Couldn\\'t load "+camp))+'</div>';
+      body.querySelector(".cmp-back").onclick=cmpLoad; return; }
     renderCtx(rep); renderDetail(rep);
   }
 
