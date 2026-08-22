@@ -519,6 +519,77 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
   z-index:3000;background:#2f6fe0;color:#fff;font-size:12px;font-weight:700;padding:6px 13px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,.4)}
 @media(max-width:520px){.wx-panel{width:100%}}
 
+/* ── CAMPAIGN MONITOR panel (2026-08-22, Design Lock v3 §13 portfolio / §12 banner). READ-ONLY.
+   Right-side overlay, same chrome family as .wx-panel; full-width on phones. ── */
+.cmp-panel{position:fixed;top:0;right:0;height:100%;width:460px;max-width:97vw;z-index:2500;background:#0f1830;color:#e9eef7;
+  box-shadow:-12px 0 36px rgba(0,0,0,.5);display:flex;flex-direction:column;border-left:1px solid #243352}
+.cmp-panel.hidden{display:none}
+.cmp-hd{display:flex;align-items:center;gap:10px;padding:13px 15px;border-bottom:1px solid #243352}
+.cmp-hd b{font-size:15px;letter-spacing:.3px}.cmp-hd .cmp-sub{color:#8aa0c6;font-size:11px}
+.cmp-hd .cmp-x{margin-left:auto;background:transparent;border:none;color:#9fb3d9;font-size:22px;line-height:1;cursor:pointer}
+.cmp-hd .cmp-x:hover{color:#fff}
+/* CONTEXT strip (Rule 11: account + as-of + window visible without scrolling) */
+.cmp-ctx{padding:9px 15px;border-bottom:1px solid #243352;background:#0c1426;font-size:11px;color:#9fb3d9;display:flex;gap:14px;flex-wrap:wrap}
+.cmp-ctx b{color:#cdeafe}
+.cmp-modeled{margin:0;padding:8px 15px;background:#2a2410;border-bottom:1px solid #5a4a1e;color:#e6cf8a;font-size:10.5px;font-style:italic;line-height:1.4}
+.cmp-modeled .cmp-badge{font-style:normal}
+.cmp-badge{display:inline-block;background:#5a4a1e;color:#ffe6a0;border-radius:4px;padding:0 5px;font-size:9px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;vertical-align:middle}
+.cmp-body{flex:1;overflow:auto;padding:12px 15px}
+.cmp-load,.cmp-err,.cmp-empty{color:#9fb3d9;font-size:13px;padding:22px 4px;text-align:center}
+.cmp-err{color:#ff9a76}
+.cmp-bar{display:flex;gap:8px;align-items:center;margin-bottom:12px}
+.cmp-bar button{background:#243352;border:none;color:#cdeafe;border-radius:6px;padding:6px 10px;font-size:11px;font-weight:700;cursor:pointer}
+.cmp-bar button:hover{background:#2f4a72}
+.cmp-bar .cmp-back{background:#2f6fe0;color:#fff}
+/* TOTALS strip */
+.cmp-tot{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px}
+.cmp-tcard{background:#13203c;border:1px solid #243352;border-radius:9px;padding:9px 11px}
+.cmp-tcard .cmp-tk{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#8aa0c6}
+.cmp-tcard .cmp-tv{font-size:18px;font-weight:800;color:#cdeafe;margin-top:2px}
+.cmp-tcard .cmp-tsub{font-size:10px;color:#8aa0c6;margin-top:2px}
+.cmp-tcard.wide{grid-column:1 / span 2}
+/* per-campaign row */
+.cmp-sec-t{font-weight:800;font-size:11px;letter-spacing:.6px;text-transform:uppercase;color:#8aa0c6;margin:4px 0 8px}
+.cmp-row{background:#13203c;border:1px solid #243352;border-radius:10px;padding:10px 12px;margin-bottom:8px;cursor:pointer}
+.cmp-row:hover{background:#1b2c4e;border-color:#2f4a72}
+.cmp-row.quiet{opacity:.62}                 /* §13: quiets as a campaign ages (TAIL / wound-down) */
+.cmp-row-top{display:flex;align-items:center;gap:8px}
+.cmp-name{font-weight:800;font-size:13px;color:#cdeafe}
+.cmp-stg{margin-left:auto;font-size:9.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;padding:2px 7px;border-radius:20px}
+.cmp-stg.SURGE{background:#3a1b1b;color:#ff8a8a;box-shadow:inset 0 0 0 1px #7a2b2b}
+.cmp-stg.CROSSFADE{background:#3a3320;color:#ffd27a;box-shadow:inset 0 0 0 1px #7a6a2b}
+.cmp-stg.TAIL{background:#16303f;color:#7fc7ff;box-shadow:inset 0 0 0 1px #2b5a7a}
+.cmp-stg.Launched{background:#1b2740;color:#9fb3d9;box-shadow:inset 0 0 0 1px #34496e}
+.cmp-stg.wounddown{background:#241b30;color:#c0a8e0;box-shadow:inset 0 0 0 1px #4a3a6a}
+.cmp-mets{display:flex;flex-wrap:wrap;gap:10px;margin-top:7px;font-size:11px;color:#aebcd4}
+.cmp-mets b{color:#e9eef7;font-weight:800}
+.cmp-mets .m-model{color:#e6cf8a}
+.cmp-pace{margin-top:7px;font-size:11px;display:flex;align-items:center;gap:7px}
+.cmp-pace .cmp-pill{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:2px 7px;border-radius:20px}
+.cmp-pill.on-pace{background:#15301f;color:#7fe0a0;box-shadow:inset 0 0 0 1px #2b6a45}
+.cmp-pill.over-pace{background:#3a1b1b;color:#ff8a8a;box-shadow:inset 0 0 0 1px #7a2b2b}
+.cmp-pill.under-pace{background:#1b2740;color:#9fb3d9;box-shadow:inset 0 0 0 1px #34496e}
+.cmp-flags{margin-top:8px;display:flex;flex-direction:column;gap:5px}
+.cmp-flag{font-size:10.5px;border-radius:7px;padding:6px 8px;line-height:1.35}
+.cmp-flag.warn{background:#2e1c12;color:#ffbf9a;box-shadow:inset 0 0 0 1px #6a3a22}
+.cmp-flag.info{background:#141f36;color:#9fb8e0;box-shadow:inset 0 0 0 1px #2c3c5e}
+.cmp-flag .cmp-fk{font-weight:800;text-transform:uppercase;letter-spacing:.3px;font-size:9px;margin-right:5px}
+/* drill-in: rings + banner */
+.cmp-rings{display:flex;flex-direction:column;gap:5px;margin-bottom:14px}
+.cmp-ring{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;background:#13203c;border-radius:8px;padding:7px 10px;font-size:11px}
+.cmp-ring .r-idx{font-weight:800;color:#7fc7ff;background:#0c1426;border-radius:6px;padding:2px 7px}
+.cmp-ring .r-mets{color:#aebcd4;display:flex;gap:9px;flex-wrap:wrap}.cmp-ring .r-mets b{color:#e9eef7}
+.cmp-bannerhd{display:flex;align-items:center;gap:8px;margin:2px 0 8px}
+.cmp-bannerhd .cmp-adstr{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:2px 8px;border-radius:20px;background:#13203c;box-shadow:inset 0 0 0 1px #34496e;color:#cdeafe}
+.cmp-assets{display:flex;flex-direction:column;gap:5px}
+.cmp-asset{display:grid;grid-template-columns:74px 46px 1fr;gap:8px;align-items:center;background:#13203c;border-radius:8px;padding:7px 10px;font-size:11px}
+.cmp-asset .a-ft{color:#8aa0c6;font-size:9.5px;text-transform:uppercase;letter-spacing:.4px}
+.cmp-asset .a-txt{color:#dbe7fb;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cmp-lbl{font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:.3px;padding:2px 6px;border-radius:5px;text-align:center}
+.cmp-lbl.BEST{background:#15301f;color:#7fe0a0}.cmp-lbl.GOOD{background:#1b2740;color:#9fb8e0}
+.cmp-lbl.LOW{background:#3a1b1b;color:#ff8a8a}.cmp-lbl.LEARNING,.cmp-lbl.PENDING,.cmp-lbl.UNSPECIFIED{background:#241b30;color:#c0a8e0}
+@media(max-width:520px){.cmp-panel{width:100%}}
+
 /* map locate / re-centre control (matches the Leaflet zoom bar) */
 .locate-ctl a{display:flex;align-items:center;justify-content:center;width:30px;height:30px;font-size:18px;color:#0b1220;text-decoration:none;background:#fff}
 .locate-ctl a:hover{background:#eef3ff}
@@ -1925,7 +1996,9 @@ const SD_COMMANDS = ["solve", "active-promotion", "promote-solve", "send-promote
                      // INSTANT PRICE (2026-07-31): async fire + status poll (spend-packet, spend-packet-status)
                      "packet", "packet-status",
                      // CARD RESOLVE (2026-08-01): locked-resolver rooftop pin + watchlist membership (read)
-                     "resolve"];
+                     "resolve",
+                     // CAMPAIGN MONITOR (2026-08-22): READ-ONLY portfolio rollup + per-campaign detail + banner (Design Lock v3 §13/§12)
+                     "campaign-status"];
 async function sdApi(action, body){
   if(!SPEND_API) throw new Error("no spend endpoint configured (v2 proxy wiring)");
   if(!SD_COMMANDS.includes(action))
@@ -3842,6 +3915,10 @@ function setupMobile(){
     const node=document.querySelector(sel); if(node) body.appendChild(node);   // move the panel DOM in (keeps its wiring)
     sh.appendChild(head); sh.appendChild(body); document.body.appendChild(sh); sheets[id]=sh;
   });
+  // CAMPAIGN MONITOR (2026-08-22): its own full-width overlay (not a bottom sheet), so it gets a
+  // direct launcher button rather than a data-sheet entry. Rule 18: renders on phone too.
+  const cbtn=document.createElement("button"); cbtn.id="mCampaigns"; cbtn.textContent="\ud83d\udce3";
+  cbtn.title="Campaigns (live portfolio)"; cbtn.onclick=()=>{ if(window.tempestOpenCampaigns) window.tempestOpenCampaigns(); }; tb.appendChild(cbtn);
   const fbtn=document.createElement("button"); fbtn.id="mFull"; fbtn.textContent="\u26f6";
   fbtn.title="Full-screen radar"; fbtn.onclick=()=>setFullmap(!document.body.classList.contains("fullmap")); tb.appendChild(fbtn);
   document.body.appendChild(bd); app.appendChild(tb);
@@ -4515,6 +4592,7 @@ function setupFloatPanels(){
     ["details","\ud83d\udccb Storm Review","#side",{l:288,t:14,w:372}],
     ["spend","\ud83d\udcb0 Spend Dial","#spendPanel",{l:14,t:300,w:372}],
     ["weather","\ud83c\udf27 Weather",null,null],
+    ["campaigns","\ud83d\udce3 Campaigns",null,null],
     ["perils","\u26a1 Active Perils",".legend",{l:408,t:300,w:240}],
     ["live","\ud83d\udfe2 LIVE",".livectl",{l:672,t:14,w:262}]
   ];
@@ -4538,7 +4616,9 @@ function setupFloatPanels(){
     const id=def[0], label=def[1], sel=def[2], pos=def[3];
     const btn=document.createElement("button"); btn.className="fb-btn"; btn.dataset.fb=id; btn.innerHTML=label;
     bar.appendChild(btn);
-    if(!sel){ btn.onclick=function(){ if(window.tempestOpenWx) window.tempestOpenWx(); }; return; }   // Weather tool
+    if(!sel){ btn.onclick=function(){                                   // selector-less tools (own overlay)
+        if(id==="campaigns"){ if(window.tempestOpenCampaigns) window.tempestOpenCampaigns(); }
+        else if(window.tempestOpenWx) window.tempestOpenWx(); }; return; }   // Weather tool
     const node=document.querySelector(sel); if(!node){ btn.style.display="none"; return; }
     const box=document.createElement("div"); box.className="floatbox"; box.id="fb-"+id;
     if(pos){ box.style.left=pos.l+"px"; box.style.top=pos.t+"px"; if(pos.w) box.style.width=pos.w+"px"; }
@@ -4554,6 +4634,140 @@ function setupFloatPanels(){
     btn.onclick=function(){ setOpen(!box.classList.contains("open")); };
   });
   TMAP.invalidateSize(); window.dispatchEvent(new Event("resize"));   // map reflows to full width (side panel moved out)
+}
+
+// ===================== CAMPAIGN MONITOR (Design Lock v3 §13 portfolio / §12 banner) =====================
+// READ-ONLY operator surface over the live Google Ads account (punch-list #2 panel + #5 banner view).
+// Fires sdApi("campaign-status") -> the netlify read verb -> KCCStormAPI /campaign_status -> the engine
+// (a live GAQL SELECT + pacing/stage/flag compute; NO account or graph writes). A right-side overlay
+// (full-width on phones), stage-sorted, quiets aging campaigns (§13). Rule-1: every conversion-derived
+// figure is badged MODELED/proxy (conversions aren't flowing yet). Rule 11: account/window/as-of show in
+// the context strip without scrolling. Rule 22: refresh preserves the body scroll position (no jump).
+function initCampaigns(){
+  if(document.getElementById("cmpPanel")) return;
+  const ov=document.createElement("div"); ov.id="cmpPanel"; ov.className="cmp-panel hidden";
+  ov.innerHTML=
+    '<div class="cmp-hd"><b>\ud83d\udce3 Campaigns</b><span class="cmp-sub">live portfolio \u00b7 read-only</span><button class="cmp-x" title="Close">\u00d7</button></div>'+
+    '<div class="cmp-ctx"></div>'+
+    '<div class="cmp-modeled"></div>'+
+    '<div class="cmp-body"><div class="cmp-load">Loading campaigns\u2026</div></div>';
+  document.body.appendChild(ov);
+  const bk=document.createElement("div"); bk.id="cmpBackdrop";
+  bk.style.cssText="position:fixed;inset:0;z-index:2400;background:rgba(0,0,0,.35);display:none";
+  document.body.appendChild(bk);
+
+  function cmpOpen(){ ov.classList.remove("hidden"); bk.style.display="block"; cmpLoad(); }
+  function cmpClose(){ ov.classList.add("hidden"); bk.style.display="none"; }
+  ov.querySelector(".cmp-x").onclick=cmpClose;
+  bk.onclick=cmpClose;
+
+  const money=n=>(n==null)?"\u2014":"$"+Number(n).toLocaleString(undefined,{maximumFractionDigits:2});
+  const pct=f=>(f==null)?"\u2014":Math.round(Number(f)*100)+"%";
+  const num=n=>Number(n||0).toLocaleString();
+  const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+  const stgCls=s=>String(s||"").replace(/[^A-Za-z]/g,"");   // "wound-down" -> "wounddown" (valid class)
+
+  function renderCtx(rep){
+    const as=rep.as_of? String(rep.as_of).replace("T"," ").slice(0,16):"\u2014";
+    const win=rep.window? String(rep.window).replace("segments.date ",""):"\u2014";
+    ov.querySelector(".cmp-ctx").innerHTML=
+      '<span>Account <b>'+esc(rep.account||"\u2014")+'</b></span>'+
+      '<span>Window <b>'+esc(win)+'</b></span>'+
+      '<span>As of <b>'+esc(as)+'</b></span>';
+    ov.querySelector(".cmp-modeled").innerHTML='<span class="cmp-badge">Modeled</span> '+esc(rep.modeled_note||"");
+  }
+
+  function rowHtml(r,clickable){
+    const quiet=(r.stage==="TAIL"||r.stage==="wound-down")?" quiet":"";
+    let h='<div class="cmp-row'+quiet+'"'+(clickable?(' data-camp="'+esc(r.campaign)+'"'):' style="cursor:default"')+'>';
+    h+='<div class="cmp-row-top"><span class="cmp-name">'+esc(r.campaign)+'</span>'+
+       '<span class="cmp-stg '+stgCls(r.stage)+'">'+esc(r.stage)+'</span></div>';
+    h+='<div class="cmp-mets">'+
+       '<span>Impr <b>'+num(r.impressions)+'</b></span>'+
+       '<span>Clicks <b>'+num(r.clicks)+'</b></span>'+
+       '<span>CTR <b>'+pct(r.ctr)+'</b></span>'+
+       '<span>IS <b>'+pct(r.impression_share)+'</b></span>'+
+       '<span>Spend(win) <b>'+money(r.spend_window)+'</b></span>'+
+       '</div>';
+    const p=r.pacing;
+    if(p){ h+='<div class="cmp-pace">Today <b>'+money(p.spend_today)+'</b> / cap '+money(p.daily_budget)+
+       (p.label? ' <span class="cmp-pill '+p.label+'">'+p.label+(p.ratio!=null?" "+Math.round(p.ratio*100)+"%":"")+'</span>':'')+'</div>'; }
+    if(r.flags && r.flags.length){ h+='<div class="cmp-flags">';
+      r.flags.forEach(function(f){ h+='<div class="cmp-flag '+(f.severity||"warn")+'"><span class="cmp-fk">'+esc((f.code||"").replace(/_/g," "))+'</span>'+esc(f.detail||"")+(f.modeled?' <span class="cmp-badge">proxy</span>':'')+'</div>'; });
+      h+='</div>'; }
+    h+='</div>';
+    return h;
+  }
+
+  function tcard(k,v,sub){ return '<div class="cmp-tcard"><div class="cmp-tk">'+k+'</div><div class="cmp-tv">'+v+'</div>'+(sub?'<div class="cmp-tsub">'+esc(sub)+'</div>':'')+'</div>'; }
+  function statusLine(bs){ if(!bs) return ""; return Object.keys(bs).map(function(k){ return k.toLowerCase()+": "+bs[k]; }).join(" \u00b7 "); }
+  function stageLine(bs){ if(!bs) return ""; return Object.keys(bs).map(function(k){ return k+": "+bs[k]; }).join(" \u00b7 "); }
+
+  function renderPortfolio(rep){
+    const body=ov.querySelector(".cmp-body");
+    const keep=body.scrollTop;
+    const pf=rep.portfolio||{}, t=pf.totals||{}, rows=pf.rows||[];
+    let h='<div class="cmp-bar"><button class="cmp-refresh">\u21bb Refresh</button></div>';
+    h+='<div class="cmp-tot">'+
+       tcard("Live daily spend", money(t.live_daily_spend), (t.serving||0)+" serving now")+
+       tcard("Daily budget", money(t.daily_budget_total), "sum of solve caps")+
+       tcard("Campaigns", (t.campaigns||0), statusLine(t.by_status))+
+       tcard("Window spend", money(t.spend_window_total), stageLine(t.by_stage))+
+       '</div>';
+    h+='<div class="cmp-sec-t">Campaigns by stage</div>';
+    if(!rows.length){ h+='<div class="cmp-empty">No CAMP-* campaigns in the account yet.</div>'; }
+    else { rows.forEach(function(r){ h+=rowHtml(r,true); }); }
+    body.innerHTML=h;
+    body.querySelector(".cmp-refresh").onclick=cmpLoad;
+    body.querySelectorAll(".cmp-row[data-camp]").forEach(function(el){ el.onclick=function(){ cmpDrill(el.dataset.camp); }; });
+    body.scrollTop=keep;   // Rule 22: refresh must not jump the scroll position
+  }
+
+  function renderDetail(rep){
+    const body=ov.querySelector(".cmp-body");
+    const c=rep.campaign;
+    if(!c){ body.innerHTML='<div class="cmp-bar"><button class="cmp-back">\u2190 Portfolio</button></div><div class="cmp-empty">Campaign not found.</div>';
+      body.querySelector(".cmp-back").onclick=cmpLoad; return; }
+    let h='<div class="cmp-bar"><button class="cmp-back">\u2190 Portfolio</button><button class="cmp-refresh">\u21bb Refresh</button></div>';
+    h+=rowHtml(c,false);
+    const bn=c.banner||{};
+    h+='<div class="cmp-sec-t">Banner / RSA</div>';
+    h+='<div class="cmp-bannerhd"><span>Ad strength</span><span class="cmp-adstr">'+esc(bn.ad_strength||c.ad_strength||"\u2014")+'</span></div>';
+    const assets=bn.assets||[];
+    if(!assets.length){ h+='<div class="cmp-empty">No RSA asset performance rows in the window.</div>'; }
+    else { h+='<div class="cmp-assets">'; assets.forEach(function(a){ const lbl=String(a.performance_label||"").toUpperCase();
+      h+='<div class="cmp-asset"><span class="a-ft">'+esc(a.field_type||"")+'</span><span class="cmp-lbl '+esc(lbl)+'">'+esc(lbl||"\u2014")+'</span><span class="a-txt" title="'+esc(a.text||"")+'">'+esc(a.text||"")+'</span></div>'; });
+      h+='</div>'; }
+    const rings=c.rings||[];
+    h+='<div class="cmp-sec-t">Rings ('+rings.length+')</div>';
+    if(!rings.length){ h+='<div class="cmp-empty">No per-ring metrics in the window.</div>'; }
+    else { h+='<div class="cmp-rings">'; rings.forEach(function(r){
+      h+='<div class="cmp-ring"><span class="r-idx">#'+r.idx+'</span><span class="r-mets">Impr <b>'+num(r.impressions)+'</b> \u00b7 Clicks <b>'+num(r.clicks)+'</b> \u00b7 IS <b>'+pct(r.impression_share)+'</b></span><span>'+money(r.spend)+'</span></div>'; });
+      h+='</div>'; }
+    body.innerHTML=h;
+    body.querySelector(".cmp-back").onclick=cmpLoad;
+    const rf=body.querySelector(".cmp-refresh"); if(rf) rf.onclick=function(){ cmpDrill(c.campaign); };
+    body.scrollTop=0;   // drill-in is navigation to a new view -> top is correct
+  }
+
+  async function cmpLoad(){
+    const body=ov.querySelector(".cmp-body");
+    let rep;
+    try{ rep=await sdApi("campaign-status",{during:"LAST_7_DAYS"}); }
+    catch(e){ body.innerHTML='<div class="cmp-err">Couldn\'t load campaigns.<br>'+esc((e&&e.message)||e)+'</div>'; return; }
+    if(rep && rep.ok===false){ body.innerHTML='<div class="cmp-err">'+esc(rep.states_why||rep.error||"campaign read failed")+'</div>'; return; }
+    renderCtx(rep); renderPortfolio(rep);
+  }
+  async function cmpDrill(camp){
+    const body=ov.querySelector(".cmp-body");
+    body.innerHTML='<div class="cmp-load">Loading '+esc(camp)+'\u2026</div>';
+    let rep;
+    try{ rep=await sdApi("campaign-status",{campaign:camp}); }
+    catch(e){ body.innerHTML='<div class="cmp-err">Couldn\'t load '+esc(camp)+'.<br>'+esc((e&&e.message)||e)+'</div>'; return; }
+    renderCtx(rep); renderDetail(rep);
+  }
+
+  window.tempestOpenCampaigns=cmpOpen;
 }
 
 // ===================== WEATHER TAB — rain forecast for job scheduling =====================
@@ -5445,6 +5659,7 @@ async function boot(){
   if(TMAP) TMAP.setView([38.63, -90.2], 9);
   addLiveLayers();      // item 7 ext: live NEXRAD loop + NWS warnings + storm-track cones (display-only, all off by default)
   initWeather();        // weather tab: rain forecast for job scheduling (isolated tool view; NWS + Census, no graph/engine)
+  initCampaigns();      // campaign monitor: READ-ONLY live portfolio + per-campaign detail + banner (Design Lock v3 §13/§12)
   addChaseLayer(D.chase);   // item 8 Step 3 v2: chase TARGETING block at the bottom of the Layers panel (master OFF)
   addChaseSwathLayer(D);    // truth pass: OUT-OF-MARKET chase SWATH — subordinate, labeled, PRESENT by default
   addSwathVisibilityFloor(D); // truth pass Part 3: min footprint so a small in-market gated swath is unmissable
