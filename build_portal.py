@@ -2765,6 +2765,10 @@ let SG_STATE = { sol: null }, SG_GRP = null, SG_BASEGRP = null;
 let SG_PERIL = "hail";           // active Spend-Dial peril (hail | tornado). Wind is not solvable yet.
 let SG_LIVE = null;              // Phase B: the storm's LIVE (serving) campaign detail, or null (drives
                                  // the LIVE badge + state-aware dial buttons: Update live / Wind down / Pause).
+let SG_LIVEGRP = null;          // FIX 3 (2026-08-22): the GREEN "ads running" map layer for the LIVE
+                                 // campaign's actual serving rings (its ad-group proximity geo), distinct
+                                 // from the orange hail/damage circles. Cleared whenever the campaign is
+                                 // not serving. Drawn from campaign-status detail.serving_rings.
 const SG_BANDS = [["1.125-1.5", "b0"], ["1.5-1.8", "b1"], ["1.8-2.0", "b2"], ["2.0+", "b3"]];
 // ASYNC SOLVE (2026-07-21): the first solve of a COLD date takes ~200s server-side, which used to
 // blow the ~30s gateway timeout and surface in the browser as "Failed to fetch". The engine now
@@ -3499,12 +3503,26 @@ async function sgGoLiveLaunch(){
 //      LIVE (serving)       -> "Update live" + "Wind down" + "Pause" (sdLiveActions); Go Live hidden.
 //    Solve + Approve stay in both states. READ-ONLY (campaign-status writes nothing).
 function sgLiveEsc(s){ return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+// FIX 3 (2026-08-22): draw the LIVE campaign's actual serving rings in GREEN ("ads running"), read from
+// the running campaign's ad-group proximity geo (campaign-status detail.serving_rings) - NOT the promoted
+// solve. Distinct from the orange hail/damage circles + the green Solve SNAP (that is the pre-launch
+// funded set; this is what is ACTUALLY serving live). Passing an empty/absent list clears the layer.
+function sgDrawLiveRings(rings){
+  if(typeof TMAP==="undefined" || !TMAP) return;
+  if(SG_LIVEGRP){ TMAP.removeLayer(SG_LIVEGRP); SG_LIVEGRP=null; }        // clear the prior live layer
+  if(!TMAP.getPane("adsLive")){ const pn=TMAP.createPane("adsLive"); pn.style.zIndex=658; }  // above solve circles
+  const layers=(rings||[]).map(function(g){
+    return L.circle([g.lat, g.lng], { pane:"adsLive", radius:(g.radius_mi||1)*1609.344,
+        color:"#22c55e", weight:3, opacity:.95, fill:true, fillColor:"#22c55e", fillOpacity:.06 })
+      .bindTooltip("ads running", {sticky:true, className:"wl-pin-tip"}); });
+  if(layers.length){ SG_LIVEGRP=L.layerGroup(layers).addTo(TMAP); }
+}
 async function sgRefreshLive(){
   const upd=document.getElementById("sdUpdateLive"), wd=document.getElementById("sdWindDown"),
         pz=document.getElementById("sdPauseDial"), snd=document.getElementById("sdSend"),
         lv=document.getElementById("sdLive"), acts=document.getElementById("sdLiveActions");
   if(!upd||!wd||!pz||!snd||!acts) return;
-  if(SG_TOTAL_MODE){ acts.style.display="none"; if(lv) lv.style.display="none"; return; }   // total mode has no single campaign
+  if(SG_TOTAL_MODE){ acts.style.display="none"; if(lv) lv.style.display="none"; sgDrawLiveRings([]); return; }   // total mode has no single campaign
   let rep; try{ rep=await sdApi("campaign-status",{date:getDate(), peril:SG_PERIL||"hail"}); }
   catch(e){ rep=null; }   // read-only; a failure just leaves the default (Go Live) button state
   const c=(rep && rep.ok!==false) ? rep.campaign : null;
@@ -3519,12 +3537,20 @@ async function sgRefreshLive(){
         const v=Math.min(Math.max(Math.round(c.daily_budget), mn), mx);
         capr.value=v; if(capv) capv.textContent="$"+(+v).toLocaleString(); }
     }
+    // FIX 3: draw the GREEN "ads running" rings from the RUNNING campaign's actual ad-group geo, and
+    // show the live ring count on the badge (the dial now reflects what is serving, not a 0-ring solve).
+    const liveRings=(c.serving_rings||[]);
+    sgDrawLiveRings(liveRings);
+    const nrings=(c.live_ring_count!=null?c.live_ring_count:liveRings.length);
     if(lv){ lv.style.display="block";
       lv.innerHTML="<span class='badge'>LIVE</span> "+sgLiveEsc(c.campaign)+" \\u00b7 $"
-        +Math.round(c.daily_budget||0).toLocaleString()+"/day \\u00b7 serving"; }
+        +Math.round(c.daily_budget||0).toLocaleString()+"/day \\u00b7 "
+        +nrings+" ring"+(nrings===1?"":"s")+" serving"
+        +(liveRings.length?" \\u00b7 <span style='color:#22c55e'>\\u25cf ads running</span>":""); }
     acts.style.display="flex"; snd.style.display="none";
   } else {
     if(lv) lv.style.display="none";
+    sgDrawLiveRings([]);                 // not serving -> clear the green "ads running" layer
     acts.style.display="none"; snd.style.display="";
   }
 }
@@ -4534,11 +4560,15 @@ function initCampaigns(){
   }
   // measured metrics line; showRates toggles the CTR/IS pair (hidden in TAIL as noise).
   function metsLine(r,showRates){
-    let h='<div class="cmp-mets"><span>Impr <b>'+num(r.impressions)+'</b></span>'+
-          '<span>Clicks <b>'+num(r.clicks)+'</b></span>';
-    if(showRates){ h+='<span>CTR <b>'+pct(r.ctr)+'</b></span><span>IS (today) <b>'+pct(r.impression_share)+'</b></span>'; }
-    h+='<span>Avg CPC (window) <b>'+money(r.avg_cpc)+'</b></span>'+
-       '<span>Spend(win) <b>'+money(r.spend_window)+'</b></span></div>';
+    // FIX 3 (2026-08-22): plain-language metric labels (impressions = "searches shown"), each with a
+    // tooltip spelling out exactly what it measures, so the operator never has to decode ad jargon.
+    let h='<div class="cmp-mets">'+
+          '<span title="Impressions \\u2014 how many times your ad was shown in Google search results">Searches shown <b>'+num(r.impressions)+'</b></span>'+
+          '<span title="Clicks \\u2014 how many people clicked your ad through to the landing page">Clicks <b>'+num(r.clicks)+'</b></span>';
+    if(showRates){ h+='<span title="Click-through rate \\u2014 clicks divided by searches shown">CTR <b>'+pct(r.ctr)+'</b></span>'+
+          '<span title="Impression share (today) \\u2014 the share of eligible searches where your ad showed">IS (today) <b>'+pct(r.impression_share)+'</b></span>'; }
+    h+='<span title="Average cost per click over the window">Avg CPC (window) <b>'+money(r.avg_cpc)+'</b></span>'+
+       '<span title="Ad spend over the window">Spend(win) <b>'+money(r.spend_window)+'</b></span></div>';
     return h;
   }
   function pacingLine(r){
@@ -4748,7 +4778,7 @@ function initCampaigns(){
       // per-ring budget-lost-IS is N/A: Google prohibits search_budget_lost_impression_share at
       // ad_group granularity, so a per-ring value is unavailable (never a false 0). IS itself is legal.
       const lostIs=(r.lost_is_budget==null)?"N/A":pct(r.lost_is_budget);
-      h+='<div class="cmp-ring"><span class="r-idx">#'+r.idx+'</span><span class="r-mets">Impr <b>'+num(r.impressions)+'</b> \\u00b7 Clicks <b>'+num(r.clicks)+'</b> \\u00b7 IS <b>'+pct(r.impression_share)+'</b> \\u00b7 Lost-IS(budget) <b>'+lostIs+'</b></span><span>'+money(r.spend)+'</span></div>'; });
+      h+='<div class="cmp-ring"><span class="r-idx">#'+r.idx+'</span><span class="r-mets" title="Searches shown (impressions) \\u00b7 clicks \\u00b7 impression share \\u00b7 impression share lost to budget">Searches <b>'+num(r.impressions)+'</b> \\u00b7 Clicks <b>'+num(r.clicks)+'</b> \\u00b7 IS <b>'+pct(r.impression_share)+'</b> \\u00b7 Lost-IS(budget) <b>'+lostIs+'</b></span><span>'+money(r.spend)+'</span></div>'; });
       h+='</div>'; }
     body.innerHTML=h;
     body.querySelector(".cmp-back").onclick=cmpLoad;
