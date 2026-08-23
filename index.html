@@ -1579,12 +1579,11 @@ function initSwathHover(D){
   });
   TMAP.on("mouseout", ()=>{ if(_HOVER.tip) TMAP.closeTooltip(_HOVER.tip); });
   // MOBILE TAP FIX (2026-08-23): on touch, a tap fires mouseover->mouseout back-to-back, so the hover
-  // tooltip flashed and vanished before it could be read — worst on the OUT-OF-MARKET chase swath
-  // (in-market taps are covered by the meshAt popup above, which persists; chase is not). On tap, when
-  // meshAt has no in-market cell, resolve the hull/chase cell and open a PERSISTENT popup (close button)
-  // that survives mouseout. Same content the hover tooltip showed. Works on desktop click too.
+  // tooltip flashed and vanished — worst on the OUT-OF-MARKET chase swath (in-market taps are covered by
+  // the meshAt popup, which persists; chase is not). On tap, when meshAt has no in-market cell, resolve
+  // the hull/chase cell and open a PERSISTENT popup (close button) that survives mouseout. Desktop click too.
   TMAP.on("click", e=>{
-    if(window.meshAt && window.meshAt(e.latlng.lat, e.latlng.lng)) return;   // in-market handled above
+    if(window.meshAt && window.meshAt(e.latlng.lat, e.latlng.lng)) return;   // in-market handled by meshAt popup
     let html=null;
     if(CHASE_HULL_PTS && CHASE_HULL_PTS.length>2){
       const p=TMAP.latLngToLayerPoint(e.latlng); let near=false;
@@ -4743,9 +4742,9 @@ function buildChaseLayers(chase){
     L.circleMarker([c.center_lat,c.center_lng],{pane:pane,radius:3,color:"#fff",weight:1,
       fillColor:col,fillOpacity:0.9}).bindPopup(pop).addTo(dest);
   });
-  // OUT-OF-MARKET confirmed hail dots (chase/pull, 2026-08-23) \u2014 FILTERED to the ad-funding diameter
+  // OUT-OF-MARKET confirmed hail dots (chase/pull, 2026-08-23) — FILTERED to the ad-funding diameter
   // (1.25" = AD_ELIGIBILITY_HAIL_FLOOR) so the chase view shows the SAME size roofs you'd fund in-market.
-  // bindPopup = mobile-safe (persistent tap readout; a bare tooltip flashes on touch). Keep in sync w/ the Hail-floor dial.
+  // bindPopup = mobile-safe (persistent tap; a bare tooltip flashes on touch). Keep in sync w/ the Hail-floor dial.
   const CHASE_EV_FLOOR = 1.25;
   (chase.evidence||[]).filter(p=>(+p.size_in||0) >= CHASE_EV_FLOOR).forEach(p=>{
     const _sz=(p.size_in!=null?p.size_in:"?");
