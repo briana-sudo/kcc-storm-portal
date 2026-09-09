@@ -521,6 +521,8 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .cmp-mets{display:flex;flex-wrap:wrap;gap:10px;margin-top:7px;font-size:11px;color:#aebcd4}
 .cmp-mets b{color:#e9eef7;font-weight:800}
 .cmp-mets .m-model{color:#e6cf8a}
+.cmp-mets .m-lead{color:#7fdca0;font-weight:600}   /* MEASURED funnel leads (green): what the spend produced */
+.cmp-mets .m-lead b{color:#a7f0c2}
 .cmp-pace{margin-top:7px;font-size:11px;display:flex;align-items:center;gap:7px}
 .cmp-pace .cmp-pill{font-size:9.5px;font-weight:800;text-transform:uppercase;letter-spacing:.4px;padding:2px 7px;border-radius:20px}
 .cmp-pill.on-pace{background:#15301f;color:#7fe0a0;box-shadow:inset 0 0 0 1px #2b6a45}
@@ -4596,7 +4598,10 @@ function initCampaigns(){
     if(showRates){ h+='<span title="Click-through rate \\u2014 clicks divided by searches shown">CTR <b>'+pct(r.ctr)+'</b></span>'+
           '<span title="Impression share (today) \\u2014 the share of eligible searches where your ad showed">IS (today) <b>'+pct(r.impression_share)+'</b></span>'; }
     h+='<span title="Average cost per click over the window">Avg CPC (window) <b>'+money(r.avg_cpc)+'</b></span>'+
-       '<span title="Ad spend over the window">Spend(win) <b>'+money(r.spend_window)+'</b></span></div>';
+       '<span title="Ad spend over the window">Spend(win) <b>'+money(r.spend_window)+'</b></span>'+
+       '<span class="m-lead" title="Leads \\u2014 storm-report form submits this campaign produced (measured, from the leads database)">Leads <b>'+num(r.leads||0)+'</b></span>'+
+       ((r.leads>0)?'<span class="m-lead" title="Cost per lead \\u2014 window spend divided by measured leads">Cost/lead <b>'+money(r.cost_per_lead)+'</b></span>':'')+
+       '</div>';
     return h;
   }
   function pacingLine(r){
@@ -4719,6 +4724,7 @@ function initCampaigns(){
        tcard("Live daily spend", money(t.live_daily_spend), (t.serving||0)+" serving now")+
        tcard("Daily budget", money(t.daily_budget_total), "sum of solve caps")+
        tcard("Window spend", money(t.spend_window_total), stageLine(t.by_stage))+
+       tcard("Leads", (t.leads_total||0), ((t.leads_reports_sent_total||0))+" reports sent \\u00b7 "+((t.leads_in_path_total||0))+" in path")+
        tcard("Season spend", seasonV, "year-to-date \\u00b7 all storms")+
        tcard("Campaigns", (t.campaigns||0), statusLine(t.by_status))+
        // Remaining annual capacity is operator state (manual, kept out of the engine, addendum 16.9) —
