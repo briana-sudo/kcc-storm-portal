@@ -4601,6 +4601,7 @@ function initCampaigns(){
           '<span title="Impression share (today) \\u2014 the share of eligible searches where your ad showed">IS (today) <b>'+pct(r.impression_share)+'</b></span>'; }
     h+='<span title="Average cost per click over the window">Avg CPC (window) <b>'+money(r.avg_cpc)+'</b></span>'+
        '<span title="Ad spend over the window">Spend(win) <b>'+money(r.spend_window)+'</b></span>'+
+       '<span title="Form starts \\u2014 visitors who began filling the form (touched it, not yet submitted). With Clicks and Leads: many starts + few leads = the FORM is the problem; few starts vs clicks = the PAGE/offer or click quality.">Started <b>'+num(r.form_starts||0)+'</b></span>'+
        '<span class="m-lead" title="Leads \\u2014 storm-report form submits this campaign produced (measured, from the leads database)">Leads <b>'+num(r.leads||0)+'</b></span>'+
        ((r.leads>0)?'<span class="m-lead" title="Cost per lead \\u2014 window spend divided by measured leads">Cost/lead <b>'+money(r.cost_per_lead)+'</b></span>':'')+
        '</div>';
