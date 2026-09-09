@@ -512,6 +512,8 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .cmp-row.quiet{opacity:.62}                 /* §13: quiets as a campaign ages (TAIL / wound-down) */
 .cmp-row-top{display:flex;align-items:center;gap:8px}
 .cmp-name{font-weight:800;font-size:13px;color:#cdeafe}
+.cmp-chan{font-size:9px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;padding:1px 6px;border-radius:6px;border:1px solid #2f4a72;color:#9fc7ff}
+.cmp-chan-display{color:#d9b3ff;border-color:#5a3f7a}   /* Display lane */
 .cmp-stg{margin-left:auto;font-size:9.5px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;padding:2px 7px;border-radius:20px}
 .cmp-stg.SURGE{background:#3a1b1b;color:#ff8a8a;box-shadow:inset 0 0 0 1px #7a2b2b}
 .cmp-stg.CROSSFADE{background:#3a3320;color:#ffd27a;box-shadow:inset 0 0 0 1px #7a6a2b}
@@ -4652,6 +4654,7 @@ function initCampaigns(){
     const quiet=(stage==="TAIL")?" quiet":"";
     let h='<div class="cmp-row'+quiet+'"'+(clickable?(' data-camp="'+esc(r.campaign)+'"'):' style="cursor:default"')+'>';
     h+='<div class="cmp-row-top"><span class="cmp-name">'+esc(r.campaign)+'</span>'+
+       (r.channel?'<span class="cmp-chan cmp-chan-'+esc(String(r.channel).toLowerCase())+'" title="Ad channel">'+esc(r.channel)+'</span>':'')+
        '<span class="cmp-stg '+stgCls(stage)+'">'+esc(stage)+dN+'</span></div>';
 
     if(stage==="Launched"){
