@@ -4641,21 +4641,26 @@ function initCampaigns(){
       '<div class="cmp-spark-row"><span class="sp-lab">Spend/day</span><span class="cmp-spark-bars">'+bars(s.map(function(d){return d.spend;}),maxS,"spend")+'</span><span class="cmp-spark-cur">now <b>'+money(last.spend)+'</b></span></div></div>';
   }
 
+  // Friendly channel label: the Display lane is "the banner" in the operator's words, not "Display".
+  function chanLabel(ch){ return String(ch||"").toLowerCase()==="display" ? "Banner" : (ch||""); }
+  function chanChip(r){ return r.channel ? '<span class="cmp-chan cmp-chan-'+esc(String(r.channel).toLowerCase())+'" title="Ad channel">'+esc(chanLabel(r.channel))+'</span>' : ''; }
   function rowHtml(r,clickable){
     const stage=r.stage;
-    // WOUND-DOWN -> collapse to a one-line archive row (date - total spend - modeled jobs).
+    // WOUND-DOWN -> collapse to a one-line archive row (date - CHANNEL - clicks - total spend). The channel
+    // chip (Search / Banner) is what lets the operator tell the two same-date campaigns apart at a glance;
+    // clicks are shown inline so a wound-down row is not a data dead-end (drill-in has the full metrics line).
     if(stage==="wound-down"){
       const tot=(r.spend_season!=null)?r.spend_season:r.spend_window;
       return '<div class="cmp-arch"'+(clickable?(' data-camp="'+esc(r.campaign)+'"'):' style="cursor:default"')+'>'+
-        '<span class="a-date">'+esc(r.date)+'</span><span class="a-stg">wound-down</span>'+
-        '<span class="a-jobs">'+jobsFmt(modeledJobs(r))+' est jobs</span>'+
+        '<span class="a-date">'+esc(r.date)+'</span>'+chanChip(r)+'<span class="a-stg">wound-down</span>'+
+        '<span class="a-jobs">'+num(r.clicks||0)+' clicks \\u00b7 '+num(r.leads||0)+' leads</span>'+
         '<span class="a-sp">total <b>'+money(tot)+'</b></span></div>';
     }
     const dN=(r.days_since_storm!=null)?('<span class="cmp-dn">d+'+r.days_since_storm+'</span>'):'';
     const quiet=(stage==="TAIL")?" quiet":"";
     let h='<div class="cmp-row'+quiet+'"'+(clickable?(' data-camp="'+esc(r.campaign)+'"'):' style="cursor:default"')+'>';
     h+='<div class="cmp-row-top"><span class="cmp-name">'+esc(r.campaign)+'</span>'+
-       (r.channel?'<span class="cmp-chan cmp-chan-'+esc(String(r.channel).toLowerCase())+'" title="Ad channel">'+esc(r.channel)+'</span>':'')+
+       chanChip(r)+
        '<span class="cmp-stg '+stgCls(stage)+'">'+esc(stage)+dN+'</span></div>';
 
     if(stage==="Launched"){
@@ -4758,6 +4763,11 @@ function initCampaigns(){
       body.querySelector(".cmp-back").onclick=cmpLoad; return; }
     let h='<div class="cmp-bar"><button class="cmp-back">\\u2190 Portfolio</button><button class="cmp-refresh">\\u21bb Refresh</button></div>';
     h+=rowHtml(c,false);
+    // ALWAYS surface the real metrics in the drill-in, regardless of stage. rowHtml collapses a wound-down
+    // campaign to a one-line archive row (no metrics), which made the detail look empty ("no data"); the
+    // operator opens a campaign to SEE its numbers, so the full funnel line goes here unconditionally.
+    h+='<div class="cmp-detail-mets">'+metsLine(c,true)+'</div>';
+    if(c.daily_series && c.daily_series.length>=2){ h+=sparkline(c); }
     // ── GO-LIVE / PAUSE (2026-08-22, punch-list #4): the SANCTIONED operator-gated ENABLE + off-switch.
     //    The human money-gate moved from Google's Ads UI to this tap; go-live spends real money and is
     //    confirmed in a dialog + gated server-side (i_reviewed + budget-sanity vs the solve).
@@ -4775,13 +4785,17 @@ function initCampaigns(){
        flashHtml+
        '</div>';
     const bn=c.banner||{};
-    h+='<div class="cmp-sec-t">Banner / RSA</div>';
+    h+='<div class="cmp-sec-t">Ad copy \\u2014 headlines &amp; descriptions</div>';
     h+='<div class="cmp-bannerhd"><span>Ad strength</span><span class="cmp-adstr">'+esc(bn.ad_strength||c.ad_strength||"\\u2014")+'</span></div>';
     const assets=bn.assets||[];
-    if(!assets.length){ h+='<div class="cmp-empty">No RSA asset performance rows in the window.</div>'; }
-    else { h+='<div class="cmp-assets">'; assets.forEach(function(a){ const lbl=String(a.performance_label||"").toUpperCase();
+    if(!assets.length){ h+='<div class="cmp-empty">No ad-copy rows in the window.</div>'; }
+    else {
+      // COLLAPSED by default: this is the wall of rotating headlines the operator called "dumb" when it
+      // dominated the panel. It is reference detail, not a headline metric, so it hides behind a disclosure.
+      h+='<details class="cmp-collapse"><summary style="cursor:pointer;color:#9fb4d8;font-size:11px;padding:7px 2px;user-select:none">Show the '+assets.length+' ad headlines / descriptions Google rotates &#9656;</summary>';
+      h+='<div class="cmp-assets">'; assets.forEach(function(a){ const lbl=String(a.performance_label||"").toUpperCase();
       h+='<div class="cmp-asset"><span class="a-ft">'+esc(a.field_type||"")+'</span><span class="cmp-lbl '+esc(lbl)+'">'+esc(lbl||"\\u2014")+'</span><span class="a-txt" title="'+esc(a.text||"")+'">'+esc(a.text||"")+'</span></div>'; });
-      h+='</div>'; }
+      h+='</div></details>'; }
     // §11 SEARCH TERMS — read-only ranked waste list (proxy-labeled; conversions not flowing yet).
     const st=c.search_terms||null;
     h+='<div class="cmp-sec-t">Search terms \\u2014 wasteful</div>';
@@ -4871,7 +4885,7 @@ function initCampaigns(){
   async function cmpLoad(){
     const body=ov.querySelector(".cmp-body");
     let rep;
-    try{ rep=await sdApi("campaign-status",{during:"LAST_7_DAYS"}); }
+    try{ rep=await sdApi("campaign-status",{during:"LAST_30_DAYS"}); }
     catch(e){ body.innerHTML='<div class="cmp-err">Couldn\\'t load campaigns.<br>'+esc((e&&e.message)||e)+'</div>'; return; }
     if(rep && rep.ok===false){ body.innerHTML='<div class="cmp-err">'+esc(rep.states_why||rep.error||"campaign read failed")+'</div>'; return; }
     renderCtx(rep); renderPortfolio(rep);
@@ -4880,7 +4894,7 @@ function initCampaigns(){
     const body=ov.querySelector(".cmp-body");
     body.innerHTML='<div class="cmp-load">Loading '+esc(camp)+'\\u2026</div>';
     let rep;
-    try{ rep=await sdApi("campaign-status",{campaign:camp}); }
+    try{ rep=await sdApi("campaign-status",{campaign:camp,during:"LAST_30_DAYS"}); }
     catch(e){ body.innerHTML='<div class="cmp-err">Couldn\\'t load '+esc(camp)+'.<br>'+esc((e&&e.message)||e)+'</div>'; return; }
     // MIRROR cmpLoad (the drill-in bug fix): the engine can return HTTP 200 with an ERROR BODY
     // (ok:false / status:"error") — the transport succeeded but the read failed. cmpLoad already checks
