@@ -4017,7 +4017,7 @@ async function sgGoLiveLaunch(){
         '<button class="cmp-cf-go">Yes, go live</button></div>'+
     '</div>';
   document.body.appendChild(bk);
-  const close=function(){ if(bk.parentNode) bk.parentNode.removeChild(bk); };
+  const close=function(){ if(typeof sgClearReshapeLayer==="function") sgClearReshapeLayer(); if(bk.parentNode) bk.parentNode.removeChild(bk); };
   bk.onclick=function(e){ if(e.target===bk) close(); };
   bk.querySelector(".cmp-cf-cancel").onclick=close;
   const goBtn=bk.querySelector(".cmp-cf-go");
@@ -4062,6 +4062,7 @@ function sgDrawLiveRings(rings){
   if(layers.length){ SG_LIVEGRP=L.layerGroup(layers).addTo(TMAP); }
 }
 async function sgRefreshLive(){
+  if(typeof sgClearReshapeLayer==="function") sgClearReshapeLayer();  // storm/date/peril switch (+refresh): never carry a prior storm's reshape overlay onto this one
   const upd=document.getElementById("sdUpdateLive"), wd=document.getElementById("sdWindDown"),
         pz=document.getElementById("sdPauseDial"), snd=document.getElementById("sdSend"),
         lv=document.getElementById("sdLive"), acts=document.getElementById("sdLiveActions");
@@ -4115,7 +4116,7 @@ function sgLiveConfirm(opts){
         '<button class="cmp-cf-go'+(opts.cls==="pause"?" pause":"")+'">'+sgLiveEsc(opts.confirm||"Confirm")+'</button></div>'+
     '</div>';
   document.body.appendChild(bk);
-  const close=function(){ if(bk.parentNode) bk.parentNode.removeChild(bk); };
+  const close=function(){ if(typeof sgClearReshapeLayer==="function") sgClearReshapeLayer(); if(bk.parentNode) bk.parentNode.removeChild(bk); };
   bk.onclick=function(e){ if(e.target===bk) close(); };
   bk.querySelector(".cmp-cf-cancel").onclick=close;
   const goBtn=bk.querySelector(".cmp-cf-go");
@@ -4194,18 +4195,21 @@ function sgClearReshapeLayer(){
 }
 function sgDrawReshape(moves){
   sgClearReshapeLayer();
-  try{
-    SG_RESHAPE_LAYER = L.layerGroup();
-    moves.forEach(function(m){
+  SG_RESHAPE_LAYER = L.layerGroup();
+  let drawn=0, bad=0;
+  moves.forEach(function(m){
+    try{
       const bc = (m.before && m.before.center) ? m.before.center : m.new_center;   // tighten/grow: center == new_center
       const br = (m.before && m.before.radius_mi) ? m.before.radius_mi : (m.new_radius_mi||1.6);
       const ac = m.new_center || (m.before && m.before.center) || bc;
       const ar = m.new_radius_mi || br;
-      if(bc) L.circle([bc[0], bc[1]], {radius: br*1609.34, color:"#94a3b8", weight:1, fill:false}).addTo(SG_RESHAPE_LAYER);
-      if(ac && (m.new_center || m.new_radius_mi)) L.circle([ac[0], ac[1]], {radius: ar*1609.34, color:"#4ade80", weight:2, dashArray:"5,4", fill:false}).addTo(SG_RESHAPE_LAYER);
-    });
-    SG_RESHAPE_LAYER.addTo(TMAP);
-  }catch(e){ console.error("[reshape] draw failed", e); }
+      if(bc && bc.length===2) L.circle([bc[0], bc[1]], {radius: br*1609.34, color:"#94a3b8", weight:1, fill:false}).addTo(SG_RESHAPE_LAYER);
+      if(ac && ac.length===2 && (m.new_center || m.new_radius_mi)) L.circle([ac[0], ac[1]], {radius: ar*1609.34, color:"#4ade80", weight:2, dashArray:"5,4", fill:false}).addTo(SG_RESHAPE_LAYER);
+      drawn++;
+    }catch(e){ bad++; console.warn("[reshape] skipped a bad move ("+(m&&m.circle_id)+")", e); }  // one bad move must not blank the whole before/after view
+  });
+  if(bad) console.warn("[reshape] drew "+drawn+" of "+moves.length+" moves ("+bad+" skipped)");
+  try{ SG_RESHAPE_LAYER.addTo(TMAP); }catch(e){ console.error("[reshape] overlay add failed", e); }
 }
 function sgReshapeLabel(m){
   if(m.action==="bid_bump") return "raise bid to $" + (((m.new_cpc_micros||0)/1e6).toFixed(2));
@@ -4221,7 +4225,7 @@ async function sgReshapeWinCheap(){
   if(v){ v.textContent="Reading live win-rates \u2014 finding cheaper-to-win geometry\u2026"; v.className="sd-verdict"; }
   let res;
   try{ res=await sdApi("lever-e-preview",{date:getDate(), peril:SG_PERIL||"hail"}); }
-  catch(e){ if(v){ v.textContent="Reshape preview failed \u2014 "+e.message; v.className="sd-verdict warn"; } return; }
+  catch(e){ sgClearReshapeLayer(); if(v){ v.textContent="Reshape preview failed \u2014 "+e.message; v.className="sd-verdict warn"; } return; }
   const moves=((res&&res.proposals)||[]).filter(function(p){ return p.action && p.action!=="hold"; });
   if(!moves.length){
     sgClearReshapeLayer();
@@ -5453,7 +5457,7 @@ function initCampaigns(){
           '<button class="cmp-cf-go'+(isGo?"":" pause")+'">'+(isGo?"Yes, go live":"Yes, pause")+'</button></div>'+
       '</div>';
     document.body.appendChild(bk);
-    const close=function(){ if(bk.parentNode) bk.parentNode.removeChild(bk); };
+    const close=function(){ if(typeof sgClearReshapeLayer==="function") sgClearReshapeLayer(); if(bk.parentNode) bk.parentNode.removeChild(bk); };
     bk.onclick=function(e){ if(e.target===bk) close(); };
     bk.querySelector(".cmp-cf-cancel").onclick=close;
     const goBtn=bk.querySelector(".cmp-cf-go");
