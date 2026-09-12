@@ -2144,7 +2144,12 @@ const SD_COMMANDS = ["solve", "active-promotion", "promote-solve", "send-promote
                      // (adds pulled rings born ENABLED, updates changed geo/cpc, pauses dropped rings,
                      // re-points the budget) - never touches campaign.status, never duplicates an ad
                      // group. The Pull to Solve to Update-live route when the geometry changed.
-                     "update-live-geo"];
+                     "update-live-geo",
+                     // LEVER E (2026-09-12): reshape/fit-to-win-cheap. preview = READ-ONLY proposals
+                     // (recenter/re-radius/bid to win the auction cheaper, writes nothing); apply = the
+                     // gated live push (persists map overrides -> update-live-geo). Both are /api/spend-
+                     // <action> redirect-covered (netlify-proxy/netlify.toml).
+                     "lever-e-preview", "lever-e-apply"];
 async function sdApi(action, body){
   if(!SPEND_API) throw new Error("no spend endpoint configured (v2 proxy wiring)");
   if(!SD_COMMANDS.includes(action))
@@ -3710,6 +3715,7 @@ function setupSpendDial(D){
     + '<div class="sd-actions sd-live-actions" id="sdLiveActions" style="display:none">'
     + '<button id="sdUpdateLive" title="Re-point the RUNNING campaign\u2019s daily budget to the re-solved recommendation \u2014 mutates the live campaign in place (never recreates), keeps it serving. Adjust the dial + Approve first.">Update live</button>'
     + '<button id="sdWindDown" title="Drop the daily budget to the maintenance floor (demand is spent by day 3). Budget-only \u2014 never pauses, keeps Smart Bidding learning alive at a trickle.">Wind down</button>'
+    + '<button id="sdReshape" title="Reshape to win cheap (lever E) \u2014 recenter/re-radius/bid the running campaign\u2019s circles onto the hardest-hit, cheapest-to-win inventory from live win-rates. Shows before (grey) vs proposed (green dashed) on the map; you confirm before anything changes.">Reshape to win cheap</button>'
     + '<button id="sdPauseDial" title="Pause the campaign \u2014 hard-stops serving immediately. Does not delete the campaign or its Smart Bidding learning.">Pause</button></div>'
     + '<div class="sd-promo" id="sdPromo" style="display:none"></div>'          // inline promotion state / badge (no popups)
     + '<div class="sd-verdict" id="sdVerdict">Move a dial and hit Solve \u2014 the table below prices the live solve geometry.</div>'
@@ -3768,6 +3774,7 @@ function setupSpendDial(D){
   // Phase B live-campaign buttons (shown by sgRefreshLive only when the storm's campaign is serving).
   document.getElementById("sdUpdateLive").onclick = sgUpdateLive;   // mutate the RUNNING budget (in place)
   document.getElementById("sdWindDown").onclick = sgWindDown;       // budget -> maintenance floor
+  { const _rb=document.getElementById("sdReshape"); if(_rb) _rb.onclick = sgReshapeWinCheap; }  // lever E
   document.getElementById("sdPauseDial").onclick = sgPauseDial;     // hard-stop serving
   const bt = document.getElementById("sgBaseToggle");
   if(bt) bt.onchange = e => sgDrawBase(e.target.checked, D);
@@ -4173,6 +4180,78 @@ async function sgUpdateLive(){
           " paused \u00b7 $"+Math.round((res&&res.daily_budget)||0).toLocaleString()+"/day for "+getDate()+".";
         v.className="sd-verdict ok"; }
       else { v.textContent="Live budget updated \u2014 $"+Math.round((res&&res.daily_budget)||0).toLocaleString()+"/day for "+getDate()+"."; v.className="sd-verdict ok"; }
+      sgRefreshLive();
+    }});
+}
+
+// LEVER E (2026-09-12): reshape / fit-to-win-cheap. Preview reads live win-rates + proposes recenter /
+// re-radius / bid moves; the map shows CURRENT (grey) vs PROPOSED (green dashed); the operator confirms and
+// the gated apply pushes. SG_RESHAPE_LAYER is cleared on confirm / cancel / failure.
+let SG_RESHAPE_LAYER = null;
+function sgClearReshapeLayer(){
+  try{ if(SG_RESHAPE_LAYER && TMAP && TMAP.hasLayer(SG_RESHAPE_LAYER)) TMAP.removeLayer(SG_RESHAPE_LAYER); }catch(e){}
+  SG_RESHAPE_LAYER = null;
+}
+function sgDrawReshape(moves){
+  sgClearReshapeLayer();
+  try{
+    SG_RESHAPE_LAYER = L.layerGroup();
+    moves.forEach(function(m){
+      const bc = (m.before && m.before.center) ? m.before.center : m.new_center;   // tighten/grow: center == new_center
+      const br = (m.before && m.before.radius_mi) ? m.before.radius_mi : (m.new_radius_mi||1.6);
+      const ac = m.new_center || (m.before && m.before.center) || bc;
+      const ar = m.new_radius_mi || br;
+      if(bc) L.circle([bc[0], bc[1]], {radius: br*1609.34, color:"#94a3b8", weight:1, fill:false}).addTo(SG_RESHAPE_LAYER);
+      if(ac && (m.new_center || m.new_radius_mi)) L.circle([ac[0], ac[1]], {radius: ar*1609.34, color:"#4ade80", weight:2, dashArray:"5,4", fill:false}).addTo(SG_RESHAPE_LAYER);
+    });
+    SG_RESHAPE_LAYER.addTo(TMAP);
+  }catch(e){ console.error("[reshape] draw failed", e); }
+}
+function sgReshapeLabel(m){
+  if(m.action==="bid_bump") return "raise bid to $" + (((m.new_cpc_micros||0)/1e6).toFixed(2));
+  if(m.action==="recenter") return "recenter onto hardest-hit";
+  if(m.action==="recenter_tighten") return "recenter + tighten to " + ((m.new_radius_mi||0).toFixed(2)) + "mi";
+  if(m.action==="tighten") return "tighten to " + ((m.new_radius_mi||0).toFixed(2)) + "mi";
+  if(m.action==="grow") return "grow to " + ((m.new_radius_mi||0).toFixed(2)) + "mi";
+  return m.action;
+}
+async function sgReshapeWinCheap(){
+  const v=document.getElementById("sdVerdict");
+  if(!SG_LIVE){ if(v){ v.textContent="Reshape needs a LIVE campaign \u2014 launch / Go Live first."; v.className="sd-verdict warn"; } return; }
+  if(v){ v.textContent="Reading live win-rates \u2014 finding cheaper-to-win geometry\u2026"; v.className="sd-verdict"; }
+  let res;
+  try{ res=await sdApi("lever-e-preview",{date:getDate(), peril:SG_PERIL||"hail"}); }
+  catch(e){ if(v){ v.textContent="Reshape preview failed \u2014 "+e.message; v.className="sd-verdict warn"; } return; }
+  const moves=((res&&res.proposals)||[]).filter(function(p){ return p.action && p.action!=="hold"; });
+  if(!moves.length){
+    sgClearReshapeLayer();
+    if(v){ v.textContent="Nothing to reshape \u2014 every funded ring is holding (winning cheaply, or not enough data yet)."; v.className="sd-verdict ok"; }
+    return;
+  }
+  sgDrawReshape(moves);
+  const rows=[["Storm", getDate()+" \u00b7 "+(SG_PERIL||"hail")]]
+    .concat(moves.slice(0,12).map(function(m){ return [String(m.circle_id||"ring"), sgReshapeLabel(m)]; }));
+  if(moves.length>12) rows.push(["\u2026", "+"+(moves.length-12)+" more"]);
+  sgLiveConfirm({
+    title:"\u26a0 Reshape to win cheap \u2014 push "+moves.length+" change(s)?",
+    cls:"go", confirm:"Yes, reshape live", working:"Reshaping\u2026",
+    rows:rows,
+    warn:"Grey = current, green dashed = proposed (on the map). Each change recenters / re-radiuses / re-bids "+
+         "the <b>running</b> campaign toward the hardest-hit, cheapest-to-win inventory from live win-rates. "+
+         "It mutates live targeting / bids in place (never recreates, keeps serving). The engine re-validates "+
+         "every move against the current bounds and REFUSES any out of range. Confirm only if reviewed.",
+    onGo:async function(done){
+      let ar;
+      try{ ar=await sdApi("lever-e-apply",{date:getDate(), peril:SG_PERIL||"hail", approved:moves, i_reviewed:true, validate_only:false}); }
+      catch(e){ done(); sgClearReshapeLayer(); if(v){ v.textContent="Reshape failed \u2014 "+e.message; v.className="sd-verdict warn"; } sgRefreshLive(); return; }
+      done(); sgClearReshapeLayer();
+      if(!ar || ar.ok===false){
+        const why=(ar&&(ar.states_why||(ar.push&&ar.push.states_why)))||"the server refused this action";
+        if(v){ v.textContent="Reshape refused \u2014 "+why; v.className="sd-verdict warn"; } }
+      else {
+        const n=(ar.overrides_written&&ar.overrides_written.length)||0;
+        const ref=(ar.refused&&ar.refused.length)||0;
+        if(v){ v.textContent="Live campaign reshaped \u2014 "+n+" ring(s) pushed"+(ref?(", "+ref+" refused (out of bounds)"):"")+" for "+getDate()+"."; v.className="sd-verdict ok"; } }
       sgRefreshLive();
     }});
 }
