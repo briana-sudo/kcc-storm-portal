@@ -520,6 +520,12 @@ body.wx-arming::after{content:"Click the map to set the weather location";positi
 .cmp-stg.TAIL{background:#16303f;color:#7fc7ff;box-shadow:inset 0 0 0 1px #2b5a7a}
 .cmp-stg.Launched{background:#1b2740;color:#9fb3d9;box-shadow:inset 0 0 0 1px #34496e}
 .cmp-stg.wounddown{background:#241b30;color:#c0a8e0;box-shadow:inset 0 0 0 1px #4a3a6a}
+/* COMMERCIAL lane (always-on): off the storm warm ramp on purpose - it is not a decay curve. */
+.cmp-stg.Learning{background:#1e2a33;color:#8fb8c9;box-shadow:inset 0 0 0 1px #33586b}
+.cmp-stg.Running{background:#16301f;color:#7fd6a0;box-shadow:inset 0 0 0 1px #2b6a45}
+.cmp-lane-t{margin:16px 0 7px;font-size:11px;font-weight:800;letter-spacing:.5px;text-transform:uppercase;color:#9fb3d9;display:flex;align-items:center;gap:8px}
+.cmp-lane-t .ln-sub{font-weight:600;letter-spacing:0;text-transform:none;color:#6d80a4;font-size:10.5px}
+.cmp-learn{margin-top:7px;font-size:11.5px;color:#8fb8c9;background:#141f27;border:1px solid #24404f;border-radius:8px;padding:6px 9px}
 .cmp-mets{display:flex;flex-wrap:wrap;gap:10px;margin-top:7px;font-size:11px;color:#aebcd4}
 .cmp-mets b{color:#e9eef7;font-weight:800}
 .cmp-mets .m-model{color:#e6cf8a}
@@ -4735,11 +4741,13 @@ function initCampaigns(){
     if(stage==="wound-down"){
       const tot=(r.spend_season!=null)?r.spend_season:r.spend_window;
       return '<div class="cmp-arch"'+(clickable?(' data-camp="'+esc(r.campaign)+'"'):' style="cursor:default"')+'>'+
-        '<span class="a-date">'+esc(r.date)+'</span>'+chanChip(r)+'<span class="a-stg">wound-down</span>'+
+        '<span class="a-date">'+esc(r.date||r.campaign)+'</span>'+chanChip(r)+'<span class="a-stg">wound-down</span>'+
         '<span class="a-jobs">'+num(r.clicks||0)+' clicks \\u00b7 '+num(r.leads||0)+' leads</span>'+
         '<span class="a-sp">total <b>'+money(tot)+'</b></span></div>';
     }
-    const dN=(r.days_since_storm!=null)?('<span class="cmp-dn">d+'+r.days_since_storm+'</span>'):'';
+    // d+N means days SINCE THE STORM - meaningless on the always-on lane, which counts days live.
+    const dN=(r.days_since_storm!=null)?('<span class="cmp-dn">d+'+r.days_since_storm+'</span>')
+            :((r.days_live!=null)?('<span class="cmp-dn" title="Days since this campaign started serving">'+r.days_live+'d live</span>'):'');
     const quiet=(stage==="TAIL")?" quiet":"";
     let h='<div class="cmp-row'+quiet+'"'+(clickable?(' data-camp="'+esc(r.campaign)+'"'):' style="cursor:default"')+'>';
     h+='<div class="cmp-row-top"><span class="cmp-name">'+esc(r.campaign)+'</span>'+
@@ -4779,6 +4787,22 @@ function initCampaigns(){
       if(r.flags && r.flags.some(function(f){return f.code==="tail_above_wind_down_floor";})){
         h+='<div class="cmp-winddown">Still at <b>'+money(r.daily_budget)+'</b>/day in the tail \\u2014 wind down to the maintenance floor.</div>'; }
       h+=flagsBlock(r,["tail_above_wind_down_floor"]);   // shown as the prompt above, not doubled here
+    }
+    else if(stage==="Learning"){
+      // The first fortnight on ~20-30 searches/month. The numbers EXIST but do not yet mean
+      // anything, and the honest thing is to say so rather than render a CTR off 40 impressions as
+      // though it were a finding. No pacing verdict here for the same reason.
+      h+=metsLine(r,false);
+      h+='<div class="cmp-learn">Learning \\u00b7 day <b>'+(r.days_live!=null?r.days_live:'\\u2014')+'</b> of 14. These search terms get 20-30 searches a month, so there is not enough traffic yet for these numbers to mean anything. Watch that it is serving at all; judge the cost per click after day 14.</div>';
+      h+=flagsBlock(r);
+    }
+    else if(stage==="Running"){
+      // Steady state on the always-on lane: what it is buying and what each click costs. No decay
+      // sparkline (there is no curve to decay along) and no wind-down prompt.
+      h+=metsLine(r,true);
+      h+=pacingLine(r);
+      h+=modeledRoi(r);
+      h+=flagsBlock(r);
     }
     else {   // safe default for any unexpected stage
       h+=metsLine(r,true); h+=pacingLine(r); h+=modeledRoi(r); h+=flagsBlock(r);
@@ -4823,9 +4847,26 @@ function initCampaigns(){
        // stubbed as a slot, not fabricated, until an operator-capacity source is wired (flagged follow-up).
        '<div class="cmp-tcard" title="'+esc(t.remaining_annual_capacity_note||"operator state \\u2014 not wired to the portfolio yet")+'"><div class="cmp-tk">Annual capacity</div><div class="cmp-tv">\\u2014</div><div class="cmp-tsub">operator state \\u2014 not wired</div></div>'+
        '</div>';
-    h+='<div class="cmp-sec-t">Campaigns by stage</div>';
-    if(!rows.length){ h+='<div class="cmp-empty">No CAMP-* campaigns in the account yet.</div>'; }
-    else { rows.forEach(function(r){ h+=rowHtml(r,true); }); }
+    // SECTIONS BY LANE. The two lanes are not comparable - a storm campaign spends hundreds a day
+    // for four days against an event; the commercial campaign spends tens a day forever against ~30
+    // searches a month. One mixed stage-ordered list would sit them side by side and invite exactly
+    // the comparison that means nothing. Engine row order is preserved WITHIN each lane.
+    const storm=rows.filter(function(r){ return (r.lane||"storm")!=="commercial"; });
+    const comm =rows.filter(function(r){ return (r.lane||"storm")==="commercial"; });
+    if(!rows.length){
+      h+='<div class="cmp-sec-t">Campaigns by stage</div>';
+      h+='<div class="cmp-empty">No CAMP-* campaigns in the account yet.</div>';
+    } else {
+      if(storm.length){
+        h+='<div class="cmp-lane-t">Storm campaigns <span class="ln-sub">by stage \\u00b7 '+storm.length+'</span></div>';
+        storm.forEach(function(r){ h+=rowHtml(r,true); });
+      }
+      // The commercial header renders even with no campaign in it, so the lane is visibly PRESENT
+      // and un-launched rather than silently absent - the absence is the thing worth seeing.
+      h+='<div class="cmp-lane-t">Commercial <span class="ln-sub">flat roofs \\u00b7 always-on</span></div>';
+      if(comm.length){ comm.forEach(function(r){ h+=rowHtml(r,true); }); }
+      else { h+='<div class="cmp-empty">Not launched yet \\u2014 no CAMP-CM campaign in the account.</div>'; }
+    }
     body.innerHTML=h;
     body.querySelector(".cmp-refresh").onclick=cmpLoad;
     body.querySelectorAll(".cmp-row[data-camp],.cmp-arch[data-camp]").forEach(function(el){ el.onclick=function(){ cmpDrill(el.dataset.camp); }; });
