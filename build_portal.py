@@ -2131,7 +2131,7 @@ function wlWindowChip(r){
 // a few ms of array work per keystroke -- far cheaper than a round trip, and it keeps the API
 // read-only and stateless. If the watchlist ever reaches thousands this becomes a server concern.
 let WL_ROWS = [];
-let WL_F = {q:"", peril:"", win:"", sort:"addr", vmin:null, vmax:null, vunknown:true};
+let WL_F = {q:"", peril:"", win:"", sort:"addr", vmin:null, vmax:null, vunknown:true, seg:"personal", camp:""};
 
 function wlValueOf(r){
   // "value unknown" is a distinct bucket, NOT zero. Jefferson + Monroe carry no mkt_val_tot at all
@@ -2141,6 +2141,9 @@ function wlValueOf(r){
 function wlApplyFilters(rows){
   const f = WL_F;
   let out = (rows||[]).filter(r=>{
+    const seg = (r.segment||"personal");
+    if(f.seg==="personal" && seg==="campaign") return false;
+    if(f.seg==="campaign"){ if(seg!=="campaign") return false; if(f.camp && (r.campaign_id||"")!==f.camp) return false; }
     if(f.q){
       const hay = ((r.address||"")+" "+(r.owner_of_record||"")+" "+(r.business_name||"")+" "
                  + (r.owner_first||"")+" "+(r.owner_last||"")).toLowerCase();
@@ -2180,7 +2183,16 @@ function wlFilterBar(shown, total){
   const f = WL_F;
   const active = (f.q||f.peril||f.win||f.vmin!=null||f.vmax!=null||!f.vunknown);
   const opt=(v,l,cur)=>"<option value='"+v+"'"+(cur===v?" selected":"")+">"+l+"</option>";
+  const pCount=(WL_ROWS||[]).filter(r=>(r.segment||"personal")!=="campaign").length;
+  const cCount=(WL_ROWS||[]).filter(r=>(r.segment||"")==="campaign").length;
+  const camps=[...new Set((WL_ROWS||[]).filter(r=>(r.segment||"")==="campaign").map(r=>r.campaign_id||"(none)"))].sort().reverse();
+  const segBtn=(v,l)=>"<button class='wl-seg-btn' data-seg='"+v+"' style='padding:5px 11px;margin-right:6px;border-radius:6px;cursor:pointer;font:inherit;"+(f.seg===v?"background:#e11d48;color:#fff;border:1px solid #e11d48;":"background:transparent;color:inherit;border:1px solid #3a3a44;")+"'>"+l+"</button>";
+  const campSel=(f.seg==="campaign")?("<select id='wlCamp' class='wl-in' style='margin-left:6px'>"+opt("","All campaigns",f.camp)+camps.map(c=>opt(c,c,f.camp)).join("")+"</select>"):"";
   return "<div class='wl-filters'>"
+    + "<div class='wl-frow wl-segrow' style='align-items:center'>"
+    +   segBtn("personal","Personal ("+pCount+")")+segBtn("campaign","Campaigns ("+cCount+")")+segBtn("all","All")
+    +   campSel
+    + "</div>"
     + "<div class='wl-frow'>"
     +   "<input id='wlQ' class='wl-in' type='search' placeholder='Search address or owner\\u2026' value='"+wlEsc(f.q)+"'>"
     +   "<select id='wlSort' class='wl-in'>"
@@ -2238,7 +2250,10 @@ function wlWireFilterBar(){
   on("wlVMin","change",e=>{ WL_F.vmin = e.target.value===""?null:Number(e.target.value); wlRenderRows(); });
   on("wlVMax","change",e=>{ WL_F.vmax = e.target.value===""?null:Number(e.target.value); wlRenderRows(); });
   on("wlVUnk","change",e=>{ WL_F.vunknown = e.target.checked; wlRenderRows(); });
-  const clear=()=>{ WL_F={q:"",peril:"",win:"",sort:"addr",vmin:null,vmax:null,vunknown:true}; wlRenderRows(); };
+  document.querySelectorAll(".wl-seg-btn").forEach(b=>b.addEventListener("click",()=>{
+    WL_F.seg=b.getAttribute("data-seg"); if(WL_F.seg!=="campaign") WL_F.camp=""; wlRenderRows(); }));
+  on("wlCamp","change",e=>{ WL_F.camp=e.target.value; wlRenderRows(); });
+  const clear=()=>{ WL_F={q:"",peril:"",win:"",sort:"addr",vmin:null,vmax:null,vunknown:true,seg:WL_F.seg,camp:WL_F.camp}; wlRenderRows(); };
   on("wlClearF","click",clear); on("wlClearF2","click",clear);
   on("wlImportBtn","click",wlImportView);   // Part 5: open the CSV bulk-import view
   // Part J: the legend is collapsed by default; toggle without re-rendering the whole list, and
