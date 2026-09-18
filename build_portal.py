@@ -1195,10 +1195,26 @@ function fmtDate(d){ const t=new Date(d+"T00:00:00Z"); return t.toLocaleDateStri
 function parseJSON(s){ try{ return JSON.parse(s||"[]"); }catch(e){ return []; } }
 function parseScores(s){ if(!s) return null; try{ const o=JSON.parse(s); return (o && typeof o==="object") ? o : null; }catch(e){ return null; } }
 async function pquery(name, params){
-  const r = await fetch(API, { method:"POST", headers:{ "Content-Type":"application/json" },
-    body: JSON.stringify({ name, params: params||{} }) });
-  if(!r.ok) throw new Error(name+" HTTP "+r.status);
-  return (await r.json()).rows || [];
+  // CELLULAR RESILIENCE (2026-09-18): a heavy multi-peril storm-day (e.g. 4-27, 20 footprints across
+  // hail+wind+tornado) over a slow phone connection used to stall this fetch -- there was NO timeout and
+  // NO retry, so a dropped/slow cellular request left the swath + circles silently un-rendered while the
+  // 12s app-loading backstop hid the loader. Bound each attempt and retry once on a network drop/timeout.
+  const attempt = async () => {
+    let ac=null, to=null;
+    try { ac = new AbortController(); to = setTimeout(()=>ac.abort(), 28000); } catch(e){ ac=null; }  // <30s gateway
+    try {
+      const r = await fetch(API, { method:"POST", headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify({ name, params: params||{} }), signal: ac ? ac.signal : undefined });
+      if(!r.ok) throw new Error(name+" HTTP "+r.status);
+      return (await r.json()).rows || [];
+    } finally { if(to) clearTimeout(to); }
+  };
+  try { return await attempt(); }
+  catch(e){
+    const msg = e ? String(e.name||"") + " " + String(e.message||"") : "";
+    if(/AbortError|Failed to fetch|NetworkError|Load failed/i.test(msg)) return await attempt();  // one retry on cellular drop
+    throw e;
+  }
 }
 function showBanner(msg){ const b=document.getElementById("banner"); b.textContent=msg; b.classList.remove("hidden"); }
 function hideBanner(){ document.getElementById("banner").classList.add("hidden"); }
