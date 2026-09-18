@@ -2339,10 +2339,14 @@ function showTempCard(addr, lat, lng, opts){
       try{
         const r=await sdApi("hail-proximity",{address:TC_ADDR, lat:ll.lat, lon:ll.lng});
         if(r&&r.ok===false){ tcMsg(r.error||"Check failed.",true); return; }
-        const fmt=(x)=> x? (x.size_in+"\u2033 at "+x.distance_mi+" mi ("+x.date+")") : "none within range";
-        const n1=r.nearest&&r.nearest["1.00"], n7=r.nearest&&r.nearest["0.75"];
-        tcMsg("Last 12 mo \u2014 at-address peak "+(r.address_peak_in||0)+"\u2033. Nearest \u22651.00\u2033: "
-              +fmt(n1)+". Nearest \u22650.75\u2033: "+fmt(n7)+".");
+        const cg=r.nearest&&r.nearest["1.00"];              // nearest claim-grade (>=1.0") hail
+        const atpt=(r.at_point_in||0), mx5=(r.max_within_5mi_in||0);
+        let read;
+        if(cg && cg.distance_mi<=5) read="Claim-grade (\u22651\u2033) hail was "+cg.distance_mi+" mi away \u2014 this roof may have caught damage; worth an inspection.";
+        else if(cg) read="Nearest claim-grade (\u22651\u2033) hail was "+cg.distance_mi+" mi away \u2014 likely too far; weak case here.";
+        else read="No claim-grade (\u22651\u2033) hail found nearby \u2014 weak; any neighbor roofs are likely from another storm.";
+        tcMsg("Last 12 mo \u2014 at this address: "+atpt+"\u2033 \u00b7 max within ~5 mi: "+mx5+"\u2033 \u00b7 nearest \u22651\u2033: "
+              +(cg? (cg.distance_mi+" mi ("+cg.size_in+"\u2033, "+cg.date+")") : "none")+". "+read);
       }catch(e){ tcMsg("Failed \u2014 "+e.message,true); }
     });
   }
