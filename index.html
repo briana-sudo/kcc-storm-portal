@@ -1895,6 +1895,17 @@ const CELL_AREA = 0.374;
 const PERIL_SWATCH = {hail:"#e8430a", wind:"#2171b5", tornado:"#d6141b"};
 function tierCounts(circles){ const t={P1:0,P2:0,P3:0}; (circles||[]).forEach(c=>{ if(t[c.tier]!=null)t[c.tier]++; }); return t; }
 function maxMetric(circles){ return (circles||[]).reduce((m,c)=>Math.max(m, c.max_hail_size_in||0), 0); }
+// Open the Spend Dial from anywhere (the sub-gate "Work this storm" button). Mobile = bottom sheet,
+// desktop = the #tbar2 float toggle. A sub-gate storm is a real in-market storm the auto gate declined to
+// FUND automatically; the manual solve->dial->promote->approve path works on it (the funding gate only stops
+// automation), so this just surfaces the dial the operator otherwise had to know to open. 2026-09-18.
+window.tempestOpenSpendDial = function(){
+  var m = document.querySelector('#mtoolbar [data-sheet="spend"]');
+  if(m){ m.click(); return; }
+  var d = document.querySelector('#tbar2 [data-fb="spend"]');
+  if(d){ d.click(); }
+};
+
 function buildOperatorPanel(D, forecast){
   const side=document.getElementById("side"); if(!side) return;
   const perils=[];
@@ -1928,6 +1939,17 @@ function buildOperatorPanel(D, forecast){
   h+='<div class="op-verdict '+vc+'">'+verdict+
      (K.provisional && hailActive ? ' <span class="op-live">'+LIVE_QUALIFIER+'</span>' : '')+'</div>';
   if(verdictNote) h+='<div class="op-classnote '+vc+'">'+verdictNote+'</div>';
+  // SUB-GATE "work it anyway" button (2026-09-18): a real in-market storm the auto gate declined to FUND is
+  // still workable by hand (the manual dial->promote->approve path bypasses the automation-only gate). One tap
+  // opens the Spend Dial on this date; it solves at the 1.25" floor by default, so the marginal cells show as
+  // targets. Empty-queue days are exactly when the operator mines these for roofs.
+  if(hailCls===CLS.SUB){
+    h+='<button onclick="tempestOpenSpendDial()" style="margin:10px 0 3px;padding:10px 12px;width:100%;'
+      +'background:#2f6fe0;color:#fff;border:none;border-radius:8px;font-weight:800;font-size:13px;cursor:pointer">'
+      +'\u26a1 Work this storm \u2014 open Spend Dial</button>'
+      +'<div style="font-size:10.5px;color:#8a6d3b;margin:0 0 4px;line-height:1.35">Below the auto funding gate '
+      +'\u2014 no campaign launched itself, but you can dial and launch it by hand when you want the roofs.</div>';
+  }
   const _persum = perils.length ? ('P1 '+P1+' \u00b7 P2 '+P2+' \u00b7 P3 '+P3+' across '+perils.map(p=>p.k).join(", "))
                  : (hailCls===CLS.CHASE ? 'chase targeting only \u2014 not in the ad market'
                  :  hailCls===CLS.SUB ? 'in-market hail below the funding gate'
